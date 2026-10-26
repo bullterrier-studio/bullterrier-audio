@@ -1,0 +1,36 @@
+# The commit-stage git hooks of .pre-commit-config.yaml over every file, so a commit made without the hooks installed
+# (or with them skipped) is still caught. The pre-push hooks (tests, mypy, vulture) are the lint and test workflows'
+# jobs. Called by ci.yml; can also be started by hand.
+name: Pre-commit
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: Commit hooks on every file
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      # the hook environments pre-commit builds for the remote hook repositories, keyed by the file that pins them
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Install the locked dependencies
+        run: uv sync --locked
+      # ruff-format and ruff-check are the first two steps of the lint job; running them here too would do it twice
+      - name: Commit hooks on every file
+        run: uv run --locked pre-commit run --all-files --hook-stage pre-commit
+        env:
+          SKIP: ruff-format,ruff-check

@@ -1,0 +1,128 @@
+# Publish a release when its tag is pushed (`uv run poe release` creates the tag; see CONTRIBUTING.md, "Releasing").
+# The tag is checked first (tools/check_release.py), then the whole CI runs on it (every check, then the build), then
+# the distributions CI built and checked go to PyPI (stable tags, environment `pypi`) or TestPyPI (pre-release tags
+# such as v0.2.0rc1, environment `testpypi`) through Trusted Publishing: no token is stored anywhere. Both publish jobs
+# need `ci`, so a failed or skipped check publishes nothing. Last, a GitHub Release with the changelog section as its
+# notes and the same files attached. Each job holds only the permissions it uses. No manual trigger: only a tag
+# publishes.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# never cancel a release halfway through publishing; a second push of the same tag waits for the first run
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the history of origin/main, to tell whether the tagged commit is on it
+          persist-credentials: false
+      # standard library only, so the runner's own Python runs it
+      - id: check
+        run: >-
+          python3 tools/check_release.py "$GITHUB_REF_NAME"
+          --notes "$RUNNER_TEMP/notes.md" --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/notes.md
+          if-no-files-found: error
+
+  ci:
+    name: CI
+    needs: verify
+    permissions:
+      contents: read
+      security-events: write # CI's CodeQL job uploads its findings to code scanning
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] (see ci.yml); its build job uploads the `dist` artifact
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [verify, ci]
+    if: needs.verify.outputs.prerelease == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/bullterrier-audio/
+    permissions:
+      id-token: write # Trusted Publishing: PyPI accepts this run's OIDC token for the pending/registered publisher
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [verify, ci]
+    if: needs.verify.outputs.prerelease == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/bullterrier-audio/
+    permissions:
+      id-token: write # Trusted Publishing, and the signed PEP 740 attestations uploaded with the files
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          attestations: true
+
+  github-release:
+    name: GitHub Release
+    needs: [verify, publish-testpypi, publish-pypi]
+    # exactly one of the two publish jobs runs; the other is skipped
+    if: >-
+      !cancelled() && needs.verify.result == 'success'
+      && (needs.publish-pypi.result == 'success' || needs.publish-testpypi.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release and attach the files
+      id-token: write # sign the build provenance
+      attestations: write # store it
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-notes
+          path: notes
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          flags=()
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file notes/notes.md "${flags[@]}"

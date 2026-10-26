@@ -1,0 +1,16 @@
+
+# <type>(<scope>)!: <subject>      (lines starting with # are ignored)
+#
+#   type    feat fix docs style refactor perf test build ci chore revert
+#   scope   optional: core, cli, docs, deps
+#   !       optional: marks a breaking change
+#   subject imperative, present tense, lowercase start, no final period; the whole header is at most 72 characters
+#
+# Body (after a blank line, wrapped at 100 characters): why the change was made, not what the diff already shows.
+#
+# Footer (after a blank line), when needed:
+#   BREAKING CHANGE: what breaks and how to migrate
+#   Co-Authored-By: Your Model Name <noreply@anthropic.com>
+#
+# One logical change per commit. Never skip the hooks with --no-verify.
+# Example: feat(grid): fold tempo into the musical range

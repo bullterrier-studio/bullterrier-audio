@@ -1,0 +1,26 @@
+# The suite on the oldest supported Python against the lowest release each dependency's floor allows, so the floors in
+# pyproject.toml stay true. Called by ci.yml; can also be started by hand.
+name: Minimum dependencies
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  min-deps:
+    name: Lowest dependencies on Python 3.12
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: Tests on the lowest allowed dependencies (pytest; skips and the 10 slowest tests are listed)
+        run: uv run --locked poe check-min-deps -ra --durations=10

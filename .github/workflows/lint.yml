@@ -1,0 +1,37 @@
+# The static gates of `poe check`, each its own step so a failure names its tool, plus the workflow linters.
+# Called by ci.yml; can also be started by hand.
+name: Lint
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Format, lint, dead code, dependencies, types, workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      - name: Install the locked dependencies
+        run: uv sync --locked
+      - name: Format (ruff format)
+        run: uv run --locked ruff format --check .
+      - name: Lint (ruff check)
+        run: uv run --locked ruff check .
+      - name: Dead code (vulture)
+        run: uv run --locked vulture && echo "vulture found no dead code"
+      - name: Dependencies (deptry)
+        run: uv run --locked deptry .
+      - name: Types (mypy)
+        run: uv run --locked mypy
+      - name: Workflows (actionlint, zizmor)
+        run: uv run --locked poe lint-workflows

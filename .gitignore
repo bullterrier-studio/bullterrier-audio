@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.import_linter_cache/
+.DS_Store
+dist/
+
+# scratch for agent-driven development: plans, briefs, reports (shared by absolute path, never committed)
+.superpowers/
+
+# agent worktrees (created by the harness)
+.claude/
+
+# notes about this machine: where earlier experiments live (paths outside the repository), for agents to reuse
+.local/
+# songs are inputs and analyses are outputs: third-party audio, never committed
+inputs/
+out/

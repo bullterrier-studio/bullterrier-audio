@@ -1,0 +1,114 @@
+# Every gate, on every push to main, pull request and merge-queue entry, by hand (Actions tab, "Run workflow"), and for
+# every release (release.yml calls it). Stage 1 runs every check in parallel; stage 2 builds the distributions only once
+# all of them passed, so nothing that fails a check is ever built, let alone published. Branch protection requires one
+# check only, `ci-ok`, so adding or renaming a job never touches the repository settings. No workflow-level path filters:
+# a required check that does not run blocks the merge. A pull request that changes only documentation instead skips the
+# code jobs one by one (the `changes` job below); a skipped job counts as passed in `ci-ok`, so the merge is not blocked.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push to a pull request cancels the older run; runs on main and on tags all finish. The group starts with a
+# fixed name, not the workflow's: when release.yml calls this file, `github.workflow` is the caller's name, and a group
+# shared with the caller would cancel or block it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# `./` and not GitHub's newer `$/` self-repository form, which zizmor prefers: actionlint 1.7.12 rejects `$/`, and a
+# job-level `uses: ./` already resolves to this repository at the running commit (no checkout is involved).
+jobs:
+  # Whether a pull request changes anything but documentation. Every other event (main, merge queue, tags, releases, by
+  # hand) always runs everything. The documentation is the same set tools/pre_push.py skips the local gate for: pages in
+  # the top level and docs/, and docs/images/.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read # paths-filter lists a pull request's files through the API, so there is no checkout
+    outputs:
+      code: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code }}
+    steps:
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          predicate-quantifier: some-with-excludes # a file counts when it matches a pattern and none of the `!` ones
+          filters: |
+            code:
+              - '**'
+              - '!*.md'
+              - '!docs/*.md'
+              - '!docs/images/**'
+      - name: Say what runs
+        env:
+          EVENT: ${{ github.event_name }}
+          CODE: ${{ github.event_name != 'pull_request' || steps.filter.outputs.code }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            msg="Event \`$EVENT\`: every check runs."
+          elif [ "$CODE" = true ]; then
+            msg="Pull request that changes code: every check runs."
+          else
+            msg="Pull request that changes only documentation: lint, test, min-deps, security and build are skipped; pre-commit runs."
+          fi
+          echo "$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+
+  # stage 1: the checks; pre-commit also runs for documentation, since it checks the YAML, TOML and the commit-stage hooks
+  lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/lint.yml # zizmor: ignore[self-repository] (see the note above)
+  test:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/test.yml # zizmor: ignore[self-repository] (see the note above)
+  min-deps:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    uses: ./.github/workflows/min-deps.yml # zizmor: ignore[self-repository] (see the note above)
+  security:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    permissions:
+      contents: read
+      security-events: write # CodeQL uploads its findings to code scanning
+    uses: ./.github/workflows/security.yml # zizmor: ignore[self-repository] (see the note above)
+  pre-commit:
+    uses: ./.github/workflows/pre-commit.yml # zizmor: ignore[self-repository] (see the note above)
+
+  # stage 2: the distributions, from a commit that passed every check (release.yml publishes these files)
+  build:
+    needs: [changes, lint, test, min-deps, security, pre-commit]
+    # `!failure()`: a job that was skipped (documentation only) does not stop the build, one that failed does
+    if: ${{ !cancelled() && !failure() && needs.changes.outputs.code == 'true' }}
+    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository] (see the note above)
+
+  ci-ok:
+    name: ci-ok
+    if: always() # report a result even when a job it needs failed or was skipped
+    needs: [changes, lint, test, min-deps, security, pre-commit, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # a job is skipped only for a documentation-only pull request, or because a job it needs failed (which fails
+      # this one by itself), so `skipped` passes and `failure` and `cancelled` do not
+      - name: No needed job failed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "- \(.key): \(.value.result)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' > /dev/null \
+            || { echo "::error::a needed job did not succeed (see the list above)"; exit 1; }
