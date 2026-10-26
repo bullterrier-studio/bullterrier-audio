@@ -107,6 +107,14 @@ Heavy models (Demucs, ADTOF, Basic Pitch) are optional and run isolated, on firs
 - The gates are the review: reviewers check behaviour and these rules only. A defect a review finds twice becomes a gate.
 - Design decisions and reasons go in `docs/design-decisions.md`, not here.
 
+## Parameters
+
+An analyser declares its parameters once (a pydantic model, as in bullterrier-image and bullterrier-control), each with a default, a
+unit (`seconds`, `beats`, `hz`, `decibels`, `semitones`, `count`, `fraction`), a range that holds the default, and a description.
+Use the field's own terms (window, hop, band, threshold, tolerance, floor), never `strength`, `factor`, `val`, `k`. A threshold is
+relative to the input (a share of its loudness, a percentile of its own values) and says so in the unit and description; an
+absolute one carries its evidence. A bad value fails at construction, naming analyser, field, constraint and value.
+
 ## Fixing defects: structurally, not defensively
 
 A fix removes the cause, not the symptom.
