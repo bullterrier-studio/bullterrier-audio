@@ -2,7 +2,7 @@
 
 The decisions that shape bullterrier-audio and still hold, each with its reason and what it costs or commits us to. Rules for
 contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the five packages, names, shared formats) are in
-`bullterrier-design`.
+[ecosystem.md](ecosystem.md).
 
 ## Scope
 

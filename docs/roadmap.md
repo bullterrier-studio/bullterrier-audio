@@ -2,8 +2,8 @@
 
 Batches of work, in order. Each batch gets its own plan before work starts. Sizes: **S** about one working session,
 **M** two or three, **L** four or more. Decisions behind the batches: [design-decisions.md](design-decisions.md).
-Prior experiments with reusable code: `.local/prior-work.md` (git-ignored; machine-specific paths). Most of this package's
-work exists already in the Sonic Pi experiment; batches extract and re-test it, they do not invent it.
+Much of this package's work exists in earlier experiments (a song-to-Sonic-Pi rebuild tool and an audio-reactive video
+prototype); batches extract and re-test it, they do not invent it.
 
 | # | Batch | Size | State |
 |---|---|---|---|

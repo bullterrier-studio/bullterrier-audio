@@ -26,7 +26,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Every rule is in [CLAUDE.md](CLAUDE.md);
 
 ## Works with
 
-bullterrier-audio is one of five independent packages under the Bullterrier Studio organisation. It depends on none of
+bullterrier-audio is one of five independent packages of [Bullterrier Studio](https://github.com/bullterrier-studio)
+([docs/ecosystem.md](docs/ecosystem.md)). It depends on none of
 them. It writes its results in `bullterrier-control`'s formats (Series, Event, Grid) without importing it, so
 `bullterrier-control` can shape them and `bullterrier-video` can map them onto pictures.
 

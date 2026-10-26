@@ -2,16 +2,24 @@
 
 Python library and CLI that **finds what is in a sound and writes it down as time-aligned data**: tempo, beats, bars,
 sections, onsets, energy per band, stems, drum hits and notes. The field is music information retrieval (MIR). See `README.md`
-(usage), `docs/design-decisions.md` (why), and the ecosystem design in `../bullterrier-design/` (`audio.md`, `control.md`,
-`naming.md`, `README.md`).
+(usage), `docs/design-decisions.md` (why), `docs/ecosystem.md` (the five packages and their rules).
 
 **Write docs tersely.** This file, the README, `docs/`, docstrings, reports and briefs: state the rule or fact, drop preamble,
-repetition and justification a reader does not need to act. Reasons go in `docs/design-decisions.md`, once.
+repetition and justification a reader does not need to act. Reasons go in `docs/design-decisions.md`, once. Committed files are
+public: no absolute paths, no references to folders outside the repository.
+
+## Start here
+
+```bash
+uv sync && uv run poe setup     # once per clone: environment, git hooks, commit template
+uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
+```
 
 **State: scaffold only.** The project shell and gates exist; no analysis is written yet. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (next: A1, after bullterrier-control's formats). Most of the analysis exists already in
-earlier experiments, listed in `.local/prior-work.md` (git-ignored, this machine only): read it before writing an analysis, and
-port and re-test rather than invent.
+before it starts: `docs/roadmap.md` (next: A1, after bullterrier-control's formats). Much of the analysis exists in earlier
+experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
+and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
+never commit or cite them.
 
 ## Responsibility
 
