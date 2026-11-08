@@ -1,6 +1,6 @@
 # The Bullterrier ecosystem
 
-Bullterrier is a set of five independent Python packages for music-synced, subject-aware visuals, published by
+Bullterrier is a set of six independent Python packages for music-synced, subject-aware visuals, published by
 [Bullterrier Studio](https://github.com/bullterrier-studio). Each repository is named after its package and carries this
 page, so it can be read without the others.
 
@@ -10,19 +10,25 @@ page, so it can be read without the others.
 | `bullterrier-vector` | Draws parametric shapes, as SVG or pixels. |
 | `bullterrier-audio` | Finds what is in a sound and writes it down as time-aligned data. |
 | `bullterrier-control` | Produces control signals (automation, keyframes, modulation) that drive any parameter. |
+| `bullterrier-scene` | Puts layers (pictures, drawings, fields) together into one picture: placed, masked, blended, styled. |
 | `bullterrier-video` | Decides what happens when and what drives what, then renders it. |
 
 ```
-                          bullterrier-video
-             /             /          \             \
+                  bullterrier-video
+                   /            \
+        bullterrier-scene        \
+        /       |        \        \
   bullterrier-image  bullterrier-vector  bullterrier-control  bullterrier-audio
                      (never depend on each other)
 ```
 
+Video also reads control's signals and audio's data directly; the diagram shows only the layer stack.
+
 ## Rules
 
-1. Image, vector, audio and control never depend on each other. Only video knows the other four; an app or a script may
-   combine them the same way.
+1. Image, vector, audio and control never depend on each other. Scene is the one package that knows image and vector (and
+   control, for parameters); video knows scene, control and audio. Dependencies run downward only. An app or a script
+   may combine packages the same way.
 2. Packages connect through plain data formats, each owned by one package, not through shared code.
 3. A capability goes where its concept belongs, not where it was first needed.
 4. Time is in seconds everywhere. Frames exist only in video.
@@ -39,10 +45,11 @@ Identity is spelled in full, `bullterrier-<concept>` (the distribution and repos
 
 | Format | Owner | Used by |
 |---|---|---|
-| Picture, subject cut-out, look (effects and their values) | image | video |
-| Parameter description (unit, range, meaning) | image | video |
-| Drawing (shapes, modifiers and their values); its SVG or RGBA picture | vector | video, image |
+| Picture, subject cut-out, look (effects and their values) | image | scene, video |
+| Parameter description (unit, range, meaning) | image | scene, video |
+| Drawing (shapes, modifiers and their values); its SVG or RGBA picture | vector | scene, video, image |
 | Series, Event, Grid (in a bundle file) | control | audio, video |
+| Scene (canvas, layers, placement, masks, blends, effect chains) | scene | video, apps |
 | Project (timeline, mappings) | video | apps |
 
 The owner documents and versions a format; changing one is a breaking release of its owner.
@@ -64,7 +71,9 @@ The owner documents and versions a format; changing one is a breaking release of
 | A star, a blob, text as outlines, an imported SVG logo | vector |
 | Draw-on at 40 % progress, a star morphing into letters | vector |
 | A star that pulses on every kick | control (the envelope) + video (the mapping) + vector (the star) |
-| Placing a drawing over footage, layering | video |
+| Placing pictures and drawings on a canvas, masks, blend modes, layer order (a poster) | scene |
+| A photo clipped into letters; type between a background and a cut-out subject | scene |
+| Placing a drawing over footage | video (a footage frame enters scene as a layer) |
 
 Audio *measures* ("a kick at 1.20 s"); control *shapes* ("on each kick, jump to 1 and release over 0.3 s"); video *maps*
 ("that signal drives the glow radius from 2 to 20 px") and renders.
