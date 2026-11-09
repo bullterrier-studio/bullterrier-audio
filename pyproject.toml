@@ -8,8 +8,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "jcakstins", email = "janis.cakstins@gmail.com" }
 ]
-# 3.12 is the oldest version the code needs (PEP 695 generics are its newest syntax); the suite is green on 3.12, 3.13
-# and 3.14.
+# 3.12 is the oldest version the code needs; the suite is green on 3.12, 3.13 and 3.14.
 requires-python = ">=3.12"
 keywords = ["beat detection", "tempo", "music information retrieval", "MIR", "stems", "onset detection", "audio analysis"]
 classifiers = [
@@ -32,6 +31,8 @@ dependencies = []
 
 [project.urls]
 Repository = "https://github.com/bullterrier-studio/bullterrier-audio"
+Documentation = "https://github.com/bullterrier-studio/bullterrier-audio/tree/main/docs"
+Changelog = "https://github.com/bullterrier-studio/bullterrier-audio/blob/main/CHANGELOG.md"
 Issues = "https://github.com/bullterrier-studio/bullterrier-audio/issues"
 
 [project.scripts]
@@ -41,10 +42,13 @@ bt-audio = "bullterrier_audio.cli:main"
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
 
-# Read by `check-wheel-contents` in `poe build-check`: the wheel holds exactly src/bullterrier_audio minus these, so a
-# shipped picture or test fails (W102), and so does library code left out of the wheel (W101).
+# Read by `check-wheel-contents` in `poe build-check`: the wheel holds exactly src/bullterrier_audio minus these, so a shipped
+# picture or test fails (W102), and so does library code left out of the wheel (W101).
 [tool.check-wheel-contents]
 package = "src/bullterrier_audio"
+# the one top-level name a wheel may hold; it also keeps W005 (a name common to many wheels)
+# from firing for it, and adds W201/W202: a stray top-level entry in the wheel fails
+toplevel = ["bullterrier_audio"]
 package_omit = ["__pycache__", "*.pyc", ".*", "*.jpg", "*.jpeg", "*.png", "*.gif", "test_*.py"]
 
 [dependency-groups]
@@ -75,13 +79,16 @@ dev = [
 [tool.poe.tasks]
 # PYTHONWARNDEFAULTENCODING makes the interpreter, and every xdist worker it starts, report text IO without an
 # encoding (EncodingWarning), which `filterwarnings` below turns into a failure; an -X flag would not reach the workers
-test = { cmd = "pytest -q -n auto", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the test suite on every CPU core (pytest-xdist; the order stays random)" }
+# Three tiers (CLAUDE.md, "Gates"): `fast` while working, `check` before a push to main, `full` before a tag and in CI. The tests that
+# prove a gate fails on a known-bad input copy the workspace and build in it (marked `gate`), and the shared tools' own tests are the
+# same in every project (marked `tooling`): `test` is the project's own suite, and `gate-tests` runs both when the tooling changed.
+test = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'not gate and not tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the project's test suite on every CPU core (pytest-xdist; the order stays random), without the tests of the tooling" }
+gate-tests = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'gate or tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the tests of the tooling: the proofs that each gate fails on a known-bad input, and the shared tools' own tests" }
 # Not part of `check`: the suite on the oldest Python and the lowest release each direct dependency's floor allows, in a
 # throwaway environment (uv.lock and the project environment stay as they are; the first run downloads the old
-# releases). It is for CI. tests/tools/test_lint_and_type_gate.py is left out because mypy's verdict on our source
-# depends on numpy's own type annotations, which are not what this checks. No PYTHONWARNDEFAULTENCODING here: numpy 1.26
-# runs a text-mode subprocess when numpy.testing is imported, and the encoding of our own IO is `poe test`'s concern.
-check-min-deps = { cmd = "uv run --isolated --python 3.12 --resolution lowest-direct pytest -q -n auto --ignore=tests/tools/test_lint_and_type_gate.py", help = "Run the suite on Python 3.12 against the lowest allowed release of every dependency" }
+# releases). It is for CI. Tests marked `typecheck` are left out because mypy's verdict on our source depends on the
+# dependencies' own type annotations, which are not what this checks; tests marked `gate` or `tooling` because they test our tooling (`poe gate-tests`).
+check-min-deps = { cmd = "python tools/run_capped.py -- uv run --isolated --python 3.12 --resolution lowest-direct pytest -q -n auto -m 'not typecheck and not gate and not tooling'", help = "Run the suite on Python 3.12 against the lowest allowed release of every dependency" }
 # Not part of `check`: it asks the PyPI vulnerability database about every locked package (runtime, extras and dev
 # tools, pinned by hash), so it needs the network and its verdict changes as advisories are published. For CI and
 # before a release; an advisory with no fixed release is ignored with `--ignore-vuln ID` and listed in SECURITY.md.
@@ -95,7 +102,15 @@ build-check = { sequence = ["uv build --quiet --clear --no-create-gitignore --ou
 # injection, persisted credentials, over-broad permissions). `uv run`, because the actionlint-py distribution names
 # its program differently. zizmor stays offline so the gate needs no network; its online audits need a GitHub token.
 lint-workflows = { sequence = ["uv run actionlint", "zizmor --offline .github"], default_item_type = "cmd", help = "Lint the GitHub workflows (actionlint, zizmor)" }
-check = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, "vulture", "deptry .", { ref = "build-check" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "The full gate (format, lint, workflows, dead code, dependencies, distributions, types, tests); stops at the first failure" }
+dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
+# The steps `check` and `full` share, cheapest first, stopping at the first failure
+gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", { ref = "build-check" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, distributions, types, tests)" }
+fast = { sequence = ["ruff format --check .", "ruff check .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
+# A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
+# change since they last passed touches what they test ([tool.gate-proofs] below), `full` always
+proofs = { cmd = "uv run python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
+check = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "proofs" }, "uv run python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, and the proofs when the change touches what they test; a pass is remembered for that tree" }
+full = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "gate-tests" }, "uv run python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check` with the proofs always run; a pass is remembered for that tree" }
 # Release from main in one command: checks, plan, [y/N], version bump, changelog section, commit, annotated tag and an
 # atomic push of main and the tag (CONTRIBUTING.md, "Releasing")
 release = { cmd = "uv run python tools/release.py", help = "Release VERSION from main (e.g. 0.1.0rc1 to TestPyPI, 0.1.0 to PyPI): check, plan, ask, bump, tag, push [--dry-run] [--yes]" }
@@ -109,14 +124,39 @@ header-max-length = 72
 body-max-line-length = 100
 scope-pattern = "^[a-z0-9][a-z0-9/_-]*$"
 
+# Read by tools/run_capped.py: the memory cap (MB, summed over a command's whole process group) the poe tasks that run
+# tests go through, so a runaway test fails the gate instead of freezing the machine
+[tool.run-capped]
+cap-mb = 4000
+
+
+# Read by tools/pre_push.py (`poe proofs`, the last step of `poe check`): the gate proofs (tests marked `gate`) run in `check` only when the
+# change touches one of these globs, relative to the repository root, or when the base to compare with cannot be read. List every file a proof
+# copies or matches the text of; not one it only appends to (that cannot break it, and the project's own source changes often, which
+# would run the slow proofs every time). `poe full` runs them always.
+[tool.gate-proofs]
+triggers = [
+    "pyproject.toml",
+    ".pre-commit-config.yaml",
+    "tools/*",
+    "tests/tools/*",
+    ".github/*",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # test files are named after the module they test, so equal names in different folders must never collide
 # a misspelt marker or option is an error, not a silently ignored typo
-# with xdist (`-n`), tests marked `xdist_group` stay on one worker, so an expensive module fixture is built once
-addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "--dist=loadgroup"]
+# with xdist (`-n`), a test file runs on one worker, so a module fixture that spawns tools is built once (`xdist_group` marks
+# do nothing with pytest 9.2 and xdist 3.8: five marked tests ran on three workers)
+addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "--dist=loadfile"]
 # an xfail that starts passing fails the run, so the marker cannot outlive the bug it names
 xfail_strict = true
+markers = [
+    "gate: proves a gate fails on a known-bad input in a copy of the workspace; slow, so `poe test` and `poe check` leave it out unless the change touches [tool.gate-proofs]; `poe gate-tests` and `poe full` run it",
+    "tooling: tests a shared tool of the template (the same file in every project, tested in the template too); `poe test` leaves it out, `poe gate-tests` runs it with the proofs",
+    "typecheck: type-checks the package with mypy; `poe check-min-deps` leaves it out",
+]
 # Every warning fails the test that raised it: a leaked file or process (ResourceWarning), a deprecated call, and, when
 # PYTHONWARNDEFAULTENCODING=1 is set (`poe test` sets it), text IO that relies on the locale's encoding (EncodingWarning,
 # PEP 597).
@@ -153,9 +193,8 @@ select = [
     "PTH",  # pathlib, not os.path / open() / glob: one way to handle paths
 ]
 # Deliberately NOT enabled: TRY003 / EM (message-style noise); the docstring style rules D2xx / D4xx beyond D419 (we
-# enforce presence, not formatting); PLR2004 magic numbers and PLR0913 argument counts (numeric code and
-# parameter-rich analysers); FBT (boolean arguments); TID252 (relative imports are fine inside the package); PLC0415
-# (lazy imports are deliberate).
+# enforce presence, not formatting); PLR2004 magic numbers and PLR0913 argument counts; FBT (boolean arguments); TID252
+# (relative imports are fine inside the package); PLC0415 (lazy imports are deliberate).
 # Ignored: ANN202 (private-function return types are mypy's job), ANN401 (Any is sometimes right), RUF001-003
 # (unicode in strings, docstrings and comments is wanted), PLW2901 (rebinding a loop variable is a clear idiom).
 ignore = ["ANN202", "ANN401", "RUF001", "RUF002", "RUF003", "PLW2901"]
@@ -192,7 +231,7 @@ extraPaths = ["src"]
 python_version = "3.12"
 files = ["src", "tests"]
 # tests/ has no __init__.py (pytest imports it with importlib), so equal test file names in different folders need
-# module names from their paths: tests/ops/test_x.py is tests.ops.test_x, src/bullterrier_audio/x.py is bullterrier_audio.x.
+# module names from their paths: tests/tools/test_x.py is tests.tools.test_x, src/bullterrier_audio/x.py is bullterrier_audio.x.
 explicit_package_bases = true
 mypy_path = "src"
 check_untyped_defs = true
@@ -203,19 +242,21 @@ strict_equality = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 show_error_codes = true
-# NOT enabled: warn_return_any, disallow_any_generics (bare np.ndarray everywhere), full --strict.
+# NOT enabled: warn_return_any, disallow_any_generics, full --strict.
 
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
-# Dead code fails the gate (`uv run vulture`, in `poe check` and the pre-push hook). Only src is scanned: code that only
-# tests use is dead, unless a public `__all__` lists it. 60 % is vulture's lowest level: it reports unused functions,
-# classes and attributes, not just unreachable lines. Each exemption below is a name or decorator that a framework calls.
+# Dead code fails the gate (`uv run poe dead-code`, in `poe check` and the pre-push hook). Only src is scanned: code
+# that only tests use is dead, unless a public `__all__` lists it. 60 % is vulture's lowest level: it reports unused
+# functions, classes and attributes, not just unreachable lines. Each exemption below is a name or decorator that a
+# framework calls.
 [tool.vulture]
 paths = ["src"]
 min_confidence = 60
+ignore_names = []
 
 # Every import is declared, and only once in the right place (`uv run deptry .`, in `poe check`): a missing, unused,
 # transitive-only or development-only dependency fails. tests/ is not scanned (deptry's default): tests may use the

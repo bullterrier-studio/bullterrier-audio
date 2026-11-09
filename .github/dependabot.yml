@@ -1,5 +1,5 @@
-# Weekly update pull requests for the pinned actions (their commit SHAs) and the locked Python dependencies, with
-# Conventional Commit messages (`ci: bump ...`, `build(deps): bump ...`). Minor and patch updates come grouped, one
+# Weekly update pull requests for the pinned actions (their commit SHAs) and the locked Python dependencies,
+# with Conventional Commit messages (`ci: bump ...`, `build(deps): bump ...`). Minor and patch updates come grouped, one
 # pull request per ecosystem; a major update gets its own. CI runs on each.
 version: 2
 updates:
@@ -29,3 +29,4 @@ updates:
       python:
         patterns: ["*"]
         update-types: [minor, patch]
+

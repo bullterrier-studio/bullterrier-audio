@@ -18,7 +18,7 @@ The rules, each reported as `[rule-id] explanation: "offending line"`:
     subject-empty               nothing after the colon
     subject-full-stop           the subject ends with a period
     subject-case                the subject's first word is a plain capitalised word (one capital, then only lowercase
-                                letters, such as `Add`). Acronyms (`API`), identifiers (`GlowParams`, `numpy_op`),
+                                letters, such as `Add`). Acronyms (`API`), identifiers (`RoundingParams`, `numpy_op`),
                                 numbers and lowercase words are fine
     header-max-length           the header is longer than `header-max-length` characters
     body-leading-blank          the line after the header is not blank
@@ -43,7 +43,7 @@ from pathlib import Path
 DEFAULT_PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 TABLE = "tool.commit-message"
 KEYS = {"types", "header-max-length", "body-max-line-length", "scope-pattern"}
-EXAMPLE = "feat(glow): add a falloff parameter"
+EXAMPLE = "feat(core): add a rounding parameter"
 
 # git writes these itself and rewrites them later; validating them would only get in the way
 UNVALIDATED_PREFIXES = ("Merge ", 'Revert "', "fixup! ", "squash! ", "amend! ")

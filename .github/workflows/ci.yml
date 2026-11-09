@@ -29,7 +29,8 @@ concurrency:
 jobs:
   # Whether a pull request changes anything but documentation. Every other event (main, merge queue, tags, releases, by
   # hand) always runs everything. The documentation is the same set tools/pre_push.py skips the local gate for: pages in
-  # the top level and docs/, and docs/images/.
+  # the top level and docs/, and the pictures in docs/images/ (its PICTURE_SUFFIXES; tests/tools/test_pre_push.py keeps
+  # the two equal).
   changes:
     name: What changed
     runs-on: ubuntu-latest
@@ -50,7 +51,12 @@ jobs:
               - '**'
               - '!*.md'
               - '!docs/*.md'
-              - '!docs/images/**'
+              - '!docs/images/**/*.[gG][iI][fF]'
+              - '!docs/images/**/*.[jJ][pP][eE][gG]'
+              - '!docs/images/**/*.[jJ][pP][gG]'
+              - '!docs/images/**/*.[pP][nN][gG]'
+              - '!docs/images/**/*.[sS][vV][gG]'
+              - '!docs/images/**/*.[wW][eE][bB][pP]'
       - name: Say what runs
         env:
           EVENT: ${{ github.event_name }}

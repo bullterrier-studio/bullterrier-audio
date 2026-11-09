@@ -18,6 +18,7 @@ uv run poe setup       # once per clone: the git hooks and the commit-message te
 ## Before you push
 
 ```bash
+uv run poe fast        # while working: format, lint, types, quick tests
 uv run poe check       # every gate: format, lint, workflows, dead code, dependencies, build, types, tests
 uv run poe fix         # repairs what lint and format can repair by themselves
 uv run poe audit       # known vulnerabilities in the locked dependencies (pip-audit; needs the network)
@@ -37,7 +38,8 @@ means in practice.
 
 ## Continuous integration and releasing
 
-Every push to `main` and every pull request runs the whole gate on GitHub; a release is one command, `uv run poe release
+Every push to `main` and every pull request runs the whole gate on GitHub, and builds the sdist and the wheel, which is
+installed and run on Linux, macOS and Windows before anything is released; a release is one command, `uv run poe release
 VERSION`, and it publishes only if everything passes. How it works, how to approve and recover, and the one-time setup
 are in [docs/releasing.md](docs/releasing.md).
 

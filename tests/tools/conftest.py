@@ -99,6 +99,12 @@ class GitRepo:
     def push(self) -> None:
         self.git("push", "-q", "origin", "main")
 
+    def add_remote(self, name: str) -> None:
+        """Add a remote `name`: a new empty bare repository next to the working one."""
+        bare = self.path.parent / f"{name}.git"
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True, env=self.env)
+        self.git("remote", "add", name, str(bare))
+
     def answer_gh(self, *, stdout: str = "", stderr: str = "", exit_code: int = 0) -> None:
         """Make every later `gh` call print `stdout` and `stderr` and exit with `exit_code`."""
         reply = {"stdout": stdout, "stderr": stderr, "exit_code": exit_code}
@@ -131,3 +137,10 @@ class GitRepo:
 @pytest.fixture
 def git_repo(tmp_path, uv_run_env) -> GitRepo:
     return GitRepo(tmp_path, uv_run_env["PATH"])
+
+
+@pytest.fixture
+def copy_env(uv_run_env) -> dict[str, str]:
+    """The environment for running a poe task in a copy of the project: its `uv run` uses this environment as it is
+    (`UV_PROJECT_ENVIRONMENT`, `UV_NO_SYNC`) instead of making one for the copy and building the copy's package."""
+    return {**uv_run_env, "UV_PROJECT_ENVIRONMENT": str(Path(sys.executable).parents[1]), "UV_NO_SYNC": "1"}

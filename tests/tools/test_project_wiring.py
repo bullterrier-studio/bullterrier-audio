@@ -5,6 +5,7 @@ check without rewriting, say how to reproduce a failure), so adding or changing 
 detector the rules use is shown a known-bad and a known-good input.
 """
 
+import itertools
 import re
 import shlex
 import shutil
@@ -17,10 +18,9 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-# one xdist worker runs this module, so its fixture (a poe dry run of every task) is built once
-pytestmark = pytest.mark.xdist_group("project-wiring")
-# the only commands that are not dev dependencies: tools every machine that can clone the repository already has
-SYSTEM_COMMANDS = {"git", "uv"}
+# the only commands that are not dev dependencies: tools every machine that can clone the repository already has, the
+# interpreter of the environment poe runs in
+SYSTEM_COMMANDS = {"git", "uv", "python"}
 # tool settings must live in pyproject.toml, never in the hook wiring
 TOOL_OPTIONS = ("--select", "--ignore", "--extend-select", "--line-length", "--config", "--strict", "--python-version")
 FIXING_OPTIONS = ("--fix", "--unsafe-fixes", "--write")
@@ -73,15 +73,74 @@ def test_poe_accepts_every_task_and_each_runs_a_command(poe_runs):
 
 
 def test_the_gate_only_checks_and_never_rewrites_files(poe_runs):
-    commands = poe_runs["check"]
-    assert [command for command in commands if fixing_words(shlex.split(command))] == [], commands
+    for task in ("check", "full"):
+        commands = poe_runs[task]
+        assert [command for command in commands if fixing_words(shlex.split(command))] == [], commands
+
+
+def test_fast_runs_only_what_check_runs(poe_runs):
+    """`fast` is the inner loop: a step that is not part of the whole gate would pass here and mean nothing there."""
+    assert [command for command in poe_runs["fast"] if command not in poe_runs["check"]] == []
+
+
+@pytest.mark.parametrize("tier", ["check", "full"])
+def test_a_tier_remembers_a_pass_for_the_push_by_starting_and_ending_with_the_hook_tool(poe_runs, tier):
+    commands = poe_runs[tier]
+    assert commands[0].endswith("tools/pre_push.py start")
+    assert commands[-1].endswith(f"tools/pre_push.py pass {tier}")
+
+
+def test_full_runs_everything_check_runs_but_the_conditional_proofs_and_the_record(poe_runs):
+    """`check` runs the proofs only when the change touches what they test (`pre_push.py proofs`); `full` always."""
+    conditional = next(command for command in poe_runs["check"] if command.endswith("pre_push.py proofs"))
+    missing = [command for command in poe_runs["check"][:-1] if command not in poe_runs["full"]]
+    assert missing == [conditional]
+
+
+def test_the_python_suite_leaves_the_slow_tests_of_the_tooling_to_their_own_task(poe_runs):
+    """The gate proofs and the shared tools' own tests (the same in every project, tested in the template) run in
+    `gate-tests`: in `check` only when the tooling changed, in `full` always. The suite is the project's own."""
+    for task in ["test", "check-min-deps"]:
+        assert "not gate and not tooling" in poe_runs[task][0], poe_runs[task]
+    assert "-m 'gate or tooling'" in poe_runs["gate-tests"][0]
 
 
 def test_every_poe_command_runs_a_dev_dependency_or_a_system_tool(pyproject, poe_runs):
-    allowed = dev_dependency_names(pyproject) | SYSTEM_COMMANDS
+    # a project whose own gates need another system tool (node, say) names it in `[tool.project-wiring] system-commands`
+    allowed = (
+        dev_dependency_names(pyproject)
+        | SYSTEM_COMMANDS
+        | set(pyproject["tool"].get("project-wiring", {}).get("system-commands", []))
+    )
     for task, commands in poe_runs.items():
         for command in commands:
             assert shlex.split(command)[0] in allowed, f"poe task {task!r} runs {command!r}"
+
+
+def runs_tests(words: list[str]) -> bool:
+    """Whether a command line starts a test runner (pytest, or `cargo test`)."""
+    return "pytest" in words or any(words[i : i + 2] == ["cargo", "test"] for i in range(len(words)))
+
+
+def test_every_task_that_runs_tests_runs_them_under_the_memory_cap(poe_runs):
+    # a runaway test froze the machine; a timeout limits seconds, not memory
+    runners = [
+        (task, words)
+        for task, commands in poe_runs.items()
+        for command in commands
+        if runs_tests(words := shlex.split(command))
+    ]
+    assert {"test", "gate-tests"} <= {task for task, _ in runners}, "the detector must see the suite's own tasks"
+    assert [(task, words) for task, words in runners if "tools/run_capped.py" not in words] == []
+
+
+def test_the_test_runner_detector_finds_pytest_and_cargo_test_and_nothing_else():
+    assert runs_tests(shlex.split("pytest -q -m 'not gate'"))
+    assert runs_tests(shlex.split("cargo test --workspace --locked"))
+    assert runs_tests(shlex.split("python tools/run_capped.py -- pytest -q"))
+    assert not runs_tests(shlex.split("cargo build --locked"))
+    assert not runs_tests(shlex.split("cargo deny --locked check"))
+    assert not runs_tests(shlex.split("ruff check tests/"))
 
 
 def test_the_rewrite_detector_catches_each_fixing_option_and_passes_checking_commands():
@@ -123,12 +182,41 @@ def test_every_stage_a_hook_runs_at_is_installed_by_a_bare_install(precommit):
     assert used <= installed, f"hooks run at {sorted(used - installed)}, which a bare install does not set up"
 
 
+# `uv run` options a hook may give: `--no-sync` runs the tool as the environment is, without syncing it first (the
+# commit hooks never import the package)
+UV_RUN_OPTIONS = {"--no-sync"}
+
+
+@pytest.mark.parametrize(
+    ("entry", "refused"),
+    [
+        pytest.param("uv run ruff check", [], id="no option is fine"),
+        pytest.param("uv run --no-sync ruff check", [], id="--no-sync is allowed"),
+        pytest.param("uv run --frozen ruff check", ["--frozen"], id="--frozen is refused"),
+        pytest.param("uv run --no-sync --locked ruff check", ["--locked"], id="one refused option among allowed ones"),
+        pytest.param("uv run ruff check --frozen", [], id="an option after the program belongs to the program"),
+    ],
+)
+def test_a_hook_may_give_uv_run_only_the_allowed_options(entry, refused):
+    assert uv_run_options_refused(shlex.split(entry)) == refused
+
+
+def uv_run_options_refused(words: list[str]) -> list[str]:
+    """The options a hook's `uv run` gives that are not in `UV_RUN_OPTIONS`."""
+    options = itertools.takewhile(lambda word: word.startswith("-"), words[2:])
+    return [option for option in options if option not in UV_RUN_OPTIONS]
+
+
 def test_local_hooks_run_the_projects_pinned_tools_through_uv(precommit, pyproject):
     assert shutil.which("uv"), "uv must be installed to run the hooks"
     for hook_id, hook in hooks_by_id(precommit, "local").items():
-        tokens = shlex.split(hook["entry"])
+        words = shlex.split(hook["entry"])
         assert hook["language"] == "system", hook_id
-        assert tokens[:2] == ["uv", "run"], hook_id
+        assert words[:2] == ["uv", "run"], hook_id
+        refused = uv_run_options_refused(words)
+        assert not refused, f"{hook_id} gives uv run {refused}"
+        options = list(itertools.takewhile(lambda word: word.startswith("-"), words[2:]))
+        tokens = words[:2] + words[2 + len(options) :]  # uv run PROGRAM ARGS
         if tokens[2] == "python":  # the project's own script: it must exist
             assert (ROOT / tokens[3]).is_file(), f"{hook_id} runs {tokens[3]}, which does not exist"
         elif tokens[2] == "poe":  # a project task: it must be defined

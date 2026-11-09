@@ -1,5 +1,5 @@
 """No test hard-codes the project's version: the version changes with every release, so a test that writes it (a built
-file name such as `bullterrier_audio-<version>-py3-none-any.whl`) breaks the build on the next release. Tests read the
+file name such as `bullterrier-audio-<version>-py3-none-any.whl`) breaks the build on the next release. Tests read the
 version from pyproject.toml instead.
 
 The scan is `tools/release.py`'s `literal_versions`, the same one the release command uses to refuse a version that a

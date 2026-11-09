@@ -3,7 +3,7 @@ plan, asks, then bumps the version, writes the changelog section, commits, tags 
 Whatever it refuses, it refuses before changing anything; a push that fails says how to retry or undo.
 
 Each test is a rehearsal in a throwaway repository with a local bare `origin` (tests/tools/conftest.py), with the real
-git, uv and git-cliff (this repository's git-cliff configuration). The project's `poe check` is a task the test chooses
+git, uv and git-cliff (this repository's git-cliff configuration). The project's `poe full` is a task the test chooses
 (passing or failing) in place of the real gate, and `gh` is a stand-in that answers as the test says. The versions are
 far from this project's own, so no test ever holds the project's version (tests/tools/test_no_hard_coded_version.py).
 """
@@ -14,6 +14,8 @@ import tomllib
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.tooling
 
 ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = "https://example.com/owner/demo"
@@ -30,12 +32,12 @@ def git_cliff_tables() -> str:
 
 
 def write_project(git_repo, version: str, gate: str = "pass") -> None:
-    """pyproject.toml and uv.lock of a project at `version`; its `poe check` runs `python -c <gate>`."""
+    """pyproject.toml and uv.lock of a project at `version`; its `poe full` runs `python -c <gate>`."""
     git_repo.write(
         "pyproject.toml",
         f'[project]\nname = "demo"\nversion = "{version}"\nrequires-python = ">=3.12"\ndependencies = []\n\n'
         f'[project.urls]\nRepository = "{REPOSITORY}"\n\n'
-        f"[tool.poe.tasks]\ncheck = \"python -c '{gate}'\"\n\n" + git_cliff_tables(),
+        f"[tool.poe.tasks]\nfull = \"python -c '{gate}'\"\n\n" + git_cliff_tables(),
     )
     lock = git_repo.run_uv("lock")
     assert lock.returncode == 0, lock.stderr
@@ -333,7 +335,7 @@ def test_a_release_diverged_from_origin_is_refused(git_repo):
 
 def test_a_release_whose_gate_fails_is_refused(git_repo):
     released_once(git_repo, gate="raise SystemExit(3)")
-    assert "poe check" in refused(git_repo, "7.2.0rc1")
+    assert "poe full" in refused(git_repo, "7.2.0rc1")
 
 
 def test_a_release_whose_ci_ok_failed_on_github_is_refused(git_repo):

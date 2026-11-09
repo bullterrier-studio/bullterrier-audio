@@ -16,8 +16,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-# one xdist worker runs this module, so its fixture (a copy of the project and a cold mypy cache) is built once
-pytestmark = pytest.mark.xdist_group("lint-and-type-gate")
+pytestmark = [pytest.mark.gate, pytest.mark.typecheck]
 LIBRARY_MODULE = "src/bullterrier_audio/probe.py"  # a module of the package, under no per-file exemption
 TEST_MODULE = "tests/test_probe.py"
 

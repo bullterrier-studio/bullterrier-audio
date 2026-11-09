@@ -39,15 +39,15 @@ def rules_of(message: str, config=CONFIG) -> set[str]:
 
 
 VALID = {
-    "plain": "feat: add a falloff parameter\n",
+    "plain": "feat: add a mode parameter\n",
     "no trailing newline": "fix: stop rounding twice",
-    "scope": "fix(glow): clip the halo at the image border\n",
+    "scope": "fix(core): clip the result at the integer limit\n",
     "scope with slash and digits": "refactor(ops/warp2): split the displacement step\n",
     "breaking bang": "feat!: drop the strength parameter\n",
     "breaking bang with scope": "feat(core)!: rename Recipe.steps\n",
-    "every configured type": "revert: undo the glow clipping\n",
-    "body": "fix(core): reject NaN images\n\nA NaN made the blur return all NaN, which the checks reported as blank.\n",
-    "body with a blank line inside": "perf: cache the kernel\n\nFirst paragraph.\n\nSecond paragraph.\n",
+    "every configured type": "revert: undo the rounding clipping\n",
+    "body": "fix(core): reject NaN factors\n\nA NaN factor made scale return NaN, which the checks reported as zero.\n",
+    "body with a blank line inside": "perf: cache the parsed config\n\nFirst paragraph.\n\nSecond paragraph.\n",
     "trailers": (
         "docs: explain the recipe format\n\nWhy: new users guessed the step order.\n\n"
         "Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nSigned-off-by: A B <a@b.example>\n"
@@ -61,23 +61,23 @@ VALID = {
     "indented code block": f"docs: show usage\n\nExample:\n\n    uv run bt-audio run {'x' * 120}\n",
     "tab indented code line": f"docs: show usage\n\n\t{'x' * 120}\n",
     "acronym subject": "fix: ASCII glyphs are cut off\n",
-    "code identifier subject": "feat: GlowParams gets a falloff\n",
-    "subject with a digit": "fix: 2x upscaling shifts the image\n",
+    "code identifier subject": "feat: RoundingParams gets a mode\n",
+    "subject with a digit": "fix: 2x scaling rounds twice\n",
     "merge": "Merge branch 'feature' into main\n",
     "merge of a pull request": "Merge pull request #12 from a/b\n",
-    "revert": 'Revert "feat: add glow"\n\nThis reverts commit 0123456789abcdef.\n',
-    "fixup": "fixup! feat: add glow\n",
-    "squash": "squash! feat: add glow\n",
-    "amend": "amend! feat: add glow\n\nfeat: add glow with falloff\n",
-    "git comment lines": "# Please enter the commit message\nfeat: add glow\n# On branch main\n#\n# Changes:\n",
-    "comment line between paragraphs": "feat: add glow\n# a comment\n\nBody text.\n",
+    "revert": 'Revert "feat: add rounding"\n\nThis reverts commit 0123456789abcdef.\n',
+    "fixup": "fixup! feat: add rounding\n",
+    "squash": "squash! feat: add rounding\n",
+    "amend": "amend! feat: add rounding\n\nfeat: add rounding with mode\n",
+    "git comment lines": "# Please enter the commit message\nfeat: add rounding\n# On branch main\n#\n# Changes:\n",
+    "comment line between paragraphs": "feat: add rounding\n# a comment\n\nBody text.\n",
     # what follows the scissors line is a diff, not the message: it must not be checked (here it is far too long)
     "scissors section": (
-        "feat: add glow\n\n# ------------------------ >8 ------------------------\n# Keep out\n" + "+" * 300 + "\n"
+        "feat: add rounding\n\n# ------------------------ >8 ------------------------\n# Keep out\n" + "+" * 300 + "\n"
     ),
-    "trailing blank lines": "feat: add glow\n\n\n\n",
-    "leading blank lines": "\n\nfeat: add glow\n",
-    "trailing space after the header": "feat: add glow   \n",
+    "trailing blank lines": "feat: add rounding\n\n\n\n",
+    "leading blank lines": "\n\nfeat: add rounding\n",
+    "trailing space after the header": "feat: add rounding   \n",
 }
 
 
@@ -96,35 +96,35 @@ def test_every_type_from_the_config_is_accepted():
 
 
 INVALID = {
-    "unknown type": ("feature: add glow\n", "type-enum"),
-    "uppercase type": ("Feat: add glow\n", "type-enum"),
-    "no type at all": ("add glow\n", "header-format"),
-    "missing colon": ("feat add glow\n", "header-format"),
-    "missing space after colon": ("feat:add glow\n", "header-format"),
-    "two spaces after colon": ("feat:  add glow\n", "header-format"),
-    "space before colon": ("feat : add glow\n", "header-format"),
-    "unclosed scope": ("feat(glow: add glow\n", "header-format"),
+    "unknown type": ("feature: add rounding\n", "type-enum"),
+    "uppercase type": ("Feat: add rounding\n", "type-enum"),
+    "no type at all": ("add rounding\n", "header-format"),
+    "missing colon": ("feat add rounding\n", "header-format"),
+    "missing space after colon": ("feat:add rounding\n", "header-format"),
+    "two spaces after colon": ("feat:  add rounding\n", "header-format"),
+    "space before colon": ("feat : add rounding\n", "header-format"),
+    "unclosed scope": ("feat(rounding: add rounding\n", "header-format"),
     "empty subject": ("feat:\n", "subject-empty"),
     "blank subject": ("feat: \n", "subject-empty"),
-    "empty subject with scope": ("fix(glow)!:\n", "subject-empty"),
-    "trailing period": ("feat: add glow.\n", "subject-full-stop"),
+    "empty subject with scope": ("fix(rounding)!:\n", "subject-empty"),
+    "trailing period": ("feat: add rounding.\n", "subject-full-stop"),
     "header one over the limit": (HEADER_72 + "a\n", "header-max-length"),
-    "no blank line before the body": ("feat: add glow\nBody starts too soon.\n", "body-leading-blank"),
+    "no blank line before the body": ("feat: add rounding\nBody starts too soon.\n", "body-leading-blank"),
     "body line one over the limit": (f"fix: x\n\n{BODY_100}b\n", "body-max-line-length"),
     "long line after a wrapped one": (f"fix: x\n\nshort\n{'d' * 101}\n", "body-max-line-length"),
     "long line that merely contains a URL": (
         f"fix: x\n\nsee https://example.com and then a lot of prose {'e' * 90}\n",
         "body-max-line-length",
     ),
-    "capitalised subject": ("feat: Add glow\n", "subject-case"),
-    "capitalised single-letter subject word": ("feat: A glow parameter\n", "subject-case"),
+    "capitalised subject": ("feat: Add rounding\n", "subject-case"),
+    "capitalised single-letter subject word": ("feat: A rounding parameter\n", "subject-case"),
     "empty message": ("", "empty-message"),
     "only whitespace": (" \n\n  \n", "empty-message"),
     "only git comment lines": ("# Please enter the commit message\n#\n# On branch main\n", "empty-message"),
-    "scope with uppercase": ("feat(Glow): add glow\n", "scope-format"),
-    "scope with a space": ("feat(my scope): add glow\n", "scope-format"),
-    "empty scope": ("feat(): add glow\n", "scope-format"),
-    "scope starting with a dash": ("feat(-glow): add glow\n", "scope-format"),
+    "scope with uppercase": ("feat(Rounding): add rounding\n", "scope-format"),
+    "scope with a space": ("feat(my scope): add rounding\n", "scope-format"),
+    "empty scope": ("feat(): add rounding\n", "scope-format"),
+    "scope starting with a dash": ("feat(-rounding): add rounding\n", "scope-format"),
     "breaking change footer without description": ("feat: x\n\nBREAKING CHANGE:\n", "breaking-change-description"),
     "breaking change footer with only spaces": ("feat: x\n\nBREAKING-CHANGE:   \n", "breaking-change-description"),
 }
@@ -136,9 +136,9 @@ def test_invalid_message_is_rejected_by_exactly_the_named_rule(message, rule):
 
 
 def test_a_problem_quotes_the_offending_line():
-    [problem] = problems("feat: add glow.\n")
+    [problem] = problems("feat: add rounding.\n")
     assert problem.startswith("[subject-full-stop]")
-    assert '"feat: add glow."' in problem
+    assert '"feat: add rounding."' in problem
 
 
 def test_a_body_problem_quotes_the_body_line_not_the_header():
@@ -150,7 +150,7 @@ def test_a_body_problem_quotes_the_body_line_not_the_header():
 
 
 def test_independent_problems_are_all_reported_not_just_the_first():
-    assert rules_of("Feature(Glow): Add glow.\nbody right away\n") >= {
+    assert rules_of("Feature(Rounding): Add rounding.\nbody right away\n") >= {
         "type-enum",
         "scope-format",
         "subject-full-stop",
@@ -160,12 +160,12 @@ def test_independent_problems_are_all_reported_not_just_the_first():
 
 def test_the_subject_case_rule_accepts_only_what_it_documents():
     # rejected: one capital followed by lowercase letters only
-    assert rules_of("feat: Add glow\n") == {"subject-case"}
+    assert rules_of("feat: Add rounding\n") == {"subject-case"}
     # accepted: acronyms, identifiers, hyphenated words, lowercase
     for subject in [
-        "API gets a falloff",
+        "API gets a mode",
         "CI runs ruff",
-        "GlowParams gets a falloff",
+        "RoundingParams gets a mode",
         "numpy_op is faster",
         "v2 is out",
     ]:
@@ -180,7 +180,7 @@ def test_the_header_limit_applies_to_the_header_and_the_body_limit_to_the_body()
 
 
 def test_an_unlisted_type_names_every_allowed_one():
-    [problem] = problems("feature: add glow\n")
+    [problem] = problems("feature: add rounding\n")
     for commit_type in CONFIG.types:
         assert commit_type in problem
 
@@ -256,7 +256,7 @@ def test_a_broken_config_is_a_loud_error_naming_the_table(tmp_path, content, cap
 
 def test_main_returns_zero_for_a_good_message_file_and_prints_nothing(tmp_path, capsys):
     message = tmp_path / "COMMIT_EDITMSG"
-    message.write_text("feat(glow): add a falloff parameter\n\nWhy: the halo had a hard edge.\n", encoding="utf-8")
+    message.write_text("feat(core): add a rounding parameter\n\nWhy: halves rounded up.\n", encoding="utf-8")
     assert checker.main([str(message)]) == 0
     captured = capsys.readouterr()
     assert captured.out == ""
@@ -265,12 +265,12 @@ def test_main_returns_zero_for_a_good_message_file_and_prints_nothing(tmp_path, 
 
 def test_main_returns_one_and_reports_every_problem_on_stderr(tmp_path, capsys):
     message = tmp_path / "COMMIT_EDITMSG"
-    message.write_text("Added glow.\n", encoding="utf-8")
+    message.write_text("Added rounding.\n", encoding="utf-8")
     assert checker.main([str(message)]) == 1
     err = capsys.readouterr().err
     assert "[header-format]" in err
-    assert '"Added glow."' in err
-    assert "feat(glow): add a falloff parameter" in err  # a valid example
+    assert '"Added rounding."' in err
+    assert "feat(core): add a rounding parameter" in err  # a valid example
     assert "CLAUDE.md" in err  # where the convention is explained
 
 

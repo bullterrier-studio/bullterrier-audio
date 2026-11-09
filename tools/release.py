@@ -12,7 +12,7 @@ VERSION is greater (PEP 440) than the version in pyproject.toml and than every `
 writes it (the tag's CI would fail on such a test); the new changelog section passes tools/check_release.py, the rules
 release.yml applies to the pushed tag; `ci-ok` has not failed on GitHub for HEAD (asked through `gh`; a missing or
 offline gh, or a commit GitHub has no result for yet, is a warning: release.yml runs the whole CI on the tag before it
-publishes anything); and `poe check` passes. Then it prints the plan and asks `[y/N]`: `--yes` answers yes for
+publishes anything); and `poe full` passes. Then it prints the plan and asks `[y/N]`: `--yes` answers yes for
 scripts, `--dry-run` stops after the plan. Releasing runs `uv version VERSION` (pyproject.toml and uv.lock), writes
 CHANGELOG.md, commits `chore(release): vVERSION`, creates the annotated tag `vVERSION` and runs
 `git push --atomic origin main vVERSION` (never a force-push), then prints where the release workflow runs and which
@@ -228,9 +228,11 @@ def release(version: str, *, dry_run: bool, assume_yes: bool) -> int:
     published = check_release(f"v{version}", version, changelog, tag_on_main=True)
     start = _run("git", "rev-parse", "HEAD")
     ci = _check_ci(start, repository)
-    print(f"release: running the gate, `poe check`, before releasing v{version}", flush=True)
-    if subprocess.run([sys.executable, "-m", "poethepoet", "check"], check=False).returncode != 0:
-        raise ReleaseError(["`poe check` failed: fix the gate before releasing"])
+    print(
+        f"release: running the gate, `poe full` (`check` and the gate proofs), before releasing v{version}", flush=True
+    )
+    if subprocess.run([sys.executable, "-m", "poethepoet", "full"], check=False).returncode != 0:
+        raise ReleaseError(["`poe full` failed: fix the gate before releasing"])
     environment, index = ("testpypi", "pre-release, TestPyPI") if published.prerelease else ("pypi", "PyPI")
     push = f"git push --atomic origin main v{version}"
     carried = f"{ahead} commit{'' if ahead == 1 else 's'} not on origin/main yet" if ahead else "nothing else"

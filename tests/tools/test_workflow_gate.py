@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.gate
+
 ROOT = Path(__file__).resolve().parents[2]
-# one xdist worker runs this module, so its fixture (poe's dry run of the task) is built once
-pytestmark = pytest.mark.xdist_group("workflow-gate")
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +58,7 @@ def test_the_workflows_as_they_are_pass(git_repo, workflows, commands):
 def test_a_job_that_needs_a_missing_job_fails_the_gate(git_repo, workflows, commands):
     ci = workflows / "ci.yml"
     text = ci.read_text(encoding="utf-8")
-    broken = text.replace(", test, min-deps,", ", tests, min-deps,")
+    broken = text.replace(", test, ", ", tests, ")
     assert broken != text, "the fault was not written, so this test would check nothing"
     ci.write_text(broken, encoding="utf-8")
     code, output = lint_workflows(git_repo, commands)

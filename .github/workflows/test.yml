@@ -1,6 +1,7 @@
-# The test suite (it runs the import contracts too) on every supported operating system and Python. A pull request runs
-# the corners of that grid: the oldest and newest Python on Linux, and one newer Python on macOS and on Windows; every
-# other event (main, tags, releases, by hand) runs all nine. Called by ci.yml; can also be started by hand.
+# The test suite (it runs the import contracts too) on every supported operating system and Python.
+# A pull request runs the corners of that grid: the oldest and newest Python on Linux, and one newer Python on macOS and
+# on Windows; every other event (main, tags, releases, by hand) runs all nine. Called by ci.yml; can also be started by
+# hand.
 name: Test
 
 on:
@@ -14,7 +15,7 @@ jobs:
   test:
     name: Python ${{ matrix.python }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false # one red platform must not hide the state of the others
       # `github.event_name` is the caller's event (ci.yml's) when this file is called
@@ -36,3 +37,8 @@ jobs:
       # -ra lists every skipped or expected-failing test with its reason; --durations shows what makes the run slow
       - name: Tests (pytest; skips and the 10 slowest tests are listed)
         run: uv run --locked poe test -ra --durations=10
+      # the gate proofs (`poe full` runs them too): each copies the workspace, writes a known-bad input and expects the gate to fail.
+      # The gates run on Linux in lint.yml, so the proofs run once, on the Linux cell both matrices have.
+      - name: Gate proofs (pytest -m gate; the 10 slowest are listed)
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        run: uv run --locked poe gate-tests -ra --durations=10

@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.gate
+
 
 def deptry(checkout: Path) -> subprocess.CompletedProcess:
     command = [sys.executable, "-m", "deptry", "--no-ansi", "."]

@@ -2,7 +2,8 @@
 _commit: v0.3.0
 _src_path: gh:jcakstins/rust-project-template
 concept: audio
-description: 'Find what is in a sound (tempo, beats, sections, stems, notes, energy) and write it down as time-aligned data.'
+description: Find what is in a sound (tempo, beats, sections, stems, notes, energy)
+    and write it down as time-aligned data.
 family: bullterrier
 min_deps: true
 owner: bullterrier-studio

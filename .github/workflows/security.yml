@@ -1,6 +1,7 @@
 # Known vulnerabilities in the locked dependencies (pip-audit), code scanning (CodeQL), and the dependencies a pull
-# request adds (dependency review). Part of every CI run (ci.yml calls it, so a known vulnerability stops the build and
-# the release), and on its own weekly, because advisories appear without any change here, and by hand.
+# request adds (dependency review). Part of every CI run (ci.yml calls it,
+# so a known vulnerability stops the build and the release), and on its own weekly, because advisories appear without
+# any change here, and by hand.
 # No `concurrency`: called from ci.yml, a group shared with a scheduled run could cancel CI's pending security job.
 name: Security
 
@@ -25,7 +26,14 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
-      - run: uv run --locked poe audit
+      # the tools only: the audit reads the lock file, so the package is not built. UV_NO_SYNC reaches the `uv run` poe
+      # runs each command with.
+      - name: Install the locked development tools, not the package
+        run: uv sync --locked --no-install-project
+      - name: Python dependencies (pip-audit) against known vulnerabilities
+        run: uv run --no-sync poe audit
+        env:
+          UV_NO_SYNC: "1"
 
   codeql:
     name: CodeQL
@@ -38,6 +46,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # reads the source as it is (build-mode none): nothing is compiled for the analysis
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           languages: python

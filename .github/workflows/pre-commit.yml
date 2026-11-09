@@ -27,10 +27,11 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-      - name: Install the locked dependencies
-        run: uv sync --locked
+      # the tools only: no hook imports the package
+      - name: Install the locked development tools, not the package
+        run: uv sync --locked --no-install-project
       # ruff-format and ruff-check are the first two steps of the lint job; running them here too would do it twice
       - name: Commit hooks on every file
-        run: uv run --locked pre-commit run --all-files --hook-stage pre-commit
+        run: uv run --no-sync pre-commit run --all-files --hook-stage pre-commit
         env:
           SKIP: ruff-format,ruff-check

@@ -1,5 +1,5 @@
-# The static gates of `poe check`, each its own step so a failure names its tool, plus the workflow linters.
-# Called by ci.yml; can also be started by hand.
+# The static gates of `poe check`, each its own step so a failure names its tool, plus the workflow linters. Called by
+# ci.yml; can also be started by hand.
 name: Lint
 
 on:
@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   lint:
-    name: Format, lint, dead code, dependencies, types, workflows
+    name: Format, lint, dead code, docs, dependencies, types, workflows
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,7 +28,7 @@ jobs:
       - name: Lint (ruff check)
         run: uv run --locked ruff check .
       - name: Dead code (vulture)
-        run: uv run --locked vulture && echo "vulture found no dead code"
+        run: uv run --locked poe dead-code && echo "vulture found no dead code"
       - name: Dependencies (deptry)
         run: uv run --locked deptry .
       - name: Types (mypy)

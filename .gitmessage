@@ -13,4 +13,4 @@
 #   Co-Authored-By: Your Model Name <noreply@anthropic.com>
 #
 # One logical change per commit. Never skip the hooks with --no-verify.
-# Example: feat(grid): fold tempo into the musical range
+# Example: feat(core): add a rounding parameter
