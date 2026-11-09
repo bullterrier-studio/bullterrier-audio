@@ -567,6 +567,7 @@ def process():
 def test_a_gate_does_not_begin_while_a_live_poe_holds_the_record(git_repo, monkeypatch, process, holder, refused):
     git_repo.commit("chore: start", {"start.txt": "start"})
     monkeypatch.chdir(git_repo.path)
+    monkeypatch.setenv("COLUMNS", "20")  # Linux's ps cut the command line, `poe` last, at a narrow terminal's width
     pid = process(holder).pid
     (git_repo.path / ".git" / "gate-running").write_text(str(pid), encoding="utf-8")
 

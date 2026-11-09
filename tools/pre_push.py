@@ -131,7 +131,8 @@ def _clean_tree() -> bool:
 def _process(pid: int) -> tuple[int, str] | None:
     """(parent PID, command line) of process `pid`, None when it is not running."""
     row = subprocess.run(  # noqa: S603  fixed argv; the PID is a number
-        ["ps", "-o", "ppid=,command=", "-p", str(pid)],  # noqa: S607  ps is a system tool
+        # -ww: the whole command line; procps cuts it at COLUMNS even into a pipe, which hid `poe` on CI runners
+        ["ps", "-ww", "-o", "ppid=,command=", "-p", str(pid)],  # noqa: S607  ps is a system tool
         capture_output=True,
         encoding="utf-8",
         check=False,

@@ -12,13 +12,23 @@ from hypothesis import settings
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# what the process the tests run in may bring along that would change what they do: a git hook's repository (GIT_DIR,
+# GIT_INDEX_FILE, GIT_WORK_TREE; also set by a linked worktree, `rebase -x` and `bisect`), the push the pre-push gate
+# runs for (PRE_COMMIT_*), and a developer's Cargo build settings (a build target breaks the gate proofs' Rust builds,
+# flags thrash their kept build folders). Where Cargo and rustup live (CARGO_HOME, RUSTUP_HOME) stays.
+HIDDEN_PREFIXES = ("GIT_", "PRE_COMMIT_", "CARGO_BUILD_", "CARGO_PROFILE_", "CARGO_TARGET_", "CARGO_ENCODED_")
+HIDDEN_NAMES = ("RUSTFLAGS", "RUSTDOCFLAGS", "RUSTUP_TOOLCHAIN", "CARGO_INCREMENTAL")
+
+
 @pytest.fixture(autouse=True, scope="session")
-def no_enclosing_git_or_push():
-    """Hide what a git hook hands the process: its repository (GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE; also set by a
-    linked worktree, `rebase -x` and `bisect`) and the push the pre-push gate is running for (PRE_COMMIT_*). A test's
-    git would act on that repository, and the push would decide what tools/pre_push.py does in the tests. Session-wide,
-    so the module fixtures that copy the environment never see them either."""
-    hidden = {name: os.environ.pop(name) for name in list(os.environ) if name.startswith(("GIT_", "PRE_COMMIT_"))}
+def no_enclosing_git_push_or_build_settings():
+    """Hide `HIDDEN_PREFIXES` and `HIDDEN_NAMES` for the whole session, so the module fixtures that copy the environment
+    never see them either; tests/tools/test_isolation.py shows it."""
+    hidden = {
+        name: os.environ.pop(name)
+        for name in list(os.environ)
+        if name.startswith(HIDDEN_PREFIXES) or name in HIDDEN_NAMES
+    }
     yield
     os.environ.update(hidden)
 
