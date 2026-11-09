@@ -10,3 +10,5 @@ owner: bullterrier-studio
 release: true
 rust: false
 short: bt
+author: Janis Cakstins
+author_email: janis.cakstins@gmail.com
