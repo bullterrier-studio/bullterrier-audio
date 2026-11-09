@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "jcakstins", email = "janis.cakstins@gmail.com" }
+    { name = "Janis Cakstins", email = "janis.cakstins@gmail.com" }
 ]
 # 3.12 is the oldest version the code needs; the suite is green on 3.12, 3.13 and 3.14.
 requires-python = ">=3.12"
@@ -104,13 +104,13 @@ build-check = { sequence = ["uv build --quiet --clear --no-create-gitignore --ou
 lint-workflows = { sequence = ["uv run actionlint", "zizmor --offline .github"], default_item_type = "cmd", help = "Lint the GitHub workflows (actionlint, zizmor)" }
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
-gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", { ref = "build-check" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, distributions, types, tests)" }
+gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, types, tests)" }
 fast = { sequence = ["ruff format --check .", "ruff check .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
 # A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
 # change since they last passed touches what they test ([tool.gate-proofs] below), `full` always
 proofs = { cmd = "uv run python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
 check = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "proofs" }, "uv run python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, and the proofs when the change touches what they test; a pass is remembered for that tree" }
-full = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "gate-tests" }, "uv run python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check` with the proofs always run; a pass is remembered for that tree" }
+full = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "build-check" }, { ref = "gate-tests" }, "uv run python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check`, the build of the sdist and the wheel, and the proofs always; a pass is remembered for that tree" }
 # Release from main in one command: checks, plan, [y/N], version bump, changelog section, commit, annotated tag and an
 # atomic push of main and the tag (CONTRIBUTING.md, "Releasing")
 release = { cmd = "uv run python tools/release.py", help = "Release VERSION from main (e.g. 0.1.0rc1 to TestPyPI, 0.1.0 to PyPI): check, plan, ask, bump, tag, push [--dry-run] [--yes]" }
@@ -131,7 +131,7 @@ cap-mb = 4000
 
 
 # Read by tools/pre_push.py (`poe proofs`, the last step of `poe check`): the gate proofs (tests marked `gate`) run in `check` only when the
-# change touches one of these globs, relative to the repository root, or when the base to compare with cannot be read. List every file a proof
+# change since they last passed touches one of these globs, relative to the repository root, or when they never passed here. List every file a proof
 # copies or matches the text of; not one it only appends to (that cannot break it, and the project's own source changes often, which
 # would run the slow proofs every time). `poe full` runs them always.
 [tool.gate-proofs]

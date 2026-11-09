@@ -150,9 +150,18 @@ A fix removes the cause, not the symptom.
 ## Lint, types and gates
 
 `uv run poe check` runs every gate, cheapest first, stopping at the first failure: `ruff format --check`; `ruff check` (plus
-`PLW1514` explicit encodings, `BLE` no blind `except`, `PTH` pathlib); `poe lint-workflows` (actionlint, zizmor); `vulture` (dead
-code in `src`; exemptions in `[tool.vulture]`); `deptry`; `poe build-check` (twine, check-wheel-contents); `mypy`; the tests, in
-random order (import contracts and the tooling's own tests). Each gate has a test proving it fails on a known-bad input.
+`PLW1514` explicit encodings, `BLE` no blind `except`, `PTH` pathlib); `poe lint-workflows` (actionlint, zizmor); `poe dead-code`
+(vulture on `src`); `deptry`; `mypy`; the tests, in random order. `poe full` adds `poe build-check` (sdist and wheel, twine,
+check-wheel-contents).
+Each gate has a test proving it fails on a known-bad input (`tests/tools/`).
+
+**Three tiers.** `poe fast` is the inner loop (format, lint, types, the project's own tests; no build, no Rust tests, no proofs). `poe
+check` is every gate except the *tests of the tooling*: the gate proofs (marked `gate`: each copies the workspace, writes one known-bad
+input and expects the gate to fail, a cold build each) and the shared tools' own tests (marked `tooling`: the same files in every
+project, tested in the template). `check` runs them (`poe gate-tests`) only when a change since they last passed touches what they test
+(`[tool.gate-proofs] triggers` in `pyproject.toml`; `poe proofs`), or when they never passed in this clone. `poe full` is `check` with the proofs always (`poe gate-tests`);
+CI runs it on `main` and `poe release` before a tag. A new proof copies a file or matches its text: add that file to the triggers (not one it only appends to). Because a push to
+`main` runs `check`, a proof can fail on `main` for a change outside the triggers; fix forward, as the trunk has no merge queue.
 
 `ruff` wants type hints and a docstring on every public function, class, method and module, and no `print` outside the CLI.
 `mypy` checks `src` and `tests`. Fix findings properly; for a false positive use a targeted `# noqa: CODE  (reason)` or
