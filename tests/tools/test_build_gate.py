@@ -34,6 +34,7 @@ def build_check(project: Path, env: dict[str, str]) -> subprocess.CompletedProce
     return subprocess.run(command, cwd=project, env=env, capture_output=True, encoding="utf-8", check=False)
 
 
+@pytest.mark.control
 def test_the_project_as_it_is_builds_clean_distributions(project, build_env):
     result = build_check(project, build_env)
     assert result.returncode == 0, result.stdout + result.stderr

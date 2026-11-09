@@ -33,8 +33,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 
 ## Project
 
-- **The tooling mirrors bullterrier-control and bullterrier-image** (one gate, `uv run poe check`; ruff rules, mypy, vulture,
-  deptry, import-linter, hooks, Conventional Commits, CI workflows, release command). *Cost:* each repository owns its copy
-  of the tooling; a fix to one is made in the others by hand.
+- **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI
+  workflows and release command). Its reasons are in `docs/template-decisions.md`; a fix arrives with `copier update`.
 - **The version is 0.0.0 until the first release.** `poe release` accepts only a version above the one in `pyproject.toml`.
 - **The entry-point group `bullterrier_audio.analysers` is declared with the first analyser and its registry.**

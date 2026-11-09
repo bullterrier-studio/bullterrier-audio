@@ -1,0 +1,19 @@
+# This project's own CI jobs (a test in another language, a second build target, a scheduled check): ci.yml runs this
+# file beside the template's checks, the build waits for it, and so does ci-ok. The file is the project's: an update never
+# changes it. Replace the placeholder job with the project's own; the file needs at least one.
+name: Project
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  none:
+    name: No project jobs yet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Nothing to run
+        run: echo "No CI jobs of this project's own yet (.github/workflows/project.yml)"

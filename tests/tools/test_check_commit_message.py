@@ -271,7 +271,7 @@ def test_main_returns_one_and_reports_every_problem_on_stderr(tmp_path, capsys):
     assert "[header-format]" in err
     assert '"Added rounding."' in err
     assert "feat(core): add a rounding parameter" in err  # a valid example
-    assert "CLAUDE.md" in err  # where the convention is explained
+    assert "docs/rules.md" in err  # where the convention is explained
 
 
 def test_main_rejects_an_empty_message_file(tmp_path, capsys):

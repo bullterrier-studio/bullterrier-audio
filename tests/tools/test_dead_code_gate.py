@@ -18,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 DEAD_CODE = '''"""A module with code nothing calls."""
 
+from pathlib import PurePath
+
 
 def never_called_helper(value: float) -> float:
     """Nothing calls this."""
@@ -26,6 +28,17 @@ def never_called_helper(value: float) -> float:
 
 class NeverUsedThing:
     """Nothing makes one of these."""
+
+
+class Used:
+    """Made below."""
+
+    def never_called_method(self) -> int:
+        """Nothing calls this."""
+        return 3
+
+
+USED = Used()
 '''
 
 
@@ -41,16 +54,19 @@ def dead_code(checkout: Path, env: dict[str, str]) -> subprocess.CompletedProces
     return subprocess.run(command, cwd=checkout, env=env, capture_output=True, encoding="utf-8", check=False)
 
 
+@pytest.mark.control
 def test_the_package_as_it_is_has_no_dead_code(checkout, copy_env):
     result = dead_code(checkout, copy_env)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "unused" not in result.stdout
 
 
-def test_an_unused_function_and_an_unused_class_fail_the_gate_by_name(checkout, copy_env):
+def test_an_unused_function_class_method_and_import_fail_the_gate_by_name(checkout, copy_env):
     (checkout / "src" / "bullterrier_audio" / "leftover.py").write_text(DEAD_CODE, encoding="utf-8")
     result = dead_code(checkout, copy_env)
     assert result.returncode != 0
     assert "leftover.py" in result.stdout
     assert "'never_called_helper'" in result.stdout
     assert "'NeverUsedThing'" in result.stdout
+    assert "'never_called_method'" in result.stdout
+    assert "'PurePath'" in result.stdout

@@ -3,6 +3,7 @@ a branch (a release tag) and any push while local main has code its remote-track
 is left to CI, so feature-branch pushes stay quick, and so is a push that changes only documentation."""
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -419,7 +420,8 @@ def unmatched(triggers: list[str], files: list[str]) -> list[str]:
 
 def test_every_trigger_matches_a_tracked_file():
     """A trigger that matches nothing (a file renamed, a typo) silently stops the proofs guarding what it named."""
-    triggers = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["gate-proofs"]["triggers"]
+    proofs = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["gate-proofs"]
+    triggers = proofs["triggers"] + proofs.get("project-triggers", [])
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=ROOT, capture_output=True, encoding="utf-8", check=True
     ).stdout.splitlines()
@@ -499,6 +501,33 @@ def test_the_proofs_step_runs_them_until_they_pass_then_only_when_a_trigger_chan
     assert pre_push.changed_since_proofs() == []
 
 
+def test_a_project_s_own_triggers_run_the_proofs_too(git_repo, monkeypatch):
+    """`project-triggers` is the project's list beside the template's `triggers`, so its own proofs' inputs need no edit
+    of a shared line."""
+    git_repo.commit(
+        "chore: start",
+        {
+            "pyproject.toml": "[tool.gate-proofs]\ntriggers = ['tools/*']\nproject-triggers = ['examples/*']\n\n"
+            "[tool.poe.tasks]\ngate-tests = \"python -c 'raise SystemExit(7)'\"\n"
+        },
+    )
+    monkeypatch.chdir(git_repo.path)
+    pre_push.record_proofs_pass()
+    git_repo.commit("feat: an example", {"examples/star.py": "x = 1"})
+    assert pre_push.run_proofs() == 7
+
+
+def test_the_proofs_step_leaves_the_known_good_controls_to_full(git_repo, monkeypatch):
+    """A control re-runs a gate on the unchanged copy, which `check` has just run on the real tree; `full` runs them."""
+    record = "import pathlib, sys; pathlib.Path('args.txt').write_text(' '.join(sys.argv[1:]))"
+    task = f'python -c \\"{record}\\"'  # inside a TOML string, so its quotes are escaped
+    project = f"[tool.gate-proofs]\ntriggers = ['tools/*']\n\n[tool.poe.tasks]\ngate-tests = \"{task}\"\n"
+    git_repo.commit("chore: start", {"pyproject.toml": project})
+    monkeypatch.chdir(git_repo.path)
+    assert pre_push.run_proofs() == 0
+    assert (git_repo.path / "args.txt").read_text(encoding="utf-8") == "-m (gate or tooling) and not control"
+
+
 def test_failed_proofs_are_not_recorded_and_their_status_is_the_step_s(git_repo, monkeypatch):
     project_whose_proofs_exit(git_repo, 7)
     monkeypatch.chdir(git_repo.path)
@@ -560,3 +589,24 @@ def test_a_record_of_a_dead_gate_is_ignored_and_a_finished_gate_leaves_none(git_
     pre_push.record_gate_start()
     pre_push.record_gate_pass()
     assert not record.exists()
+
+
+def test_a_push_s_own_variables_do_not_reach_the_tests():
+    """The pre-push hook runs the gate, and so these tests, with the push's PRE_COMMIT_* (and a git hook's GIT_*) set:
+    to a remote not named origin they would decide the tests' pushes. tests/conftest.py hides them from every test."""
+    push = {
+        "PRE_COMMIT_REMOTE_NAME": "github",
+        "PRE_COMMIT_REMOTE_BRANCH": "refs/heads/main",
+        "PRE_COMMIT_FROM_REF": "f" * 40,
+        "PRE_COMMIT_TO_REF": "e" * 40,
+    }
+    test = f"{Path(__file__).resolve()}::test_a_feature_branch_push_with_main_level_skips_the_gate_and_succeeds"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:randomly", test],
+        cwd=ROOT,
+        env={**os.environ, **push},
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -1,7 +1,7 @@
 # Contributing to bullterrier-audio
 
-Thank you for helping. This page is the short version; [CLAUDE.md](CLAUDE.md) holds every rule in full (it is written for
-AI agents and people alike), and [docs/design-decisions.md](docs/design-decisions.md) says why the project is built the
+Thank you for helping. This page is the short version; [CLAUDE.md](CLAUDE.md) and [docs/rules.md](docs/rules.md) hold every rule in full (it is written for
+AI agents and people alike), and [docs/design-decisions.md](docs/design-decisions.md) and [docs/template-decisions.md](docs/template-decisions.md) say why the project is built the
 way it is.
 
 ## Set up
@@ -25,8 +25,8 @@ uv run poe audit       # known vulnerabilities in the locked dependencies (pip-a
 uv run pytest tests/test_cli.py -n 0  # one file or folder, in one process; `uv run poe test` runs the suite on every core
 ```
 
-`poe check` is the review: a change that passes it and follows the rules in CLAUDE.md is ready. Tests describe
-behaviour through the public API, as properties rather than golden files; CLAUDE.md's "Testing" section says what that
+`poe check` is the review: a change that passes it and follows the rules in docs/rules.md is ready. Tests describe
+behaviour through the public API, as properties rather than golden files; the "Testing" section of docs/rules.md says what that
 means in practice.
 
 ## Commits and branches

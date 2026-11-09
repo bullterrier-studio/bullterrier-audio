@@ -62,4 +62,5 @@ jobs:
           if [ "$RUNNER_OS" = Windows ]; then bin=smoke/Scripts; else bin=smoke/bin; fi
           "$bin/bt-audio" --version
           "$bin/bt-audio" --help
+          # the project's own smoke command (the template never changes this line)
           "$bin/python" -c "import bullterrier_audio; print(bullterrier_audio.__version__)"

@@ -29,11 +29,11 @@ has that tree skips the gate if the pass was of the tier the push needs or a hig
 the other way round); any other tree runs it. CI checks everything again.
 
 `pre_push.py proofs` is the last gate step of `check`: it runs `poe gate-tests` when a file changed since the commit the
-proofs last passed on (working tree and untracked files included) matches `[tool.gate-proofs] triggers` in
-pyproject.toml, and when there is no such commit: skipping is only for a change that clearly leaves the proofs' inputs
-alone. That commit is recorded in the git folder when the proofs pass on a clean working tree, in this step or in
-`full`. Not the merge base with `origin/main`: the project pushes rarely, so that base would hold weeks of work and the
-proofs would run on every `check`.
+proofs last passed on (working tree and untracked files included) matches `[tool.gate-proofs] triggers` (or the
+project's own `project-triggers`) in pyproject.toml, and when there is no such commit: skipping is only for a change
+that clearly leaves the proofs' inputs alone. That commit is recorded in the git folder when the proofs pass on a clean
+working tree, in this step or in `full`. Not the merge base with `origin/main`: the project pushes rarely, so that base
+would hold weeks of work and the proofs would run on every `check`.
 
 One gate runs per checkout: `start` also records the PID of the `poe` process running the gate, and refuses to begin
 while a live `poe` process holds that record (two gates in one checkout share its build folder and double the memory
@@ -228,11 +228,15 @@ def proofs_needed(changed: list[str] | None, triggers: list[str]) -> bool:
 def run_proofs() -> int:
     """`poe gate-tests` if the change touches what the proofs test; the last gate step of `check`."""
     config = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    if not proofs_needed(changed_since_proofs(), config["tool"]["gate-proofs"]["triggers"]):
+    proofs = config["tool"]["gate-proofs"]  # the template's triggers, and the project's own beside them
+    if not proofs_needed(changed_since_proofs(), proofs["triggers"] + proofs.get("project-triggers", [])):
         print("proofs: nothing they test changed since they last passed, so they are left to `poe full` and CI")
         return 0
     print("proofs: something they test changed since they last passed (or they never passed here): running", flush=True)
-    status = subprocess.run([sys.executable, "-m", "poethepoet", "gate-tests"], check=False).returncode
+    # the known-good controls re-run a gate on the unchanged copy, which `check` has just run on the real tree: they are
+    # left to `full` (pytest takes the last `-m`, so this one replaces the task's own)
+    command = [sys.executable, "-m", "poethepoet", "gate-tests", "-m", "(gate or tooling) and not control"]
+    status = subprocess.run(command, check=False).returncode  # noqa: S603  fixed argv, no input
     if status == 0:
         record_proofs_pass()
     return status

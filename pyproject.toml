@@ -79,7 +79,7 @@ dev = [
 [tool.poe.tasks]
 # PYTHONWARNDEFAULTENCODING makes the interpreter, and every xdist worker it starts, report text IO without an
 # encoding (EncodingWarning), which `filterwarnings` below turns into a failure; an -X flag would not reach the workers
-# Three tiers (CLAUDE.md, "Gates"): `fast` while working, `check` before a push to main, `full` before a tag and in CI. The tests that
+# Three tiers (docs/rules.md, "Three tiers"): `fast` while working, `check` before a push to main, `full` before a tag and in CI. The tests that
 # prove a gate fails on a known-bad input copy the workspace and build in it (marked `gate`), and the shared tools' own tests are the
 # same in every project (marked `tooling`): `test` is the project's own suite, and `gate-tests` runs both when the tooling changed.
 test = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'not gate and not tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the project's test suite on every CPU core (pytest-xdist; the order stays random), without the tests of the tooling" }
@@ -103,19 +103,23 @@ build-check = { sequence = ["uv build --quiet --clear --no-create-gitignore --ou
 # its program differently. zizmor stays offline so the gate needs no network; its online audits need a GitHub token.
 lint-workflows = { sequence = ["uv run actionlint", "zizmor --offline .github"], default_item_type = "cmd", help = "Lint the GitHub workflows (actionlint, zizmor)" }
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
+# The project's own gates and the steps only `full` runs: the template ships these two lines as no-ops and never changes
+# them again, so a project replaces each with a sequence of its tasks without a conflict at the next update
+project-gates = { cmd = "python -c pass", help = "The project's own gates, run last by check and full (none yet)" }
+project-full = { cmd = "python -c pass", help = "The project's own steps that only full runs (none yet)" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
-gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, types, tests)" }
+gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", "mypy", { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, types, tests, the project's own)" }
 fast = { sequence = ["ruff format --check .", "ruff check .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
 # A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
 # change since they last passed touches what they test ([tool.gate-proofs] below), `full` always
-proofs = { cmd = "uv run python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
-check = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "proofs" }, "uv run python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, and the proofs when the change touches what they test; a pass is remembered for that tree" }
-full = { sequence = ["uv run python tools/pre_push.py start", { ref = "gates" }, { ref = "build-check" }, { ref = "gate-tests" }, "uv run python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check`, the build of the sdist and the wheel, and the proofs always; a pass is remembered for that tree" }
+proofs = { cmd = "python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
+check = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, { ref = "proofs" }, "python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, and the proofs when the change touches what they test; a pass is remembered for that tree" }
+full = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, { ref = "build-check" }, { ref = "gate-tests" }, { ref = "project-full" }, "python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check`, the build of the sdist and the wheel, the proofs always, and the project's own full-only steps; a pass is remembered for that tree" }
 # Release from main in one command: checks, plan, [y/N], version bump, changelog section, commit, annotated tag and an
 # atomic push of main and the tag (CONTRIBUTING.md, "Releasing")
-release = { cmd = "uv run python tools/release.py", help = "Release VERSION from main (e.g. 0.1.0rc1 to TestPyPI, 0.1.0 to PyPI): check, plan, ask, bump, tag, push [--dry-run] [--yes]" }
+release = { cmd = "python tools/release.py", help = "Release VERSION from main (e.g. 0.1.0rc1 to TestPyPI, 0.1.0 to PyPI): check, plan, ask, bump, tag, push [--dry-run] [--yes]" }
 # `default_install_hook_types` in .pre-commit-config.yaml names the three hook types, so a bare `install` covers them
-setup = { sequence = ["pre-commit install --install-hooks", "git config --local commit.template .gitmessage"], default_item_type = "cmd", help = "Install the git hooks and the commit-message template (once per clone)" }
+setup = { sequence = ["pre-commit install --install-hooks", "git config --local commit.template .gitmessage"], default_item_type = "cmd", help = "Install the git hooks, the commit-message template (once per clone)" }
 
 # Read by tools/check_commit_message.py (the commit-msg hook): Conventional Commits 1.0 with these limits.
 [tool.commit-message]
@@ -142,6 +146,8 @@ triggers = [
     "tests/tools/*",
     ".github/*",
 ]
+# The project's own: files its own proofs copy or match (the template never changes this line)
+project-triggers = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -154,6 +160,7 @@ addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "--
 xfail_strict = true
 markers = [
     "gate: proves a gate fails on a known-bad input in a copy of the workspace; slow, so `poe test` and `poe check` leave it out unless the change touches [tool.gate-proofs]; `poe gate-tests` and `poe full` run it",
+    "control: a gate proof's known-good side (the gate passes on the unchanged copy); `check` leaves it to `full`, which runs every proof",
     "tooling: tests a shared tool of the template (the same file in every project, tested in the template too); `poe test` leaves it out, `poe gate-tests` runs it with the proofs",
     "typecheck: type-checks the package with mypy; `poe check-min-deps` leaves it out",
 ]
@@ -229,11 +236,11 @@ extraPaths = ["src"]
 # `uv run mypy` checks src and tests; the gate (`poe check`) and the pre-push hook run it.
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "tools"]  # the tools are code too: the gate runs them
 # tests/ has no __init__.py (pytest imports it with importlib), so equal test file names in different folders need
 # module names from their paths: tests/tools/test_x.py is tests.tools.test_x, src/bullterrier_audio/x.py is bullterrier_audio.x.
 explicit_package_bases = true
-mypy_path = "src"
+mypy_path = "src,tools"  # a tool imports its sibling (release.py imports check_release)
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true

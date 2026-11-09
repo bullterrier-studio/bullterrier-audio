@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[2]
 CLEAN = 'def test_probe(tmp_path):\n    (tmp_path / "a.txt").write_text("é", encoding="utf-8")\n'
 LEAKS_A_FILE = 'def test_probe(tmp_path):\n    open(tmp_path / "a.txt", "w", encoding="utf-8")\n'
 LOCALE_ENCODING = 'def test_probe(tmp_path):\n    (tmp_path / "a.txt").write_text("é")\n'
+A_DEPRECATION = (
+    'import warnings\n\n\ndef test_probe():\n    warnings.warn("deprecated", DeprecationWarning, stacklevel=1)\n'
+)
 
 
 def poe_test(tmp_path: Path, probe: str, env: dict[str, str]) -> subprocess.CompletedProcess:
@@ -44,6 +47,7 @@ def poe_test(tmp_path: Path, probe: str, env: dict[str, str]) -> subprocess.Comp
     )
 
 
+@pytest.mark.control
 def test_a_clean_test_passes(tmp_path, uv_run_env):
     result = poe_test(tmp_path, CLEAN, uv_run_env)
     assert result.returncode == 0, result.stdout + result.stderr
@@ -51,8 +55,13 @@ def test_a_clean_test_passes(tmp_path, uv_run_env):
 
 @pytest.mark.parametrize(
     ("probe", "warning"),
-    [(LEAKS_A_FILE, "ResourceWarning"), (LOCALE_ENCODING, "EncodingWarning")],
-    ids=["leaked-file", "locale-encoding"],
+    # the class with its message: the class name alone is also in the probe's source, which pytest prints
+    [
+        (LEAKS_A_FILE, "ResourceWarning"),
+        (LOCALE_ENCODING, "EncodingWarning"),
+        (A_DEPRECATION, "DeprecationWarning: deprecated"),
+    ],
+    ids=["leaked-file", "locale-encoding", "deprecation"],
 )
 def test_a_warning_fails_the_test_that_raised_it(tmp_path, uv_run_env, probe, warning):
     result = poe_test(tmp_path, probe, uv_run_env)

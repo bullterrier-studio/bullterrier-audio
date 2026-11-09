@@ -1,5 +1,5 @@
 # The commit-stage git hooks of .pre-commit-config.yaml over every file, so a commit made without the hooks installed
-# (or with them skipped) is still caught. The pre-push hooks (tests, mypy, vulture) are the lint and test workflows'
+# (or with them skipped) is still caught. The pre-push hook (the whole gate) is the lint, test and build workflows'
 # jobs. Called by ci.yml; can also be started by hand.
 name: Pre-commit
 

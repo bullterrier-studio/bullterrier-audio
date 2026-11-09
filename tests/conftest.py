@@ -12,6 +12,17 @@ from hypothesis import settings
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(autouse=True, scope="session")
+def no_enclosing_git_or_push():
+    """Hide what a git hook hands the process: its repository (GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE; also set by a
+    linked worktree, `rebase -x` and `bisect`) and the push the pre-push gate is running for (PRE_COMMIT_*). A test's
+    git would act on that repository, and the push would decide what tools/pre_push.py does in the tests. Session-wide,
+    so the module fixtures that copy the environment never see them either."""
+    hidden = {name: os.environ.pop(name) for name in list(os.environ) if name.startswith(("GIT_", "PRE_COMMIT_"))}
+    yield
+    os.environ.update(hidden)
+
+
 @pytest.fixture
 def project_copy(tmp_path):
     """`project_copy(*names)` copies the project's src/ (without bytecode caches) and the files `names` at its root into

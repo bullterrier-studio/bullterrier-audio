@@ -1,28 +1,45 @@
 # Shared files
 
-These files come from the template and are meant to be the same in every project made from it. `copier update` brings a
-change to them (the answers are in `.copier-answers.yml`); a change to one is made in the template, not here. The tables say
-what may differ.
+What the template keeps, what it hands over, and where a project adds its own. `copier update` (answers in
+`.copier-answers.yml`) brings the template's changes to the files it keeps; a change to one of them is made in the template.
+A project that has to edit a file the template keeps, to do something of its own, has found a gap: report it to the template.
 
-## Identical (apart from the project's name)
+## The project's from the start (seeds)
 
-| File | Why it is shared |
+Written once by the template, then the project's: an update never changes them (`_skip_if_exists` in the template's
+`copier.yml`), so editing them brings no conflict.
+
+| File | What it holds |
 |---|---|
-| `tools/run_capped.py`, `tests/tools/test_run_capped.py` | the memory cap every task that runs tests goes through; the cap is `[tool.run-capped] cap-mb` |
-| `tools/check_commit_message.py`, `tests/tools/test_check_commit_message.py` | Conventional Commits check; limits in `[tool.commit-message]` |
-| `tools/check_one_config_home.py`, `tests/tools/test_one_config_home.py` | one home for tool settings |
-| `tools/check_release.py`, `tools/release.py` and their tests | the release command and the tag check |
-| `.editorconfig`, `.python-version`, `.gitmessage` | formatting and commit template |
-| `pyproject.toml` poe tasks `gates`, `fast`, `proofs`, `check`, `full`, `gate-tests`, `setup`, `fix`, `test`; tables `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`, `[tool.run-capped]`, `[tool.commit-message]` | the gate |
-| `.github/workflows/{ci,lint,test,security,pre-commit,min-deps,release}.yml`, `.github/dependabot.yml` | same action SHAs everywhere; lint and test list the project's own gates only if it has extra ones |
-| `tests/tools/` gate proofs: `test_workflow_gate.py`, `test_lint_and_type_gate.py`, `test_security_gate.py`, `test_warning_gate.py`, `test_dead_code_gate.py`, `test_dependency_gate.py`, `test_project_wiring.py`, `test_pre_push.py` | every gate has a known-bad input |
+| `CLAUDE.md` | the project's purpose, names, architecture and own rules; it imports the shared rules, `@docs/rules.md` |
+| `README.md`, `SECURITY.md`, `CHANGELOG.md` | the project's own text |
+| `docs/design-decisions.md` | the project's own decisions; the template's are in `docs/template-decisions.md` |
+| `.github/workflows/project.yml` | the project's own CI jobs; `ci.yml` runs it and `ci-ok` waits for it |
 
-## Different on purpose
+## Extension points: the project's own lines in a file the template keeps
 
-| File | What differs |
+The template ships each as a no-op or an empty list and never changes that line again, so an update merges around it.
+
+| Where | For |
 |---|---|
-| `pyproject.toml` `[project]`, `[tool.importlinter]`, `[tool.vulture]`, `[tool.deptry]` | the package, its layers and exemptions |
-| `build.yml` smoke step | runs the project's own command on the installed build |
-| Domain gates and scaffolds (a `tools/` script and its `poe` task) | each project adds the checks and generators of its own kind of thing |
-| `pyproject.toml` `[tool.project-wiring] system-commands` | the system tools those gates run that are not dev dependencies (`node`, say); absent when there are none |
-| `tools/pre_push.py` env var | `BT_AUDIO_GATE_PASSED` is named after the project (`poe release` sets it) |
+| `pyproject.toml` task `project-gates` | the project's own gates: `check` and `full` run it after the template's |
+| `pyproject.toml` task `project-full` | the project's own steps that only `full` runs (an audit, a scaffold test) |
+| `pyproject.toml` `[tool.gate-proofs] project-triggers` | the files the project's own proofs copy or match |
+| `pyproject.toml` `[tool.project-wiring] system-commands` | the system tools the project's gates run that are not dev dependencies (`node`) |
+| `pyproject.toml` `[project]`, dependencies, `[tool.importlinter]`, `[tool.vulture]`, `[tool.deptry]` | the package, its layers and exemptions |
+| `.github/workflows/build.yml`, the last line of the smoke step | the project's own command run on the installed build |
+| a new `tools/<name>.py` with its `poe` task and a `tests/tools/test_<name>_gate.py` proof | a gate of the project's own kind of thing |
+
+## The template's
+
+Changed in the template, never here.
+
+| File | What it is |
+|---|---|
+| `docs/rules.md`, `docs/template-decisions.md`, `docs/shared-files.md`, `CONTRIBUTING.md`, `docs/releasing.md` | the shared rules and their reasons |
+| `tools/run_capped.py`, `tools/check_commit_message.py`, `tools/check_one_config_home.py`, `tools/pre_push.py`, `tools/release.py`, `tools/check_release.py` and their tests (marked `tooling`) | the shared tools |
+| `tests/tools/` gate proofs (marked `gate`), `tests/conftest.py`, `tests/tools/conftest.py` | every shared gate has a known-bad input; the isolation of the tests |
+| `pyproject.toml` tasks other than the extension points; tables `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`, `[tool.run-capped]`, `[tool.commit-message]`, `[tool.gate-proofs] triggers` | the gate |
+| `.github/workflows/` other than `project.yml`, `.github/dependabot.yml`, `.pre-commit-config.yaml`, `.editorconfig`, `.python-version`, `.gitmessage` | the same CI, hooks and action SHAs everywhere |
+
+The pre-push hook's `BT_AUDIO_GATE_PASSED` (set by `poe release`) is named after the project.

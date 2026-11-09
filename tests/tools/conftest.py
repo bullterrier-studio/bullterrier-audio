@@ -6,15 +6,23 @@ default branch of theirs leaks in), and the tools run with this environment's ex
 with the reply the test chose (`GitRepo.answer_gh`; by default, a green `ci-ok`) and records its arguments.
 """
 
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+# where the proofs' Cargo build folders live between runs (in the git-ignored `target/`; deleting it only makes the
+# next run compile the dependencies again)
+GATE_BUILDS = ROOT / "target" / "gate-proofs"
+# what decides how every dependency is compiled: a change to any of them starts a build folder of its own
+BUILD_INPUTS = ("Cargo.lock", "Cargo.toml", "rust-toolchain.toml")
 
 
 # what `gh api repos/OWNER/REPO/commits/SHA/check-runs` prints for a commit whose `ci-ok` passed (a real reply, trimmed)
@@ -144,3 +152,24 @@ def copy_env(uv_run_env) -> dict[str, str]:
     """The environment for running a poe task in a copy of the project: its `uv run` uses this environment as it is
     (`UV_PROJECT_ENVIRONMENT`, `UV_NO_SYNC`) instead of making one for the copy and building the copy's package."""
     return {**uv_run_env, "UV_PROJECT_ENVIRONMENT": str(Path(sys.executable).parents[1]), "UV_NO_SYNC": "1"}
+
+
+@pytest.fixture(scope="session")
+def copy_tree() -> Callable[..., Path]:
+    """`copy_tree(source, destination, **options)`: `shutil.copytree` that gives every copied file the time of the copy,
+    where `copytree` keeps the original's. Cargo calls a build fresh when its artifacts are newer than the sources, so a
+    copy that kept an old time could be taken for the edited sources an earlier proof built in the same folder."""
+
+    def copy(source: Path, destination: Path, **options) -> Path:
+        return Path(shutil.copytree(source, destination, copy_function=shutil.copy, **options))
+
+    return copy
+
+
+@pytest.fixture(scope="module")
+def build_folder(request) -> Path:
+    """The Cargo build folder of this module's proofs, shared by all its copies of the workspace and kept between runs
+    in `target/gate-proofs/`, so the dependencies are compiled once, not on every run. One folder per module and per
+    state of `BUILD_INPUTS`: a module runs on one xdist worker (`--dist=loadfile`), so no two cargo runs share it."""
+    digest = hashlib.sha256(b"".join((ROOT / name).read_bytes() for name in BUILD_INPUTS)).hexdigest()[:12]
+    return GATE_BUILDS / f"{Path(request.module.__file__).stem}-{digest}"

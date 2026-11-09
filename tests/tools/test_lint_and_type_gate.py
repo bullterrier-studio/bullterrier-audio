@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 pytestmark = [pytest.mark.gate, pytest.mark.typecheck]
 LIBRARY_MODULE = "src/bullterrier_audio/probe.py"  # a module of the package, under no per-file exemption
 TEST_MODULE = "tests/test_probe.py"
+TOOL_MODULE = "tools/probe.py"  # a script the gate runs
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ def checkout(tmp_path_factory) -> Path:
     skip = shutil.ignore_patterns("__pycache__", "*.pyc")
     shutil.copytree(ROOT / "src", root / "src", ignore=skip)
     shutil.copytree(ROOT / "tests", root / "tests", ignore=skip)
+    shutil.copytree(ROOT / "tools", root / "tools", ignore=skip)
     shutil.copy(ROOT / "pyproject.toml", root)
     return root
 
@@ -133,6 +135,31 @@ OFFENCES = {
         ruff,
         "PLC2701",
     ),
+    "a type error in a tool script": (
+        TOOL_MODULE,
+        '"""Probe."""\n\n\ndef total() -> int:\n    """Not an int."""\n    return "three"\n',
+        mypy,
+        "[return-value]",
+    ),
+    "a tool function without a return type": (
+        TOOL_MODULE,
+        '"""Probe."""\n\n\ndef total():\n    """No type."""\n    return 3\n',
+        mypy,
+        "[no-untyped-def]",
+    ),
+    "eval of a string": (
+        LIBRARY_MODULE,
+        '"""Probe."""\n\n\ndef calculate(text: str) -> object:\n    """Its value."""\n    return eval(text)\n',
+        ruff,
+        "S307",
+    ),
+    "an assert in library code": (
+        LIBRARY_MODULE,
+        '"""Probe."""\n\n\ndef positive(value: float) -> float:\n    """`value`, if positive."""\n'
+        "    assert value > 0\n    return value\n",
+        ruff,
+        "S101",
+    ),
     "a test reading a private attribute": (
         TEST_MODULE,
         "from bullterrier_audio import cli\n\n\ndef test_probe():\n    assert cli._EXIT_CODES\n",
@@ -142,6 +169,7 @@ OFFENCES = {
 }
 
 
+@pytest.mark.control
 def test_the_copy_with_a_known_good_module_passes_both_tools(checkout, with_file):
     with_file(LIBRARY_MODULE, GOOD_MODULE)
     for tool in (ruff, mypy):
