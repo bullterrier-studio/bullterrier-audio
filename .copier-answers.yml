@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; `copier update` reads this file. Commit it.
-_commit: v0.4.0
+_commit: v0.4.1
 _src_path: gh:jcakstins/rust-project-template
 author: Janis Cakstins
 author_email: janis.cakstins@gmail.com

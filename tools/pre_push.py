@@ -22,7 +22,7 @@ PRE_COMMIT_FROM_REF and PRE_COMMIT_TO_REF; when it cannot be read the gate runs.
 addition (`--no-renames`), so moving code into `docs/` still changes code.
 
 A gate that already passed on exactly the pushed tree is not repeated. `uv run poe check` (and `full`) begins with
-`uv run python tools/pre_push.py start` and ends with `uv run python tools/pre_push.py pass TIER`: the second
+`python tools/pre_push.py start` and ends with `python tools/pre_push.py pass TIER`: the second
 records the tree of `HEAD` and the tier in the git folder (never committed) only if the working tree was clean and
 `HEAD`'s tree was the same at both moments, so the record names contents that were checked in full. A push whose tip
 has that tree skips the gate if the pass was of the tier the push needs or a higher one (`full` covers `check`, never

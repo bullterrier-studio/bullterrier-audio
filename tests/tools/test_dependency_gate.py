@@ -48,8 +48,9 @@ def test_a_declared_dependency_nothing_imports_fails_naming_it(project_copy):
     checkout = project_copy("pyproject.toml")
     pyproject = checkout / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8")
-    assert "dependencies = []" in text
-    pyproject.write_text(text.replace("dependencies = []", 'dependencies = ["pluggy"]', 1), encoding="utf-8")
+    # first in the project's own list, whatever it holds already (`[]`, or runtime dependencies such as numpy)
+    assert "\ndependencies = [" in text
+    pyproject.write_text(text.replace("\ndependencies = [", '\ndependencies = ["pluggy", ', 1), encoding="utf-8")
     result = deptry(checkout)
     report = result.stdout + result.stderr
     assert result.returncode != 0, report
