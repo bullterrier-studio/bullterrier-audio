@@ -28,7 +28,7 @@ The template ships each as a no-op or an empty list and never changes that line 
 | `pyproject.toml` `[tool.project-wiring] system-commands` | the system tools the project's gates run that are not dev dependencies (`node`) |
 | `pyproject.toml` `[project]`, dependencies, `[tool.importlinter]`, `[tool.vulture]`, `[tool.deptry]` | the package, its layers and exemptions |
 | `.github/workflows/build.yml`, the last line of the smoke step | the project's own command run on the installed build |
-| a new `tools/<name>.py` with its `poe` task and a `tests/tools/test_<name>_gate.py` proof | a gate of the project's own kind of thing |
+| a new `tools/<name>.py` with its `poe` task and a `tests/tools/test_<name>_gate.py` proof (recommended, not required) | a gate of the project's own kind of thing |
 
 ## The template's
 

@@ -33,6 +33,16 @@ def no_enclosing_git_push_or_build_settings():
     os.environ.update(hidden)
 
 
+def pytest_sessionstart(session):
+    """Name the seed of the random order before any test runs, so a failure seen once, even in a run killed midway, is
+    rerun in the same order; `-q` hides the header that names it otherwise. Not on an xdist worker: it shows nothing."""
+    config = session.config
+    if config.pluginmanager.hasplugin("randomly") and config.get_verbosity() < 0 and not hasattr(config, "workerinput"):
+        config.pluginmanager.get_plugin("terminalreporter").write_line(
+            f"Using --randomly-seed={config.getoption('randomly_seed')}"
+        )
+
+
 @pytest.fixture
 def project_copy(tmp_path):
     """`project_copy(*names)` copies the project's src/ (without bytecode caches) and the files `names` at its root into

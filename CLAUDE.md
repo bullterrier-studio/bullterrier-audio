@@ -83,40 +83,22 @@ where they are stricter. This file is the project's: an update never changes it.
 
 1. **Never import control, image, vector or video.** Nor optionally, nor lazily. Shared formats are plain data owned by control.
 2. **Analysers never import each other.** Shared numeric code goes to a module named for its concept (`spectrum`, `onsets`,
-   `grid`), never `utils`/`common`/`helpers`. Extract when a second consumer needs it.
+   `grid`).
 3. **Parameters are declared once**, with unit, range and description.
 4. **Open/closed:** adding an analyser creates files named for it and modifies none.
-5. **No hidden tunables, nothing tuned to one song.** Every threshold is relative to the input (its own levels, percentiles,
-   tempo) or a named, documented parameter with its evidence. Exempt: mathematical and standard constants (a key profile, a
-   band edge from a standard), each cited in a comment. No song, artist or preset names in code, docstrings or comments.
+5. **Nothing tuned to one song.** Every threshold is relative to the input (its own levels, percentiles, tempo) or a named,
+   documented parameter with its evidence. No song, artist or preset names in code, docstrings or comments.
 6. **Determinism:** same input and settings give the same analysis on the same machine and library versions; models run with
    fixed seeds; no global random state.
-7. **Layering and the contract are tests**, run over every analyser automatically.
-8. **Errors:** callers catch `BullterrierAudioError` (`bullterrier_audio.errors`). Library code raises a subclass, never a bare
-   `ValueError`, for anything a caller or an input file can get wrong; each also inherits the matching builtin.
 
 ## Audio's standards
 
-- Public API has `__all__`: `bullterrier_audio` and the modules named there. Everything else is internal.
 - Runtime dependencies: none yet; each is declared with the first code that imports it (`deptry` fails on a dependency
   nothing imports). The core analysis needs librosa, numpy, scipy, soundfile; models with their own torch or TensorFlow
   stay optional and isolated (`docs/design-decisions.md`).
 - Third-party audio never enters the repository: inputs and outputs live in git-ignored folders; tests use synthesised
   signals (clicks at a known tempo, tones at known pitches), whose truth is known by construction.
 - One heavy job at a time on the machine (separation and transcription use every core).
-- **Trust contracts inside the library; validate at the boundary.** Outside input (a file, a parameter, a signal from another
-  package) is validated once, where it enters, with a `BullterrierAudioError` naming the value. Internal code does not
-  re-check what the layer above guarantees; a broken guarantee fails loudly and its cause is fixed. 5. **No defensive code:**
-  no fallback or default hiding a missing or invalid value; no `try/except` that continues (`except Exception`, bare
-  `except`, `contextlib.suppress`); no `isinstance`, `None` or range re-checks of internal arguments; no clamping,
-  `np.nan_to_num` or retry "just in case"; no `getattr`/`.get()` with a default for something that must exist; no widening a
-  type to silence an error; no skipped, xfailed or loosened tests. 6. **A fix that needs a design change says so:** propose
-  it under "Needs from others" instead of patching around the design. 7. **One decision, one place.** A table, constant, name
-  or rule that exists twice is a defect. Keep one definition in the owning module. For tests: look for existing coverage
-  first; add a row to the existing table; setup two files need is a fixture in the nearest `conftest.py`. 8. **KISS outranks
-  these rules.** If applying one makes the code longer, more indirect or harder to read than the problem, don't: note the
-  finding and move on. 9. Where a skill (`systematic-debugging`'s defence-in-depth, "add validation at every layer")
-  disagrees with this section, this section wins.
 - Oracles by construction: clicks at 128 BPM give a tempo of 128 and beats on the clicks; a tone at 440 Hz gives A4; a band
   series of a silent file is all zero; every event lies inside the file.
 

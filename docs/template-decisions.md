@@ -33,7 +33,32 @@ the tier the push needs or a higher one (`full` covers `check`, never the revers
 repeated a minutes-long gate on contents just checked, and a slow loop gets worked around. *Not seen by the record:* state outside
 the tree (installed cargo tools, the advisory database, the built extension); CI checks everything again.
 
-## No runtime dependency
+## No runtime dependency (a default)
 
 The package installs with nothing but its wheel. *Reason:* every dependency is something to audit, resolve and ship; add one with
-its reason here.
+its reason here. A project that needs numpy or another dependency names the rule in its `CLAUDE.md` with a one-line reason.
+
+## Invariants and defaults
+
+`rules.md` has two parts. An **invariant** has a measured or a safety reason and every project keeps it; a **default** is the
+template's taste, which a project overrides in its `CLAUDE.md` with a one-line reason. *Reason:* a pattern that does not fit
+every project, pushed on all of them, is worked around or restated in each. Reasons of the invariants not given above:
+
+- **No hidden tunables, one error base.** A value that shapes a result is reproducible only if it is a parameter; a caller
+  that catches one base class never misses a library error nor swallows a bug.
+- **`forbid(unsafe_code)` discourages, it does not ban.** The core's logic needs none, so any `unsafe` is a decision to
+  review; unsafe inside a vetted dependency is covered by `cargo-deny` advisories and is fine.
+- **Tests: behaviour through the public contract, independent oracles, no mocks of our own code.** A test coupled to the
+  implementation fails on a behaviour-preserving refactor and passes when the behaviour is broken; an oracle that shares the
+  code's formula repeats its bug.
+- **Random order, and a failure seen once is rerun with its seed.** A hidden order dependency shows up later and
+  elsewhere; `run_capped` keeps the log with the seed so the rerun is possible, and a failure that reproduces is a defect.
+- **Never loosen, skip or `--no-verify`.** A gate that can be bypassed stops being the review.
+- **Trunk-based, Conventional Commits.** One branch everyone integrates on keeps merges small; the commit type is what the
+  changelog reads.
+- **Offline and deterministic, UTF-8 and `pathlib`, no printing library.** The same inputs give the same result on every
+  machine; a library that prints or configures logging takes that decision from its caller.
+
+*Proofs for a project's own gates are recommended, not required.* The template's shared gates are identical in every project,
+so a proof that one fails on a known-bad input is tested once and holds everywhere. A project's own gate is one project's
+taste, and a cold-build proof is a cost that project weighs.
