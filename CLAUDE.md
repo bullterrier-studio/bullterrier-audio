@@ -90,6 +90,7 @@ where they are stricter. This file is the project's: an update never changes it.
    documented parameter with its evidence. No song, artist or preset names in code, docstrings or comments.
 6. **Determinism:** same input and settings give the same analysis on the same machine and library versions; models run with
    fixed seeds; no global random state.
+7. **The contract runs over every analyser**, found automatically: a new analyser needs no test registration.
 
 ## Audio's standards
 
