@@ -1560,7 +1560,9 @@ mod real_model {
     fn no_session_stays_resident_after_a_separation() -> Outcome {
         let _one = one_at_a_time();
         let samples = song(3).mix;
-        // two thread counts: a kept session per count would leave two of about 2 GB behind
+        // two thread counts: a kept session per count would leave two of about 2 GB behind. The bound lies above what the
+        // other model tests of the process leave resident (the allocator keeps their peaks: 0.8 to 1.2 GB measured) and
+        // under that and one session.
         for threads in [4, 2] {
             sound(samples.clone(), RATE)?
                 .with_separation(Separation::new(0, false, 0, false, threads)?)
@@ -1568,7 +1570,7 @@ mod real_model {
             let resident = resident_mb()?;
             println!("resident after a separation on {threads} threads: {resident:.0} MB");
             assert!(
-                resident < 1100.0,
+                resident < 1500.0,
                 "a session is still resident after {threads} threads: {resident:.0} MB"
             );
         }
