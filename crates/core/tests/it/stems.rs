@@ -1421,7 +1421,7 @@ mod real_model {
             "the stems' sum differs from the mix by {:.2} % of its energy",
             100.0 * difference / energy
         );
-        // measured 1.5 % (Apple silicon, ONNX Runtime 1.23.2); the bound is a third of the 0.1 it was, still structural
+        // measured 2.4 % (Apple silicon, ONNX Runtime 1.23.2); the bound is half of the 0.1 it was, still structural
         assert!(
             difference / energy < 0.05,
             "the stems must add up to the mix: {}",
