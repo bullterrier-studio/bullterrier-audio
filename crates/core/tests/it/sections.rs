@@ -244,6 +244,22 @@ fn a_section_with_phrase_bars_off_keeps_a_six_bar_length_and_a_four_bar_snap_dro
 }
 
 #[test]
+fn a_cut_snapped_from_a_bar_without_room_keeps_a_confidence_of_at_most_one() -> Outcome {
+    // a sharp change at bar 3 (no room for 4 bars before it) is the strongest novelty of the sound; the 4-bar grid
+    // that fits the later cuts moves it to bar 4
+    let sound = at120(
+        0.0,
+        0.0,
+        &[(3, tones(0)), (5, tones(0b111111)), (4, tones(0b011111)), (4, tones(0b001111)), (4, tones(0b000111))],
+    )?
+    .with_structure(structure(4, 0.3, 3.0, Some(4), 1.0));
+    let sections = sound.sections()?;
+    assert!(sections.iter().all(|s| (0.0..=1.0).contains(&s.confidence)), "{sections:?}");
+    sound.bundle()?;
+    Ok(())
+}
+
+#[test]
 fn a_gradual_build_is_cut_where_it_rises_not_missed_for_small_steps() -> Outcome {
     // a sharp step in the mid band of 0.25 on the energy scale, then a ramp of 0.5 over 8 bars (0.06 a bar): one bar
     // against the last changes under a third of the step, two against two by about half
@@ -484,5 +500,21 @@ proptest! {
             prop_assert_eq!(pair[0].end, pair[1].start);
         }
         prop_assert!(sections.iter().all(|s| s.end > s.start), "{sections:?}");
+    }
+
+    #[test]
+    fn any_structure_gives_confidences_in_range_and_a_bundle(
+        parts in prop::collection::vec((1_usize..=6, 0_usize..64), 2..=5),
+        min_bars in 1_u32..=5,
+        share in 0.0..=1.0_f64,
+        phrase in prop::option::of(1_u32..=6),
+    ) {
+        let parts: Vec<(usize, Vec<Tone>)> = parts.into_iter().map(|(bars, k)| (bars, material(k))).collect();
+        let sound = at120(0.0, 0.0, &parts)
+            .map_err(|e| TestCaseError::fail(e.to_string()))?
+            .with_structure(structure(min_bars, share, 3.0, phrase, 1.0));
+        let sections = sound.sections().map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert!(sections.iter().all(|s| (0.0..=1.0).contains(&s.confidence)), "{sections:?}");
+        sound.bundle().map_err(|e| TestCaseError::fail(e.to_string()))?;
     }
 }

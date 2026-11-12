@@ -66,7 +66,7 @@ pub(crate) fn sections(sound: &Sound) -> Result<Vec<Section>, Error> {
         .map(|i| (i, novelty[i]))
         .collect();
     if let Some(n) = structure.phrase_bars() {
-        candidates = snap(&candidates, n as usize, bars.len());
+        candidates = snap(&candidates, &novelty, n as usize, bars.len());
     }
     let cuts = pick(candidates, min_bars, bars.len());
 
@@ -168,15 +168,17 @@ fn novelty(bars: &[Levels], floor: f64) -> (Vec<f64>, Vec<f64>) {
 
 /// Snaps the candidate cuts to the `n`-bar grid (cut indices `offset + k n`) on which most novelty lies (the lowest
 /// offset of equal ones) and drops those more than one bar from it, or that land on the start or end of the sound.
-fn snap(candidates: &[(usize, f64)], n: usize, bars: usize) -> Vec<(usize, f64)> {
+/// A snapped cut carries the novelty of the bar it lands on, not of the one that found it: its confidence says how
+/// much the sound changes where it is cut, and `pick` keeps only bars with room, which set the scale.
+fn snap(candidates: &[(usize, f64)], novelty: &[f64], n: usize, bars: usize) -> Vec<(usize, f64)> {
     let mut score = vec![0.0; n];
-    for &(i, novelty) in candidates {
-        score[i % n] += novelty;
+    for &(i, found) in candidates {
+        score[i % n] += found;
     }
     let offset = (0..n).fold(0, |best, o| if score[o] > score[best] { o } else { best });
     candidates
         .iter()
-        .filter_map(|&(i, novelty)| {
+        .filter_map(|&(i, _)| {
             let behind = (i + n - offset) % n;
             let snapped = if behind == 0 {
                 i
@@ -187,7 +189,7 @@ fn snap(candidates: &[(usize, f64)], n: usize, bars: usize) -> Vec<(usize, f64)>
             } else {
                 return None;
             };
-            (1..bars).contains(&snapped).then_some((snapped, novelty))
+            (1..bars).contains(&snapped).then_some((snapped, novelty[snapped]))
         })
         .collect()
 }

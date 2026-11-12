@@ -471,7 +471,7 @@ impl Sound {
     /// labelled `A`, `B`, ... `Z`, `AA`, `AB`, ... in order of first appearance, so equal labels mean alike sections.
     /// A song with no cut is one section `A`. See [`Structure`] for the parameters.
     ///
-    /// `confidence` of a section is how strongly it was cut at its start: the novelty there over the largest novelty
+    /// `confidence` of a section is how strongly it was cut at its start (after snapping to `phrase_bars`): the novelty there over the largest novelty
     /// of the song, in 0 to 1; the first section starts at 0 and has confidence 1 by definition.
     ///
     /// Limits: bars come from a steady tempo and one meter (a tempo change moves the bar grid off the music); a
