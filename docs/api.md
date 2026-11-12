@@ -1,7 +1,8 @@
 # The API, from the tasks it serves
 
 **Built in part.** Load, `from_samples`, `cut`, `fade`, `mono`, `resampled`, `write`, `origin` and `bt-audio info` exist (A1,
-tested in `tests/test_sound.py` and `crates/core/tests/it/`); the measures, stems, `normalised` and `bundle()` are design.
+tested in `tests/test_sound.py` and `crates/core/tests/it/`), and so do `energy(band)`, `brightness()`, `loudness()`,
+`onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`); stems and `bundle()` are design.
 Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
@@ -52,6 +53,12 @@ song.onsets()  # list[Event]
 song.loudness()  # Series in decibels (EBU R128 short-term)
 song.brightness()  # Series in hertz (spectral centroid)
 ```
+
+`Analysis` (window, hop, lag, min_gap, relative_height, min_rise, floor: each with unit, range and default) is set once per sound with
+`song.with_analysis(hop=0.005)`; every measure reads it, so a measure takes no parameters. `energy` is a `fraction` series: the band
+level in dBFS, `floor` (default -80 dB) mapping to 0 and 0 dB to 1, saturating. `loudness()` starts at 3 s (the first full
+short-term window) and reads -70 for anything quieter (the standard's gate). `onsets()` finds the same onsets, within one hop,
+at any hop.
 
 `print(song.summary())` gives the same as text; `bt-audio info song.wav` prints it.
 
@@ -133,7 +140,7 @@ measures are registered too, so `bundle()` and the command list them all; the ty
 | Decision | Choice | Why |
 |---|---|---|
 | Entry point | `load(path)` / `from_samples(samples, rate)` give a `Sound`; nothing is measured until asked | A caller that wants kicks pays for kicks only |
-| Cache | Per `Sound` in memory, and on disk by input fingerprint (whole file) and producer identity (core version + model hash); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way |
+| Cache | Per `Sound` in memory (A2: `OnceLock`s that an edit resets). On disk by input fingerprint (whole file) and producer identity (core version + model hash) arrives with the first slow producer (A3 or A4); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way. The DSP measures of A2 cost milliseconds |
 | Artifacts | Immutable: no measure rewrites another's result; refined tempo is a different producer, not an overwrite | A step that rewrote another's output is the main recorded failure of the prototypes |
 | Writing | wav and flac (lossless), at the sound's rate and channels; a lossy format only if a consumer asks | Writing mp3 or aac needs an encoder with its own licence |
 | Analysis rate | Decode at the file's rate; DSP at 44.1 kHz mono; each model resamples to its own rate inside | The prototypes' 22.05 kHz could not see above 11 kHz, so `Band.AIR` would mean nothing |

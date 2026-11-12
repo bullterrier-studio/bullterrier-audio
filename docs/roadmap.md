@@ -13,7 +13,7 @@ into one of those seams.
 |---|---|---|---|---|
 | A0 | Scaffold: gate, hooks, CI, release tooling, CLAUDE.md | S | | done |
 | A1 | Rust core, `Sound`, edits, formats out | M | sound in → `Sound` → sound and Bundle out | done |
-| A2 | Cache, spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum; artifacts cached | |
+| A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | done |
 | A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | |
 | A4 | Models, and notes | M | an ONNX model behind a method | |
 | A5 | Stems | L | a stem is a `Sound` | |
@@ -41,11 +41,14 @@ into one of those seams.
 - Oracles: synthesised files written in the test (a sine of known length and rate decodes to that length; the same file in
   two containers gives the same samples within codec tolerance).
 
-## A2 Cache, spectrum: bands, loudness, brightness, onsets
+## A2 Spectrum: bands, loudness, brightness, onsets (done)
 
-- Cache: the whole-file fingerprint plus producer identity; in memory per `Sound`, on disk in the `bt-audio` cache folder;
-  immutable artifacts.
-  Moved here from A1: A1 produces no artifact, so the cache arrives with its first producers.
+- Cache: results are memoised in memory per `Sound` (an edit starts empty). The on-disk store (whole-file fingerprint plus
+  producer identity, `bt-audio` cache folder) moves to the first slow producer (A3 grid or A4 models): these measures take
+  milliseconds, so a disk store here would have no honest test.
+- Parameters: `Analysis` declares window, hop, lag, min_gap, relative_height, min_rise and floor once, with unit, range and
+  default; `with_analysis` sets them for a sound. Librosa as a parity reference was not added: the oracles are independent
+  by construction (a sine's band level, the R128 gain law, clicks at known times).
 - One `spectrum` module owns the STFT, the bands (`Band`, edges in api.md) and onset strength; every later measure uses it.
 - `energy(band)`, `loudness()` (EBU R128 short-term, decibels), `brightness()` (centroid, hertz), `onsets()`;
   `normalised(lufs=)` from A1 lands here, on the same loudness.

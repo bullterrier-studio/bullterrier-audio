@@ -61,12 +61,24 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 - **Audio I/O crates** (2026-11-12). Decoding: symphonia (wav, flac, mp3, ogg, m4a in pure Rust; MPL-2.0, accepted by the
   owner: an unmodified dependency puts no duty on our MIT code). Resampling: rubato's default sinc preset, no knobs. Writing:
   hound (wav, 32-bit float) and flacenc (flac, 24-bit; a sample outside [-1, 1) is refused, never clamped). Formats: serde and
-  serde_json. The numpy crate (BSD-2-Clause) and the numpy package carry samples across the Python boundary. *Reason:* each is
+  serde_json. Spectrum: realfft. Loudness: ebur128 (EBU R128 / BS.1770, tested against Tech 3341/3342 by its authors). The numpy crate (BSD-2-Clause) and the numpy package carry samples across the Python boundary. *Reason:* each is
   the well-known maintained crate for its job; nothing is hand-written that a crate covers.
 - **Edits are defined once.** `cut` rounds both ends with `round(t * rate)`, so adjacent cuts tile exactly. `fade` is linear in
   amplitude: sample `i` of the fade-in gets `i / n`, the sample `k` places before the end of the fade-out gets `k / n`.
   *Reason:* a fade shape and a rounding rule shape the result, so they are fixed and documented, not parameters.
-- **The cache arrives in A2.** A1 produces no artifact, so a store would have nothing to hold and no honest test.
+- **The cache is in memory in A2; the disk store waits for a slow producer** (2026-11-12). A `Sound` memoises its measures and an
+  edit starts empty. *Reason:* the DSP measures cost milliseconds, so a disk store (fingerprint plus producer identity) would
+  have nothing to save and no honest test; the first producer worth minutes (grid, models) brings it.
+- **One `Analysis` per sound, every measure reads it** (2026-11-12). Window, hop, lag, min_gap, relative_height, min_rise and
+  floor are declared once with unit, range and default; a measure takes no parameters. *Reason:* one way to ask, and a
+  parameter that shapes a result is never hidden. Onsets measure the dB rise of the spectrum over a lag in seconds and keep
+  the peaks relative to the sound's own strongest, so the same file gives the same onsets within one hop at any hop (the
+  prototypes counted frames and used an absolute threshold on a per-file maximum).
+- **`energy` scale:** band level in dBFS (a full-scale sine is 0 dB), `floor` (-80 dB) to 0 and 0 dB to 1, saturating: a fixed
+  rule, stated in the series' `scaling`, not a per-song percentile. **`loudness`** starts at 3 s, the first full short-term
+  window, and reads -70 LUFS (the standard's absolute gate) for anything quieter, so a series never holds -inf.
+- **No librosa parity reference.** The oracles are independent by construction (a sine's band level, the R128 gain law, clicks
+  at known times); a numpy stack for a Rust DSP would test the reference as much as the code.
 
 ## Project
 

@@ -16,8 +16,8 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: A1 done.** The Rust core loads, edits and writes a `Sound` and writes control's bundle format; no measure exists yet. The planned calls are in `docs/api.md`. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (next: A2, the spectrum and the cache). Much of the analysis exists in earlier
+**State: A2 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness and onsets, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+before it starts: `docs/roadmap.md` (next: A3, grid, sections, key, drops and `bundle()`). Much of the analysis exists in earlier
 experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
 and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
 never commit or cite them.
@@ -77,11 +77,13 @@ errors     BullterrierAudioError and its subclasses   (imports nothing from bull
 
 Rust (`crates/core`, pure: no PyO3, no numpy): `sound` (`Sound`, `Origin`, the edits), `decode` (symphonia), `resample`
 (rubato), `write` (hound, flacenc), `formats` (control's bundle v1 written from plain types; the writer enforces the rules the
-schema cannot), `error`. `crates/python` maps calls and errors only. Errors: `Decode` and `Write` are also `OSError`,
+schema cannot), `analysis` (`Analysis`: the parameters of every measure, declared once), `spectrum` (the one STFT and the
+bands), `loudness` (EBU R128 through `ebur128`), `onsets`, `error`. A `Sound` memoises its measures (an edit starts empty).
+`crates/python` maps calls and errors only. Errors: `Decode` and `Write` are also `OSError`,
 `Invalid` is also `ValueError`.
 
-Planned (`docs/api.md`, `docs/roadmap.md`): a method per measure on `Sound`, lazy and cached by input fingerprint and producer
-identity (A2); results are immutable artifacts; models run as ONNX from the core; measures registered by name.
+Planned (`docs/api.md`, `docs/roadmap.md`): more measures as methods on `Sound`; an on-disk cache by input fingerprint and
+producer identity with the first slow producer; results are immutable artifacts; models run as ONNX from the core; measures registered by name.
 
 ## Rules
 
@@ -105,7 +107,7 @@ where they are stricter. This file is the project's: an update never changes it.
 
 ## Audio's standards
 
-- Runtime dependencies: `numpy` (Python, for the extension's arrays); Rust: symphonia, rubato, hound, flacenc, serde (reasons in
+- Runtime dependencies: `numpy` (Python, for the extension's arrays); Rust: symphonia, rubato, hound, flacenc, serde, realfft, ebur128 (reasons in
   `docs/design-decisions.md`). Each is declared with the first code that imports it (`deptry`, `cargo shear`). Models run as ONNX from the Rust core, each after its weights' licence is verified
   (`docs/design-decisions.md`).
 - Third-party audio never enters the repository: inputs and outputs live in git-ignored folders; tests use synthesised
@@ -116,7 +118,7 @@ where they are stricter. This file is the project's: an update never changes it.
 
 ## Parameters
 
-An analyser declares its parameters once (a Rust struct, arriving with the first analyser in A2), each with a default, a
+`Analysis` (Rust struct, `crates/core/src/analysis.rs`) declares the parameters of the measures once, each with a default, a
 unit (`seconds`, `beats`, `hz`, `decibels`, `semitones`, `count`, `fraction`), a range that holds the default, and a description.
 Use the field's own terms (window, hop, band, threshold, tolerance, floor), never `strength`, `factor`, `val`, `k`. A threshold is
 relative to the input (a share of its loudness, a percentile of its own values) and says so in the unit and description; an

@@ -380,7 +380,8 @@ impl Sound {
     /// of the 3 s window that ends at `3 + i * hop` seconds, rounded to the nearest sample (`round(t * rate)`), and
     /// there is one for every window that ends inside the sound. A mono sound counts as dual mono, so it reads like
     /// the same samples on two channels. A window quieter than -70 LUFS (the standard's absolute gate), digital silence
-    /// included, reads -70. The result is computed once per sound.
+    /// included, reads -70. The meter's window is 30 blocks of `(rate + 5) / 10` frames, so at a rate that 10 does not divide it
+    /// differs from 3 s by a few frames. The result is computed once per sound.
     ///
     /// # Errors
     ///

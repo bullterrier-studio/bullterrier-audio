@@ -11,7 +11,8 @@ information retrieval (MIR).
 ## Status
 
 Pre-alpha. A `Sound` can be loaded (wav, flac, mp3, ogg, m4a), cut, faded, mixed to mono, resampled and written (wav,
-flac), and `bt-audio info FILE` prints its rate, channels and duration. Measures (spectrum, grid, stems, notes) come next, in
+flac), measured (energy per frequency band, brightness, EBU R128 loudness, onsets) and normalised to a loudness, and
+`bt-audio info FILE` prints its rate, channels and duration. Grid, sections, stems and notes come next, in
 batches ([docs/roadmap.md](docs/roadmap.md)).
 
 ```bash
