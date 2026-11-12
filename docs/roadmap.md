@@ -22,7 +22,10 @@ One deep call: `analyse(path) -> Analysis` with the grid, sections, events by ki
   meter; a tempo map later.
 - Sections: novelty on per-bar band energies, labels shared by similar sections (k grown until each cluster is tight).
 - Key.
-- Events: onsets (strength 0..1), beats, downbeats.
+- Events: onsets (strength 0..1), beats, downbeats. Times are seconds. Detection does not depend on the analysis hop: the same
+  song analysed at two hop sizes finds the same onsets (and, from A2, the same kicks) within one hop, and a strength keeps its
+  0..1 meaning. A test proves it. Why: a prototype that detected kicks as jumps in a bass band had to rescale its threshold when
+  its frame rate changed from 20 to 30 per second; a consumer must be able to change its frame rate without touching a threshold.
 - Series: energy per band (sub, bass, low-mid, mid, high), loudness, spectral centroid, onset strength; scaling documented,
   no smoothing for taste.
 - Writes and validates control's formats (schema copy plus conformance test); `bt-audio analyse SONG -o DIR`.
