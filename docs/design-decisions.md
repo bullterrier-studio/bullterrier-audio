@@ -98,7 +98,8 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   narrower than the shared window's bin). The prototype normalised chroma per frame and discarded the correlation; now the
   correlation is the confidence and the margin over the runner-up shows the relative-key ambiguity.
 - **`drops()` ships because it passed its gate** (2026-11-12): all positives and every decoy (riser, fade-in, half-time kick,
-  silent gap, drop down, loud hats). The rule is the song's own bar levels (lowest and highest fifth of the 10th–90th span)
+  silent gap, drop down, loud hats). The rule is the song's own beat levels, in windows of `drop_bars` bars of beats, so it does
+  not depend on the downbeat (arbitrary in four-on-the-floor music, where drops occur) (lowest and highest fifth of the 10th–90th span)
   with one absolute figure, a minimum span of 10 dB below which a song has no drops, because hats leak 1.6 dB into the bass
   bands. *Cost:* only bass steps; real music is unverified.
 - **Grid confidence travels in the bundle through control's format 2** (2026-11-12). Control's policy makes a new optional field a
