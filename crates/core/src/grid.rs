@@ -18,7 +18,9 @@ const PEAKS: usize = 5;
 /// A peak at tempo `T` makes candidates at these multiples of `T` (half and double time, and the 3:2 pairs of triplet
 /// feels) that lie inside the tempo range.
 const FOLDS: [f64; 5] = [0.5, 0.75, 1.0, 1.5, 2.0];
-/// Two candidates within this share of each other are one: the refinement ends at the same fit from either.
+/// Two candidates within this share of each other are one: the refinement ends at the same fit from either. It is also
+/// how far a peak's tempo is trusted: one up to this share beyond an edge of the tempo range is inside it, so a true
+/// tempo at an edge is not folded away by the estimate reading a hair past it.
 const MERGE: f64 = 0.01;
 /// How many times the regression re-matches the onsets and fits again. Each pass pulls in the beats the previous fit
 /// drifted away from; two passes reach the end of a 30 s sound from a period 1% off, four leave room.
@@ -182,7 +184,8 @@ fn low_near(low: &[f64], t: f64, hop: f64) -> f64 {
 }
 
 /// Candidate tempos in beats per minute, ascending: the folds of the highest peaks of the autocorrelation of the
-/// onsets (strength-weighted impulses on a [`GRID_HZ`] grid) over lags of [`LAGS`], inside `range`.
+/// onsets (strength-weighted impulses on a [`GRID_HZ`] grid) over lags of [`LAGS`], inside `range` (give or take
+/// [`MERGE`] at its edges).
 /// Only pairs of onsets are visited, so a sparse train costs its squared length, not its sample count. A peak's lag is
 /// only as fine as the grid, which over a long sound drifts a beat off its onsets: it is moved to the weighted mean of
 /// the exact distances of the pairs within `tolerance` of it, [`REFINEMENTS`] times.
@@ -233,7 +236,7 @@ fn candidates(onsets: &Onsets, range: RangeInclusive<f64>, tolerance: f64) -> Ve
             });
             FOLDS.map(|fold| 60.0 * fold / period)
         })
-        .filter(|bpm| range.contains(bpm))
+        .filter(|&bpm| bpm >= range.start() * (1.0 - MERGE) && bpm <= range.end() * (1.0 + MERGE))
         .collect();
     tempos.sort_by(f64::total_cmp);
     tempos.dedup_by(|a, b| (*a - *b).abs() <= MERGE * *b);

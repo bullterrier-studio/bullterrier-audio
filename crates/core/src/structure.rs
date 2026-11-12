@@ -26,7 +26,8 @@ use crate::analysis::within;
 ///
 /// `tempo_min` and `tempo_max` bound the tempo [`Sound::grid`](crate::Sound::grid) reports: a tempo found outside
 /// them is halved or doubled (and 3:2 related) into them. The default range is the usual one of dance music: a stated
-/// limit, not a fact of music; a slower or faster sound needs its own range.
+/// limit, not a fact of music; a slower or faster sound needs its own range. A tempo within 1% beyond an edge counts as
+/// inside it: the estimate that picks the level is no finer, and a true tempo at an edge must not fold away.
 ///
 /// `tolerance` is how far an onset may lie from a beat and still count as on it. The value in use is
 /// `max(tolerance, 1.5 * hop)` ([`Structure::effective_tolerance`]) because onsets sit on the frames of the

@@ -110,8 +110,9 @@ fn onsets_lie_within_one_hop_of_the_start_of_a_click_or_a_burst() -> Outcome {
 
 #[test]
 fn the_tempo_and_the_beats_of_a_click_train_are_found_at_every_start_and_fold() -> Outcome {
-    // 85 stays 85 (not 170) and 170 stays 170 (not 85): both lie in the default range of 70 to 180.
-    for bpm in [85.0, 128.0, 170.0] {
+    // 85 stays 85 (not 170) and 170 stays 170 (not 85): both lie in the default range of 70 to 180, and so do its two
+    // edges, which refinement reads a hair beyond.
+    for bpm in [70.0, 85.0, 128.0, 170.0, 180.0] {
         for offset in [0.0, 0.123, 0.3] {
             let grid = plain(bpm, offset)?.grid()?;
             let tempo = middle_tempo(&grid)?;
@@ -418,7 +419,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(6))]
 
     #[test]
-    fn any_steady_tempo_and_start_is_found(bpm in 80.0..170.0_f64, offset in 0.0..0.6_f64) {
+    fn any_steady_tempo_and_start_is_found(bpm in 70.0..=180.0_f64, offset in 0.0..0.6_f64) {
         let grid = plain(bpm, offset).and_then(|s| s.grid()).map_err(|e| TestCaseError::fail(e.to_string()))?;
         let tempo = middle_tempo(&grid).map_err(TestCaseError::fail)?;
         prop_assert!((tempo - bpm).abs() <= 0.1, "{bpm} found as {tempo}");

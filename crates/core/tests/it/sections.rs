@@ -283,9 +283,8 @@ fn forty_distinct_materials_get_forty_distinct_names_past_z() -> Outcome {
         56, 10, 32, 43, 25, 48, 19, 15, 55, 6, 52,
     ];
     let parts: Vec<(usize, Vec<Tone>)> = CODES.iter().map(|&code| (2, tones(code))).collect();
-    // 180 beats per minute lies at the edge of the default range, where the fit's rounding can fold it to 90: a range to 200 does not
     let wanted = Structure::new(
-        70.0, 200.0, 0.03, 0.0, 0.1, 2, 0.05, 3.0, None, 1.0, 100.0, 5000.0, 4, 0.8, 10.0,
+        70.0, 180.0, 0.03, 0.0, 0.1, 2, 0.05, 3.0, None, 1.0, 100.0, 5000.0, 4, 0.8, 10.0,
     )?;
     let sound = arrangement(180.0, 0.0, 0.0, &parts)?.with_structure(wanted);
     let sections = sound.sections()?;
