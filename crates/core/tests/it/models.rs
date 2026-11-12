@@ -7,11 +7,11 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::thread;
 
-use bullterrier_audio::Error;
 use bullterrier_audio::models::{
-    Archive, Infer, Model, ModelKind, Options, OrtInfer, Runtime, Status, Tensor, fetch, install_model,
-    install_runtime_release, model_file, model_status, models, runtime_library, runtime_status, runtimes,
+    Archive, Model, ModelKind, Options, OrtInfer, Runtime, Status, fetch, install_model, install_runtime_release,
+    model_file, model_status, models, runtime_library, runtime_status, runtimes,
 };
+use bullterrier_audio::{Error, Infer, Tensor};
 use sha2::{Digest, Sha256};
 
 use crate::common::Outcome;

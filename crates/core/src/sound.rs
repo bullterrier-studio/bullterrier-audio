@@ -11,8 +11,11 @@ use crate::decode::decode;
 use crate::drops;
 use crate::formats::{Bundle, Event, Grid, Series, Unit};
 use crate::grid;
+use crate::infer::Infer;
 use crate::key::{self, Key};
 use crate::loudness;
+use crate::notes;
+use crate::notes_params::Notes;
 use crate::onsets;
 use crate::resample::resample;
 use crate::sections::{self, Section};
@@ -45,6 +48,9 @@ struct Measured {
     sections: OnceLock<Result<Vec<Section>, Error>>,
     key: OnceLock<Result<Key, Error>>,
     drops: OnceLock<Result<Vec<Event>, Error>>,
+    /// Only `Sound::notes` fills it, and that needs the `onnx` feature.
+    #[cfg(feature = "onnx")]
+    notes: OnceLock<Vec<Event>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -75,6 +81,7 @@ pub struct Sound {
     origin: Origin,
     analysis: Analysis,
     structure: Structure,
+    notes: Notes,
     memo: Memo,
 }
 
@@ -143,6 +150,7 @@ impl Sound {
             },
             analysis: Analysis::default(),
             structure: Structure::default(),
+            notes: Notes::default(),
             memo: Memo::default(),
         })
     }
@@ -211,6 +219,7 @@ impl Sound {
             },
             analysis: self.analysis,
             structure: self.structure,
+            notes: self.notes,
             memo: Memo::default(),
         })
     }
@@ -251,6 +260,7 @@ impl Sound {
             origin: self.origin.clone(),
             analysis: self.analysis,
             structure: self.structure,
+            notes: self.notes,
             memo: Memo::default(),
         })
     }
@@ -276,6 +286,7 @@ impl Sound {
             origin: self.origin.clone(),
             analysis: self.analysis,
             structure: self.structure,
+            notes: self.notes,
             memo: Memo::default(),
         }
     }
@@ -300,6 +311,7 @@ impl Sound {
         sound.origin = self.origin.clone();
         sound.analysis = self.analysis;
         sound.structure = self.structure;
+        sound.notes = self.notes;
         Ok(sound)
     }
 
@@ -318,6 +330,7 @@ impl Sound {
             origin: self.origin.clone(),
             analysis,
             structure: self.structure,
+            notes: self.notes,
             memo: Memo::default(),
         }
     }
@@ -337,8 +350,67 @@ impl Sound {
             origin: self.origin.clone(),
             analysis: self.analysis,
             structure,
+            notes: self.notes,
             memo: Memo::default(),
         }
+    }
+
+    /// The note parameters this sound's `Sound::notes` reads.
+    #[must_use]
+    pub fn notes_params(&self) -> &Notes {
+        &self.notes
+    }
+
+    /// This sound measured under `notes` instead; nothing measured so far is carried over.
+    #[must_use]
+    pub fn with_notes(&self, notes: Notes) -> Self {
+        Self {
+            samples: self.samples.clone(),
+            rate: self.rate,
+            origin: self.origin.clone(),
+            analysis: self.analysis,
+            structure: self.structure,
+            notes,
+            memo: Memo::default(),
+        }
+    }
+
+    /// The notes of the sound, found by the installed Basic Pitch model and cleaned up; see [`Sound::notes_with`] for
+    /// what is promised. The result is computed once per sound. Needs the `onnx` feature, the ONNX Runtime library and
+    /// the model (`bt-audio install`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ModelUnavailable`] naming `bt-audio install` when the library or the model is not installed (or
+    /// cannot be used); otherwise as [`Sound::notes_with`].
+    #[cfg(feature = "onnx")]
+    pub fn notes(&self) -> Result<Vec<Event>, Error> {
+        if let Some(events) = self.memo.0.notes.get() {
+            return Ok(events.clone());
+        }
+        let model = crate::models::OrtInfer::open(&crate::models::models()[0], &crate::models::Options::from_env())?;
+        let events = self.notes_with(&model)?;
+        Ok(self.memo.0.notes.get_or_init(|| events).clone())
+    }
+
+    /// The notes of the sound as events, found with `model` (Basic Pitch: `Sound::notes` passes the installed one)
+    /// and cleaned up under the sound's [`Notes`].
+    ///
+    /// Promises: one event per note, sorted by `t` and then by `pitch`; `t` is the start, `duration` the length (above
+    /// 0), `pitch` the MIDI number as a whole number (21 to 108), `strength` the mean note posterior over the note
+    /// (0 to 1), no label. Every note lies inside the sound. A silent sound has none. The sound is converted to 22 050
+    /// Hz in one channel and fed to the model in windows of 43 844 samples that advance by 36 164; of each window
+    /// the 15 frames at both ends are dropped, and the frames that remain are placed by their sample position: a frame
+    /// is 256 samples, and frame `g` stands for the instant `g * 256 / 22050` seconds. A frame is placed at the
+    /// nearest whole frame, so at a seam between windows it can sit up to half a frame (5.8 ms) off its instant. Only
+    /// frames that end within the sound count. The cleanup is described at [`Notes`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 22 050 Hz, or when `model` does not
+    /// answer as Basic Pitch does (three outputs, the first two of shape 1 by 172 by 88), or as `model` fails.
+    pub fn notes_with(&self, model: &impl Infer) -> Result<Vec<Event>, Error> {
+        notes::notes(self, model)
     }
 
     /// The level of `band` over time, from the sound's one-channel mixdown at 44.1 kHz.
@@ -697,6 +769,7 @@ impl Sound {
             origin: self.origin.clone(),
             analysis: self.analysis,
             structure: self.structure,
+            notes: self.notes,
             memo: Memo::default(),
         })
     }

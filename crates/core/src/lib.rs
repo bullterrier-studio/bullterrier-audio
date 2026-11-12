@@ -12,10 +12,13 @@ mod drops;
 mod error;
 pub mod formats;
 mod grid;
+mod infer;
 mod key;
 mod loudness;
 #[cfg(feature = "onnx")]
 pub mod models;
+mod notes;
+mod notes_params;
 mod onsets;
 mod resample;
 mod sections;
@@ -27,7 +30,9 @@ mod write;
 
 pub use analysis::Analysis;
 pub use error::Error;
+pub use infer::{Infer, Tensor};
 pub use key::{Key, Mode, PitchClass};
+pub use notes_params::Notes;
 pub use sections::Section;
 pub use sound::{Origin, Sound};
 pub use spectrum::Band;

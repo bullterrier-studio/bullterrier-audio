@@ -14,5 +14,6 @@ mod key;
 mod measures;
 #[cfg(feature = "onnx")]
 mod models;
+mod notes;
 mod sections;
 mod sound;
