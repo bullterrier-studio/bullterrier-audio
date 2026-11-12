@@ -34,12 +34,14 @@ use crate::notes::{HOP, RATE};
 ///   than that. `reattack` differs from `onset_threshold`: that is applied to the onset posterior joined with the
 ///   rises of the note posterior, this one to the model's onset posterior alone, which is what hears a re-strike. The
 ///   published 0.5 is reused.
-/// - `ghost_share`: a note whose strength is under this share of the 90th percentile (nearest rank) of the strengths
-///   of all notes of the sound is dropped, so it is relative to the sound: a quiet sound keeps all its notes.
+/// - `ghost_share`: a note whose strength is under this share of the reference strength is dropped. The reference is
+///   the value at index `round((N - 1) * 0.9)` of the N strengths of all notes of the sound sorted ascending (0-based,
+///   halves rounded up; not nearest rank: with 8 notes it is the 7th strength). It is relative to the sound: a quiet sound
+///   keeps all its notes.
 ///   Evidence for 0.65: measured on tones with four partials (Basic Pitch v0.4.0, notes found with the cleanup
 ///   off), the notes that were played had strengths of 0.58 to 0.78 whatever their loudness (down to 50 dB under the
-///   loudest), so a quiet note is no weaker; the notes that were not played had 0.31 to 0.50, at most 0.64 of the 90th
-///   percentile of 0.78, and the weakest played note was 0.74 of it. 0.65 lies between.
+///   loudest), so a quiet note is no weaker; the notes that were not played had 0.31 to 0.50, at most 0.64 of the
+///   reference of 0.78, and the weakest played note was 0.74 of it. 0.65 lies between.
 /// - `partial_share`: a note 12, 19 or 24 semitones above an overlapping note (an octave, an octave and a fifth, two
 ///   octaves: the first overtones) is dropped if its strength is under this share of the lower note's. Evidence for
 ///   0.8: on the same tones the overtones the model reported were 0.41 to 0.68 of the note under them, while an octave
@@ -159,7 +161,7 @@ impl Notes {
         self.reattack
     }
 
-    /// The share of the 90th percentile of the note strengths under which a note is dropped.
+    /// The share of the reference strength (see the table of `Notes`) under which a note is dropped.
     #[must_use]
     pub fn ghost_share(&self) -> f64 {
         self.ghost_share

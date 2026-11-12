@@ -461,6 +461,35 @@ mod cleanup {
         Ok(())
     }
 
+    /// The reference strength is at index `round((N - 1) * 0.9)` of the N strengths sorted ascending. With a ghost share of
+    /// 1 a note stays only if it is at least the reference, so the notes kept are those from that index up: `N - index`.
+    /// By hand: N = 1: index 0; N = 2: round(0.9) = 1; N = 8: round(6.3) = 6 (nearest rank would be index 7); N = 10:
+    /// round(8.1) = 8.
+    #[test]
+    fn the_loud_reference_of_the_ghost_rule_is_the_value_at_round_n_minus_1_times_0_9() -> Outcome {
+        let d = Notes::default();
+        let all_against_the_reference = Notes::new(
+            d.onset_threshold(),
+            d.frame_threshold(),
+            d.min_note(),
+            d.energy_tolerance(),
+            0.0,
+            d.reattack(),
+            1.0,
+            0.0,
+            d.partial_overlap(),
+        )?;
+        for (count, kept) in [(1, 1), (2, 1), (8, 2), (10, 2)] {
+            // notes of rising strength, three semitones apart so that none is a neighbour or an overtone of another
+            let mut score = Score::new(258);
+            for (i, strength) in (0..count).zip([0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85]) {
+                score = score.played(30 + 3 * i, 5, 35, strength);
+            }
+            assert_eq!(run(&score, all_against_the_reference)?.len(), kept, "{count} notes");
+        }
+        Ok(())
+    }
+
     #[test]
     fn a_quiet_sound_keeps_all_its_notes() -> Outcome {
         // the same notes at 0.35 all: the ghost's share is of the sound's own loud notes
@@ -736,9 +765,17 @@ mod installed_model {
         Sound::from_samples(vec![samples], RATE)
     }
 
-    /// Notes `(midi, start, length)` against what the model found: the same pitches, starts within 3 frames (35 ms) and
-    /// lengths within 25%. Measured on these tones: starts within 2.6 frames of the sine's and 2.1 of the harmonic
-    /// tone's, lengths within 8%.
+    /// What the model may be off from the tone that was synthesised, a property of Basic Pitch and not of this code:
+    /// measured on these tones, starts within 2.6 frames of the sine's and 2.1 of the harmonic tone's, lengths within
+    /// 8%. This code's own mapping of frames to time is not what these bounds test: it is exact, and proved without
+    /// the model by `windows::a_note_across_the_seam_of_two_windows_is_one_note_at_the_right_frames`,
+    /// `windows::a_note_that_starts_at_the_first_frame_after_the_seam_is_on_that_frame` and
+    /// `windows::a_note_in_a_later_window_is_placed_by_the_start_of_that_window` (a stand-in model and exact frames).
+    const START_ERROR_FRAMES: f64 = 3.0;
+    const LENGTH_ERROR_SHARE: f64 = 0.25;
+
+    /// Notes `(midi, start, length)` against what the model found: the same pitches, starts and lengths within the
+    /// model's error above.
     fn assert_found(events: &[Event], expected: &[(u32, f64, f64)], what: &str) {
         let found: Vec<(f64, f64, f64)> = events
             .iter()
@@ -753,11 +790,11 @@ mod installed_model {
         for ((pitch, t, length), &(midi, start, long)) in found.iter().zip(&expected) {
             assert_eq!(*pitch, f64::from(midi), "{what}: pitch at {start}");
             assert!(
-                (t - start).abs() <= 3.0 * 256.0 / 22050.0,
+                (t - start).abs() <= START_ERROR_FRAMES * 256.0 / 22050.0,
                 "{what}: start {t} for {start}"
             );
             assert!(
-                (length - long).abs() <= 0.25 * long,
+                (length - long).abs() <= LENGTH_ERROR_SHARE * long,
                 "{what}: length {length} for {long} at {start}"
             );
         }
@@ -810,7 +847,8 @@ mod installed_model {
         let sound = song(&[(60, 0.5, 1.0), (67, 1.6, 1.0)], 3.0, TONE)?;
         let first = sound.notes()?;
         assert_eq!(first.len(), 2);
-        assert_eq!(first, sound.notes()?);
+        // sounds with a memo of their own, not the answer this sound remembers
+        assert_eq!(first, sound.with_notes(Notes::default()).notes()?);
         assert_eq!(first, song(&[(60, 0.5, 1.0), (67, 1.6, 1.0)], 3.0, TONE)?.notes()?);
         let mut bundle = Bundle {
             duration: Some(sound.duration()),

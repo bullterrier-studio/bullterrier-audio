@@ -27,6 +27,12 @@ const FRAME_RATE: f64 = RATE as f64 / HOP as f64;
 /// Semitones above a note at which its overtones lie: octave, octave and fifth, two octaves.
 const OVERTONES: [usize; 3] = [12, 19, 24];
 
+/// The share of the sorted note strengths that the loud notes of a sound are measured at, for the ghost rule ([`Notes`]):
+/// the reference strength is the value at index `round((N - 1) * 0.9)` of the N strengths sorted ascending (0-based,
+/// halves rounded up). This is a stated limit of this package, not Basic Pitch's: it is not a nearest-rank percentile
+/// (at N = 8 it picks the 7th strength, nearest rank the 8th). The evidence for the 0.9 is at `ghost_share`.
+const GHOST_REFERENCE_PERCENTILE: f64 = 0.9;
+
 /// A note in frames: `start..end` of `pitch` (0 is MIDI 21).
 struct Note {
     start: usize,
@@ -248,9 +254,9 @@ fn cleanup(mut notes: Vec<Note>, params: &Notes) -> Vec<Note> {
     }
     let mut strengths: Vec<f64> = merged.iter().map(|note| note.strength).collect();
     strengths.sort_by(f64::total_cmp);
-    // nearest rank, as the drops
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let loud = strengths.get(((strengths.len().saturating_sub(1)) as f64 * 0.9).round() as usize);
+    let loud =
+        strengths.get(((strengths.len().saturating_sub(1)) as f64 * GHOST_REFERENCE_PERCENTILE).round() as usize);
     let floor = loud.map_or(0.0, |loud| params.ghost_share() * loud);
     merged.retain(|note| note.strength >= floor);
     let keep: Vec<bool> = merged
