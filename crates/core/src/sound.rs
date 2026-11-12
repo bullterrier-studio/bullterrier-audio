@@ -6,9 +6,10 @@ use std::sync::{Arc, OnceLock};
 
 use crate::Error;
 use crate::analysis::Analysis;
+use crate::bundle;
 use crate::decode::decode;
 use crate::drops;
-use crate::formats::{Event, Grid, Series, Unit};
+use crate::formats::{Bundle, Event, Grid, Series, Unit};
 use crate::grid;
 use crate::key::{self, Key};
 use crate::loudness;
@@ -17,6 +18,7 @@ use crate::resample::resample;
 use crate::sections::{self, Section};
 use crate::spectrum::{self, Band, Spectrogram};
 use crate::structure::Structure;
+use crate::summary;
 use crate::write::write;
 
 /// Where a sound came from: the file and the time in it at which this sound starts.
@@ -592,6 +594,58 @@ impl Sound {
                 scaling: None,
             })
             .clone())
+    }
+
+    /// Every measure of the sound as one [`Bundle`] (bullterrier-control's bundle format), ready for
+    /// [`Bundle::write`].
+    ///
+    /// Promises: `duration` is [`Sound::duration`]; `source` is `"bullterrier-audio <version>"`, followed by
+    /// `" from <file name>"` (the name only, no directory) when the sound has a source file; `grid` is
+    /// [`Sound::grid`], with its confidence, so the file is version 2. Series (all in seconds): `energy.sub`,
+    /// `energy.bass`, `energy.low_mid`, `energy.mid`, `energy.high`, `energy.air` (from [`Sound::energy`] of each band),
+    /// `loudness` ([`Sound::loudness`]) and `brightness` ([`Sound::brightness`]). Events: `onsets` ([`Sound::onsets`]),
+    /// `drops` ([`Sound::drops`]; an empty list when there is none), `sections` (one per [`Sound::sections`]: `t` the
+    /// start, `duration` the length, `label`, `strength` the confidence) and `key`. The format has no slot for a
+    /// key, so `key` is one event with `t` 0, `duration` the sound's duration, `strength` the key's confidence and
+    /// `label` `"<tonic> <mode>"` with the tonic named with sharps (`C`, `C#`, ... `B`) and the mode `major` or
+    /// `minor`, for example `"F# minor"`; that label format is a promise. The names are fixed.
+    ///
+    /// Limits: a sound shorter than 3 s cannot be bundled (the short-term loudness needs a full window), nor one
+    /// without a beat (no grid), nor one without pitched energy (no key).
+    ///
+    /// # Errors
+    ///
+    /// The first error of the measures, unchanged: [`Error::Invalid`] naming `duration` for a sound under 3 s, and
+    /// otherwise as [`Sound::grid`], [`Sound::key`] and [`Sound::energy`]. [`Error::Invalid`] listing the broken
+    /// rules if the bundle breaks one of the format (a bug).
+    pub fn bundle(&self) -> Result<Bundle, Error> {
+        bundle::bundle(self)
+    }
+
+    /// The measures of the sound as text, one fact per line, UTF-8 without escape codes. The layout is stable:
+    ///
+    /// ```text
+    /// file: <file name, or (samples)>
+    /// duration: <seconds, one decimal> s
+    /// format: <rate> Hz, <channels> channels
+    /// tempo: <bpm, one decimal> bpm, <meter> beats per bar, confidence <0..1, two decimals>
+    /// key: <tonic> <mode>, confidence <two decimals> (margin <two decimals>)
+    /// sections: <count>
+    ///   <mm:ss.s>-<mm:ss.s> <label>        (one line per section, two spaces in front)
+    /// drops: <mm:ss.s>, <mm:ss.s>, ...     (or "drops: none")
+    /// loudness: <lowest> to <highest> LUFS (short-term)
+    /// onsets: <count>
+    /// Limits: steady tempo, one meter, straight time.
+    /// ```
+    ///
+    /// The tempo is the mean over the whole grid. The loudness range is the lowest and highest of the short-term
+    /// series.
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::bundle`].
+    pub fn summary(&self) -> Result<String, Error> {
+        summary::summary(self)
     }
 
     /// This sound scaled so that its integrated loudness (EBU R128, gated) is `lufs`.

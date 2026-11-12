@@ -3,6 +3,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use jsonschema::Validator;
+use serde_json::Value;
+
+pub(crate) mod arrangement;
+
 /// Every `.rs` file under `dir`, sorted.
 pub(crate) fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
@@ -102,4 +107,19 @@ pub(crate) fn tone_bursts(at: &[f64], hz: f64, length: f64, amplitude: f64, rate
         }
     }
     samples
+}
+
+/// The validator of bullterrier-control's bundle schema for `version`.
+pub(crate) fn validator(version: u8) -> Result<Validator, Box<dyn std::error::Error>> {
+    let file = format!("../../docs/bundle-format/bundle-{version}.schema.json");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
+    Ok(jsonschema::validator_for(&serde_json::from_str(&fs::read_to_string(
+        path,
+    )?)?)?)
+}
+
+/// Whether `document` is valid against the schema named by its own `version`.
+pub(crate) fn valid_for_its_version(document: &Value) -> Result<bool, Box<dyn std::error::Error>> {
+    let version = document["version"].as_u64().ok_or("the document has no version")?;
+    Ok(validator(u8::try_from(version)?)?.is_valid(document))
 }

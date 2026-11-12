@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod analysis;
+mod bundle;
 mod decode;
 mod drops;
 mod error;
@@ -19,6 +20,7 @@ mod sections;
 mod sound;
 mod spectrum;
 mod structure;
+mod summary;
 mod write;
 
 pub use analysis::Analysis;

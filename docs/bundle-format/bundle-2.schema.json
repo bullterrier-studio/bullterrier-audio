@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "Event": {
+      "additionalProperties": false,
+      "description": "Something at `t` seconds: an onset, a beat, a note (with `duration` and `pitch`) or a section start.",
+      "properties": {
+        "duration": {
+          "exclusiveMinimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "label": {
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pitch": {
+          "maximum": 127,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "strength": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "t": {
+          "minimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "t"
+      ],
+      "type": "object"
+    },
+    "Grid": {
+      "additionalProperties": false,
+      "description": "Beat times in seconds, strictly increasing. Tempo is derived from them, never stored beside them.",
+      "properties": {
+        "beats": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "minItems": 2,
+          "type": "array"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "first_downbeat": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "meter": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "beats",
+        "meter",
+        "first_downbeat"
+      ],
+      "type": "object"
+    },
+    "Series": {
+      "additionalProperties": false,
+      "description": "Values at a fixed rate: sample *i* is at `start + i / rate` seconds. A `fraction` series states its `scaling` and stays within 0..1.",
+      "properties": {
+        "rate": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "scaling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "start": {
+          "minimum": 0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "values": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "rate",
+        "values",
+        "unit"
+      ],
+      "type": "object"
+    },
+    "Unit": {
+      "description": "What a Series' values measure. `fraction` values lie in 0..1 and the Series says how that was reached.",
+      "enum": [
+        "fraction",
+        "decibels",
+        "hertz",
+        "midi",
+        "ratio",
+        "seconds",
+        "beats"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Everything one producer measured of one piece of material: named Series, named Event lists, a Grid.",
+  "properties": {
+    "duration": {
+      "exclusiveMinimum": 0,
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "events": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9_.-]*$": {
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "format": {
+      "const": "bullterrier-control/bundle",
+      "type": "string"
+    },
+    "grid": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Grid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "series": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9_.-]*$": {
+          "$ref": "#/$defs/Series"
+        }
+      },
+      "type": "object"
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "const": 2,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "format",
+    "version"
+  ],
+  "title": "Bundle",
+  "type": "object"
+}

@@ -141,3 +141,14 @@ pub(crate) fn key(signal: &[f32], structure: &Structure, duration: f64) -> Resul
         margin: best - scores[1].0,
     })
 }
+
+impl Key {
+    /// `"<tonic> <mode>"`, as `"F# minor"` or `"C major"`: the text a bundle and a summary carry.
+    pub(crate) fn label(&self) -> String {
+        let mode = match self.mode {
+            Mode::Major => "major",
+            Mode::Minor => "minor",
+        };
+        format!("{} {mode}", self.tonic.name())
+    }
+}

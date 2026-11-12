@@ -5,6 +5,7 @@
 mod common;
 
 mod architecture;
+mod bundle;
 mod drops;
 mod edits;
 mod formats;

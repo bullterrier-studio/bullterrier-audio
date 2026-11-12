@@ -3,23 +3,14 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::num::NonZeroUsize;
-use std::path::Path;
 
 use bullterrier_audio::Error;
 use bullterrier_audio::formats::{Bundle, Event, Grid, Series, Unit};
-use jsonschema::Validator;
 use proptest::prelude::*;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-use crate::common::Outcome;
-
-fn validator() -> Result<Validator, Box<dyn std::error::Error>> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/bundle-format/bundle-1.schema.json");
-    Ok(jsonschema::validator_for(&serde_json::from_str(&fs::read_to_string(
-        path,
-    )?)?)?)
-}
+use crate::common::{Outcome, valid_for_its_version, validator};
 
 fn event(t: f64) -> Event {
     Event {
@@ -92,7 +83,11 @@ fn with_grid(grid: Grid) -> Bundle {
 fn unchecked_document(bundle: &Bundle) -> Result<Value, serde_json::Error> {
     let mut document = serde_json::to_value(bundle)?;
     document["format"] = json!("bullterrier-control/bundle");
-    document["version"] = json!(1);
+    document["version"] = json!(if bundle.grid.as_ref().is_some_and(|grid| grid.confidence.is_some()) {
+        2
+    } else {
+        1
+    });
     Ok(document)
 }
 
@@ -146,7 +141,7 @@ fn a_valid_bundle_is_written_as_schema_valid_json_with_the_header_first() -> Out
     );
     let written: Value = serde_json::from_str(&text)?;
     assert_eq!(written, expected);
-    assert!(validator()?.is_valid(&written));
+    assert!(valid_for_its_version(&written)?);
     Ok(())
 }
 
@@ -157,7 +152,7 @@ fn an_empty_bundle_writes_empty_series_and_events() -> Outcome {
         text,
         r#"{"format":"bullterrier-control/bundle","version":1,"series":{},"events":{}}"#
     );
-    assert!(validator()?.is_valid(&serde_json::from_str(&text)?));
+    assert!(valid_for_its_version(&serde_json::from_str(&text)?)?);
     Ok(())
 }
 
@@ -382,7 +377,7 @@ fn refusals() -> Vec<(&'static str, Bundle, &'static str, bool)> {
             "confidence not finite",
             with_grid(confident(f64::NAN)),
             "grid.confidence: must be a finite",
-            false,
+            true,
         ),
     ]
 }
@@ -404,13 +399,24 @@ fn the_lowest_version_that_carries_the_data_is_written() -> Outcome {
 }
 
 #[test]
+fn a_grid_confidence_needs_schema_2_and_a_grid_without_one_is_schema_1() -> Outcome {
+    let with: Value = serde_json::from_str(&with_grid(confident(0.7)).to_json()?)?;
+    let without: Value = serde_json::from_str(&with_grid(grid(&[0.5, 1.0], 4, 0)).to_json()?)?;
+    assert!(validator(2)?.is_valid(&with), "confidence: valid for 2");
+    assert!(!validator(1)?.is_valid(&with), "confidence: rejected by 1");
+    assert!(validator(1)?.is_valid(&without), "none: valid for 1");
+    // the version is a constant of each schema: a document is checked against its own
+    assert!(!validator(2)?.is_valid(&without), "none: rejected by 2");
+    Ok(())
+}
+
+#[test]
 fn a_rule_is_enforced_by_the_writer_and_the_schema_accepts_only_what_it_states() -> Outcome {
-    let validator = validator()?;
     for (id, bundle, refusal, schema_accepts) in refusals() {
         let text = problem_text(&bundle)?;
         assert!(text.contains(refusal), "{id}: {text}");
         assert_eq!(
-            validator.is_valid(&unchecked_document(&bundle)?),
+            valid_for_its_version(&unchecked_document(&bundle)?)?,
             schema_accepts,
             "{id}"
         );
@@ -567,7 +573,9 @@ fn valid_bundle() -> impl Strategy<Value = Bundle> {
     (
         proptest::option::of("[a-z ]{0,8}"),
         proptest::option::of(Just(HORIZON)),
-        proptest::option::of(valid_grid()),
+        proptest::option::of(
+            (valid_grid(), proptest::option::of(0.0..=1.0)).prop_map(|(grid, confidence)| Grid { confidence, ..grid }),
+        ),
         proptest::collection::btree_map(name(), valid_series(), 0..3),
         proptest::collection::btree_map(name(), valid_events(), 0..3),
     )
@@ -612,8 +620,7 @@ proptest! {
     fn every_valid_bundle_is_written_as_schema_valid_json(bundle in valid_bundle()) {
         let text = bundle.to_json().map_err(|error| TestCaseError::fail(error.to_string()))?;
         let written: Value = serde_json::from_str(&text).map_err(|error| TestCaseError::fail(error.to_string()))?;
-        let validator = validator().map_err(|error| TestCaseError::fail(error.to_string()))?;
-        prop_assert!(validator.is_valid(&written));
+        prop_assert!(valid_for_its_version(&written).map_err(|error| TestCaseError::fail(error.to_string()))?);
     }
 
     #[test]
