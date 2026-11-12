@@ -104,7 +104,7 @@ htdemucs-6s and htdemucs-ft pins, the ensemble recipe of the prototype, the disk
 cache folder, keyed by the sound's samples and the producer), `bt-audio stems`, `bt-audio install --ensemble`. Parts per
 section is a measurement (each stem's share of the energy per section), not a role guess. `drops()` from the stems was not
 needed: A3's beat-level drops cover bass steps. Measured on one Mac (10 cores): 20 s of stereo in 7.8 s with 4 threads (about
-2 minutes for a 5-minute song), 2.2 GB peak; the ensemble about 5x slower and 2.7 GB. The model files are 258 MB (6s) and
+2 minutes for a 5-minute song), 2.2 GB peak for a short sound; the ensemble about 5x slower and 2.7 GB. The model files are 258 MB (6s) and
 4 x 316 MB (ft).
 
 - **Model choice (owner decision 2026-11-12):** the best separator, with licences not yet gating the choice (no paid product
@@ -150,6 +150,7 @@ Each plugs into a seam the core proved; none is planned until a consumer asks.
 | Distance between two sounds (QA of a render) | spectrum | beat-folded spectral, groove and balance terms |
 | Tempo map, meter changes, swing | grid | not in any prior work |
 | Beats from a model (Beat This!, ONNX, beats and downbeats) | models, grid | replaces the DSP grid only if measured better; licence first |
+| Stems for songs over 7 minutes (finished stems written to disk as they are made) | stems | memory grows 2.8 MB per second of audio; see design-decisions |
 | Live analysis (microphone in, onsets and band energies within milliseconds) | spectrum | the reason a Rust core was first considered |
 | WebAssembly build of the DSP measures | core | models stay native |
 

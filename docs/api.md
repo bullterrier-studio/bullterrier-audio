@@ -91,7 +91,8 @@ stems (drums, bass, other, vocals, guitar, piano) are stereo `Sound`s at 44.1 kH
 can be asked of one. As Demucs does, the mix's mean is added to every stem, so the six sum to the mix plus 5 times its mean
 (zero for audio without a DC offset). `without(...)` mixes the rest down; `parts(sections)` gives each stem's share of the energy
 per section. The result is cached on disk (`Separation(cache=False)` or `--no-cache` turns that off); `Separation` also sets
-`shifts`, `ensemble`, `seed` and `threads`. A sound longer than about 17 minutes is refused: cut it first.
+`shifts`, `ensemble`, `seed` and `threads`. A sound longer than 440 s (250 s with the ensemble) is refused: cut it first (peak memory grows about 2.8 MB per second of audio
+on top of about 2.25 GB for the model, measured; the limits keep the projected peak under 3.5 GB).
 
 ## 4. The notes of a part
 
