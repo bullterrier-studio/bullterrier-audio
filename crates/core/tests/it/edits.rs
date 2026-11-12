@@ -303,6 +303,11 @@ fn the_edits_refuse_what_they_cannot_do() -> Outcome {
         ("fade: huge in, would wrap the sum", whole.fade(1e300, 0.5), "in_"),
         ("fade: both huge", whole.fade(1e300, 1e300), "in_"),
         ("resample: rate 0", whole.resampled(0), "rate"),
+        (
+            "resample: result empty",
+            sound(vec![vec![0.5]], 44100)?.resampled(1),
+            "rate",
+        ),
     ];
     for (rule, outcome, names) in rows {
         let error = outcome.err();

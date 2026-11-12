@@ -17,6 +17,17 @@ pub(crate) fn resample(samples: &[Vec<f32>], from: u32, to: u32) -> Result<Vec<V
     let frames = samples[0].len();
     let channels = samples.len();
     let ratio = f64::from(to) / f64::from(from);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let expected = (frames as f64 * ratio).round() as usize;
+    if expected == 0 {
+        return Err(Error::Invalid(format!(
+            "rate must leave at least one sample of the {frames}-frame sound, got {to} Hz from {from} Hz"
+        )));
+    }
     // rubato's default sinc quality (documented on `SincInterpolationParameters`): sinc_len 256, Blackman-Harris 2
     // window, automatic cutoff, 128 intermediate points, cubic interpolation. It is the "high quality" preset.
     let mut resampler = Async::<f32>::new_sinc(
@@ -34,12 +45,6 @@ pub(crate) fn resample(samples: &[Vec<f32>], from: u32, to: u32) -> Result<Vec<V
         .map_err(|error| failed(&error))?
         .take_data();
 
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
-    let expected = (frames as f64 * ratio).round() as usize;
     Ok((0..channels)
         .map(|channel| {
             interleaved
