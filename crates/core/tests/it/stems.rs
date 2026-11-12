@@ -663,6 +663,324 @@ mod ensemble {
     }
 }
 
+mod cache {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    use sha2::{Digest, Sha256};
+
+    use super::*;
+
+    const SIX: &str = "sha-of-the-six-source-model";
+    const STEM_FILES: [&str; 6] = [
+        "bass.wav",
+        "drums.wav",
+        "guitar.wav",
+        "other.wav",
+        "piano.wav",
+        "vocals.wav",
+    ];
+
+    fn separation(shifts: u32, ensemble: bool, seed: u64, cache: bool) -> Result<Separation, Error> {
+        Separation::new(shifts, ensemble, seed, cache)
+    }
+
+    /// The stems of `sound` through the cache in `dir`, and how many times the model ran.
+    fn run(sound: &Sound, dir: &Path, models: &[&str]) -> Result<(Stems, usize), Error> {
+        let model = StandIn::split(SPLIT);
+        let stems = sound.stems_cached(dir, models, || sound.stems_with(&model))?;
+        Ok((stems, model.calls()))
+    }
+
+    fn base() -> Result<Sound, Error> {
+        Ok(sound(mix(100), RATE)?.with_separation(separation(1, false, 0, true)?))
+    }
+
+    /// The folders under `<dir>/stems`, one per key.
+    fn keys(dir: &Path) -> Vec<PathBuf> {
+        let mut found: Vec<PathBuf> = fs::read_dir(dir.join("stems"))
+            .map(|entries| entries.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .unwrap_or_default();
+        found.sort();
+        found
+    }
+
+    fn names(folder: &Path) -> Vec<String> {
+        let mut found: Vec<String> = fs::read_dir(folder)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        found.sort();
+        found
+    }
+
+    fn write_wav(path: &Path, channels: u16, rate: u32, frames: usize) -> Outcome {
+        let spec = hound::WavSpec {
+            channels,
+            sample_rate: rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec)?;
+        for _ in 0..frames * usize::from(channels) {
+            writer.write_sample(0.25_f32)?;
+        }
+        writer.finalize()?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_miss_computes_and_stores_one_float_wav_per_stem_and_a_hit_gives_the_same_stems_without_the_model() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let sound = base()?;
+        let (first, calls) = run(&sound, dir.path(), &[SIX])?;
+        assert_eq!(calls, 1, "a miss runs the model");
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        let name = key
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        assert!(
+            name.len() == 64 && name.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
+            "{name}"
+        );
+        assert_eq!(names(&key), STEM_FILES, "a folder holds the six stems and nothing else");
+        for (stem, part) in first.iter() {
+            let mut reader = hound::WavReader::open(key.join(format!("{}.wav", stem.name())))?;
+            let spec = reader.spec();
+            assert_eq!(
+                (
+                    spec.channels,
+                    spec.sample_rate,
+                    spec.bits_per_sample,
+                    spec.sample_format
+                ),
+                (2, RATE, 32, hound::SampleFormat::Float)
+            );
+            let stored: Vec<f32> = reader.samples::<f32>().collect::<Result<_, _>>()?;
+            let expected: Vec<f32> = (0..100)
+                .flat_map(|i| [part.samples()[0][i], part.samples()[1][i]])
+                .collect();
+            assert_eq!(first_difference(&stored, &expected), None, "{stem:?}");
+        }
+        let (second, calls) = run(&sound, dir.path(), &[SIX])?;
+        assert_eq!(calls, 0, "a hit does not run the model");
+        assert!(second == first, "the stems read back are those computed");
+        assert_eq!(keys(dir.path()), [key], "a hit adds nothing");
+        Ok(())
+    }
+
+    #[test]
+    fn what_changes_the_result_changes_the_key_and_what_does_not_keeps_it() -> Outcome {
+        type Variant = (&'static str, Box<dyn Fn() -> Result<(Sound, Vec<&'static str>), Error>>);
+        let variants: Vec<Variant> = vec![
+            (
+                "one sample",
+                Box::new(|| {
+                    let mut samples = mix(100);
+                    samples[0][50] += 0.001;
+                    Ok((
+                        sound(samples, RATE)?.with_separation(separation(1, false, 0, true)?),
+                        vec![SIX],
+                    ))
+                }),
+            ),
+            (
+                "rate",
+                Box::new(|| {
+                    Ok((
+                        sound(mix(100), 22_050)?.with_separation(separation(1, false, 0, true)?),
+                        vec![SIX],
+                    ))
+                }),
+            ),
+            (
+                "channels",
+                Box::new(|| {
+                    let mono = mix(100).remove(0);
+                    Ok((
+                        sound(vec![mono], RATE)?.with_separation(separation(1, false, 0, true)?),
+                        vec![SIX],
+                    ))
+                }),
+            ),
+            (
+                "shifts",
+                Box::new(|| Ok((base()?.with_separation(separation(2, false, 0, true)?), vec![SIX]))),
+            ),
+            (
+                "seed",
+                Box::new(|| Ok((base()?.with_separation(separation(1, false, 1, true)?), vec![SIX]))),
+            ),
+            (
+                "ensemble",
+                Box::new(|| Ok((base()?.with_separation(separation(1, true, 0, true)?), vec![SIX]))),
+            ),
+            ("model", Box::new(|| Ok((base()?, vec!["sha-of-another-model"])))),
+            (
+                "more models",
+                Box::new(|| Ok((base()?, vec![SIX, "sha-of-a-second-model"]))),
+            ),
+        ];
+        for (rule, variant) in variants {
+            let dir = tempfile::tempdir()?;
+            run(&base()?, dir.path(), &[SIX])?;
+            let (other, models) = variant()?;
+            let (_, calls) = run(&other, dir.path(), &models)?;
+            assert!(calls > 0, "{rule}: the other input was a hit");
+            assert_eq!(keys(dir.path()).len(), 2, "{rule}: one folder per key");
+        }
+
+        // the order the models are named in does not matter, and the cache flag is not part of the key
+        let dir = tempfile::tempdir()?;
+        run(&base()?, dir.path(), &["a", "b"])?;
+        let (_, calls) = run(&base()?, dir.path(), &["b", "a"])?;
+        assert_eq!((calls, keys(dir.path()).len()), (0, 1), "models in another order");
+        Ok(())
+    }
+
+    #[test]
+    fn with_the_cache_off_nothing_is_read_or_written() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let off = base()?.with_separation(separation(1, false, 0, false)?);
+        let (stems, calls) = run(&off, dir.path(), &[SIX])?;
+        assert_eq!(calls, 1);
+        assert!(!dir.path().join("stems").exists(), "{:?}", names(dir.path()));
+        // an entry made with the cache on is not read either
+        run(&base()?, dir.path(), &[SIX])?;
+        let (again, calls) = run(&off, dir.path(), &[SIX])?;
+        assert_eq!(calls, 1);
+        assert!(again == stems);
+        Ok(())
+    }
+
+    #[test]
+    fn a_damaged_folder_is_recomputed_and_mended_and_foreign_files_stay() -> Outcome {
+        type Damage = (&'static str, fn(&Path) -> Outcome);
+        let damages: [Damage; 8] = [
+            ("truncated", |key| {
+                let bytes = fs::read(key.join("bass.wav"))?;
+                Ok(fs::write(key.join("bass.wav"), &bytes[..bytes.len() / 2])?)
+            }),
+            ("emptied", |key| Ok(fs::write(key.join("bass.wav"), b"")?)),
+            ("garbage", |key| {
+                Ok(fs::write(key.join("bass.wav"), b"this is not a wav file at all")?)
+            }),
+            ("fewer frames", |key| write_wav(&key.join("bass.wav"), 2, RATE, 50)),
+            ("more frames", |key| write_wav(&key.join("bass.wav"), 2, RATE, 150)),
+            ("one channel", |key| write_wav(&key.join("bass.wav"), 1, RATE, 100)),
+            ("another rate", |key| write_wav(&key.join("bass.wav"), 2, 22_050, 100)),
+            ("missing", |key| Ok(fs::remove_file(key.join("bass.wav"))?)),
+        ];
+        for (rule, damage) in damages {
+            let dir = tempfile::tempdir()?;
+            let sound = base()?;
+            let (first, _) = run(&sound, dir.path(), &[SIX])?;
+            let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+            fs::write(key.join("notes.txt"), b"mine")?;
+            damage(&key)?;
+            let (mended, calls) = run(&sound, dir.path(), &[SIX])?;
+            assert_eq!(calls, 1, "{rule}: the damage was taken for a hit");
+            assert!(mended == first, "{rule}: the recomputed stems differ");
+            let (hit, calls) = run(&sound, dir.path(), &[SIX])?;
+            assert_eq!(calls, 0, "{rule}: the folder was not mended");
+            assert!(hit == first, "{rule}");
+            assert_eq!(
+                fs::read(key.join("notes.txt"))?,
+                b"mine",
+                "{rule}: a foreign file was touched"
+            );
+            assert_eq!(keys(dir.path()), [key], "{rule}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_leftover_temporary_file_is_not_a_stem() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let sound = base()?;
+        let (first, _) = run(&sound, dir.path(), &[SIX])?;
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        // a writer that died after writing a stem and before renaming it: the stems are gone, a whole wav is there
+        for file in STEM_FILES {
+            fs::remove_file(key.join(file))?;
+        }
+        write_wav(&key.join(".tmp-dead-writer.wav"), 2, RATE, 100)?;
+        let (again, calls) = run(&sound, dir.path(), &[SIX])?;
+        assert_eq!(calls, 1);
+        assert!(again == first);
+        Ok(())
+    }
+
+    #[test]
+    fn two_writers_of_one_key_end_with_a_whole_folder() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let sound = base()?;
+        let barrier = std::sync::Barrier::new(2);
+        let results: Vec<Result<(Stems, usize), Error>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..2)
+                .map(|_| {
+                    scope.spawn(|| {
+                        barrier.wait();
+                        run(&sound, dir.path(), &[SIX])
+                    })
+                })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+        assert_eq!(results.len(), 2);
+        let [a, b] = <[_; 2]>::try_from(results).map_err(|_| "two results")?;
+        assert!(a?.0 == b?.0);
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        assert_eq!(names(&key), STEM_FILES, "no temporary file stays");
+        let (_, calls) = run(&sound, dir.path(), &[SIX])?;
+        assert_eq!(calls, 0, "the folder the writers left is whole");
+        Ok(())
+    }
+
+    #[test]
+    fn a_cache_folder_that_cannot_be_written_is_an_error_naming_it() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("a-file");
+        fs::write(&file, b"x")?;
+        let under_a_file = file.join("cache");
+        let result = run(&base()?, &under_a_file, &[SIX]);
+        assert!(
+            matches!(&result, Err(Error::Write { path, .. }) if path.starts_with(&under_a_file)),
+            "{:?}",
+            result.map(|(_, calls)| calls)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn the_key_is_the_sha256_of_the_canonical_description_of_the_input() -> Outcome {
+        // The format is spelled out here, not read from the code: an accidental change of the key (and with it every
+        // stem on disk) fails this. The crate version is part of the key on purpose, so it is read, not written.
+        let samples = mix(100);
+        let sound = sound(samples.clone(), RATE)?.with_separation(separation(3, true, 7, true)?);
+        let mut canonical = format!(
+            "bt-audio stems v1\nversion={}\nrate=44100\nchannels=2\nshifts=3\nensemble=true\nseed=7\noptimisation=disable\nmodels=aaa,bbb\nsamples\n",
+            env!("CARGO_PKG_VERSION")
+        )
+        .into_bytes();
+        for x in samples.iter().flatten() {
+            canonical.extend(x.to_le_bytes());
+        }
+        let dir = tempfile::tempdir()?;
+        run(&sound, dir.path(), &["bbb", "aaa"])?;
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        assert_eq!(
+            key.file_name().map(|n| n.to_string_lossy().into_owned()),
+            Some(format!("{:x}", Sha256::digest(&canonical)))
+        );
+        Ok(())
+    }
+}
+
 mod limits {
     use super::*;
 

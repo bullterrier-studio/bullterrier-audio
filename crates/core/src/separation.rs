@@ -22,8 +22,10 @@ use crate::Error;
 /// `seed` draws the moves, with a fixed generator: the same sound, `shifts` and `seed` give the same stems on the same
 /// machine and library versions. Demucs draws them from Python's global random state, so its own are not repeatable.
 ///
-/// `ensemble` and `cache` are declared here and take effect with the ensemble recipe and the on-disk cache; until
-/// then they change nothing.
+/// `ensemble` runs the recipe of `Sound::stems_with_ensemble` with the four `htdemucs-ft-*` models, which are installed
+/// only when asked for (`models::install_ensemble`); it takes roughly five times as long as one model, and its memory
+/// is that of one model at a time. `cache` keeps the stems on disk (`Sound::stems_cached`) under a key that holds every
+/// other value here; it is not part of the key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Separation {
     shifts: u32,

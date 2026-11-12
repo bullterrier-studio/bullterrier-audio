@@ -9,7 +9,7 @@ use std::sync::Arc;
 use crate::{Error, Infer, Section, Separation, Sound, Tensor};
 
 /// The rate of the model, and of the stems.
-const RATE: u32 = 44_100;
+pub(crate) const RATE: u32 = 44_100;
 /// Samples per model run: the model's `segment` of 7.8 s at 44 100 Hz (`HTDemucs` `segment = Fraction(39, 5)`).
 const SEGMENT: usize = 343_980;
 /// Samples the segments advance: `int((1 - overlap) * segment)` with `overlap` 0.25 (`apply.py:229`).
@@ -19,7 +19,7 @@ const MAX_SHIFT: usize = RATE as usize / 2;
 const STEMS: usize = 6;
 /// The sources of an ft model: drums, bass, other, vocals.
 const FT_STEMS: usize = 4;
-const CHANNELS: usize = 2;
+pub(crate) const CHANNELS: usize = 2;
 /// The most samples the stems of one sound may hold (all stems, both channels): 2^29 floats are 2 GiB, about 17
 /// minutes with six stems. A stated limit of this package, from the 4 GB memory budget of a run.
 const MAX_SAMPLES: usize = 1 << 29;
@@ -222,6 +222,31 @@ impl Mix<'_> {
     }
 }
 
+/// The stems of `sound` by the installed models, through the cache folder of the options in the environment: the
+/// ensemble recipe if its `Separation` says so, else the six-source model. A model is opened only when the cache does
+/// not hold the stems.
+#[cfg(feature = "onnx")]
+pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
+    use crate::models::{Options, OrtInfer, ensemble_models, model_file, models, runtime_library};
+
+    let options = Options::from_env();
+    let six = &models()[1];
+    let ensemble = sound.separation().ensemble();
+    let used: Vec<&str> = std::iter::once(six)
+        .chain(ensemble_models().iter().filter(|_| ensemble))
+        .map(|model| model.sha256)
+        .collect();
+    sound.stems_cached(&options.cache()?, &used, || {
+        if ensemble {
+            // sessions that are not kept for the life of the process, so that dropping one frees its memory
+            let open = |model| OrtInfer::from_file(&runtime_library(&options)?, &model_file(model, &options)?);
+            sound.stems_with_ensemble(|| open(six), |stem| open(&ensemble_models()[stem.index()]))
+        } else {
+            sound.stems_with(&OrtInfer::open(six, &options)?)
+        }
+    })
+}
+
 /// Separates `sound` with the single model.
 pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error> {
     separate_with(sound, |mix| {
@@ -333,7 +358,7 @@ fn run(
     let frames = mixture.frames();
     let weight = triangle();
     let mut total = vec![vec![0.0_f32; frames]; wanted.len()];
-    let mut pass = Pass {
+    let pass = Pass {
         mix: mixture,
         weight: &weight,
         model,

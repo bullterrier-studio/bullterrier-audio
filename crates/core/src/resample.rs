@@ -8,6 +8,16 @@ use crate::Error;
 /// Frames per resampler call; `process_all` splits the clip into chunks of this size (rubato's examples use 1024).
 const CHUNK_FRAMES: usize = 1024;
 
+/// The frames `frames` frames at `from` Hz have at `to` Hz: `round(frames * to / from)`.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub(crate) fn output_frames(frames: usize, from: u32, to: u32) -> usize {
+    (frames as f64 * (f64::from(to) / f64::from(from))).round() as usize
+}
+
 /// `samples` (planar, `frames` long, at `from` Hz) converted to `to` Hz. The output has `round(frames * to / from)`
 /// frames: the resampler delay is removed.
 pub(crate) fn resample(samples: &[Vec<f32>], from: u32, to: u32) -> Result<Vec<Vec<f32>>, Error> {
@@ -17,12 +27,7 @@ pub(crate) fn resample(samples: &[Vec<f32>], from: u32, to: u32) -> Result<Vec<V
     let frames = samples[0].len();
     let channels = samples.len();
     let ratio = f64::from(to) / f64::from(from);
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss
-    )]
-    let expected = (frames as f64 * ratio).round() as usize;
+    let expected = output_frames(frames, from, to);
     if expected == 0 {
         return Err(Error::Invalid(format!(
             "rate must leave at least one sample of the {frames}-frame sound, got {to} Hz from {from} Hz"

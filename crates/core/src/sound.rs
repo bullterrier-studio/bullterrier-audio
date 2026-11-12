@@ -21,6 +21,7 @@ use crate::resample::resample;
 use crate::sections::{self, Section};
 use crate::separation::Separation;
 use crate::spectrum::{self, Band, Spectrogram};
+use crate::stem_cache;
 use crate::stems::{self, Stem, Stems};
 use crate::structure::Structure;
 use crate::summary;
@@ -454,8 +455,7 @@ impl Sound {
         }
         // validate the sound before the model is loaded: loading takes seconds and gigabytes
         stems::check_length(self)?;
-        let model = crate::models::OrtInfer::open(&crate::models::models()[1], &crate::models::Options::from_env())?;
-        let stems = self.stems_with(&model)?;
+        let stems = stems::installed(self)?;
         Ok(self.memo.0.stems.get_or_init(|| stems).clone())
     }
 
@@ -495,6 +495,30 @@ impl Sound {
         ft: impl Fn(Stem) -> Result<M, Error>,
     ) -> Result<Stems, Error> {
         stems::separate_ensemble(self, six, ft)
+    }
+
+    /// The stems of the sound as `compute` makes them, kept in `cache` (a folder; its `stems` subfolder is the cache of
+    /// stems) so that the same sound separated the same way is read back instead of computed. `models` name by SHA-256
+    /// the models `compute` runs; they are part of the key with the sound's samples, rate and channels, its
+    /// [`Separation`] (shifts, ensemble, seed; not `cache`) and the crate version. `Sound::stems` is this with the
+    /// installed models. With [`Separation::cache`] off, `compute` runs and nothing is read or written.
+    ///
+    /// Promises: a hit gives the stems a miss gave, to the bit. A folder that does not hold all six stems whole (a
+    /// missing or damaged file, one of another length, rate or channel count, a temporary file left by a dead writer)
+    /// is no hit: `compute` runs and the files are replaced, each by a rename, so a reader sees a whole file or none and
+    /// two writers of one key leave a whole folder. Files of other names in the folder are left alone.
+    ///
+    /// # Errors
+    ///
+    /// What `compute` returns; [`Error::Write`] naming the file or folder when the stems cannot be stored (the
+    /// computation is not hidden by it: it fails).
+    pub fn stems_cached(
+        &self,
+        cache: &Path,
+        models: &[&str],
+        compute: impl FnOnce() -> Result<Stems, Error>,
+    ) -> Result<Stems, Error> {
+        stem_cache::cached(self, cache, models, compute)
     }
 
     /// The notes of the sound, found by the installed Basic Pitch model and cleaned up; see [`Sound::notes_with`] for

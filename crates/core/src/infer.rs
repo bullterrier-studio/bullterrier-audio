@@ -48,3 +48,8 @@ pub trait Infer: Send + Sync {
     /// [`Error::Invalid`] when the model cannot run on this input.
     fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error>;
 }
+
+/// The graph optimisation the models run under, as the key of the stems on disk names it: the optimised graph can
+/// change the numbers, so a change here must change the key. `models::OrtInfer` opens its sessions with the level of
+/// this name.
+pub(crate) const GRAPH_OPTIMISATION: &str = "disable";

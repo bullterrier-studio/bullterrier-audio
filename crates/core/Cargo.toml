@@ -21,7 +21,7 @@ doctest = false
 # pins that line, so the bindings cannot enable a feature of their own); a Rust user who wants no network stack sets
 # `default-features = false`.
 default = ["onnx"]
-onnx = ["dep:dirs", "dep:flate2", "dep:ort", "dep:sha2", "dep:tar", "dep:ureq", "dep:zip"]
+onnx = ["dep:dirs", "dep:flate2", "dep:ort", "dep:tar", "dep:ureq", "dep:zip"]
 
 [dependencies]
 dirs = { workspace = true, optional = true }
@@ -34,8 +34,9 @@ realfft.workspace = true
 rubato.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2 = { workspace = true, optional = true }
+sha2.workspace = true
 symphonia.workspace = true
+tempfile.workspace = true
 tar = { workspace = true, optional = true }
 thiserror.workspace = true
 ureq = { workspace = true, optional = true }
@@ -44,7 +45,6 @@ zip = { workspace = true, optional = true }
 [dev-dependencies]
 jsonschema.workspace = true
 proptest.workspace = true
-tempfile.workspace = true
 
 [lints]
 workspace = true

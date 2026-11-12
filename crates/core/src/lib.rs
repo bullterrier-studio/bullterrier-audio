@@ -25,6 +25,7 @@ mod sections;
 mod separation;
 mod sound;
 mod spectrum;
+mod stem_cache;
 mod stems;
 mod structure;
 mod summary;
