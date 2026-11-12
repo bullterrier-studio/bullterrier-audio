@@ -3,8 +3,8 @@
 **Built in part.** Load, `from_samples`, `cut`, `fade`, `mono`, `resampled`, `write`, `origin` and `bt-audio info` exist (A1,
 tested in `tests/test_sound.py` and `crates/core/tests/it/`), and so do `energy(band)`, `brightness()`, `loudness()`,
 `onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`), and `grid()`, `sections()`, `section(i)`,
-`key()`, `drops()`, `bundle()`, `summary()`, `with_structure(...)` and `bt-audio analyse` (A3, `tests/test_structure_measures.py`);
-stems and notes are design.
+`key()`, `drops()`, `bundle()`, `summary()`, `with_structure(...)` and `bt-audio analyse` (A3, `tests/test_structure_measures.py`),
+and `notes()`, `with_notes(...)`, `bt-audio install | models | doctor` (A4); stems are design.
 Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
@@ -92,6 +92,10 @@ let sub = stems[Stem::Bass].energy(Band::Sub)?;
 lead = song.notes()  # list[Event]: t, duration, pitch (MIDI), strength; polyphonic, the mix
 bassline = stems[bta.Stem.BASS].notes()  # the same call on a stem
 ```
+
+`notes()` needs the Basic Pitch model and ONNX Runtime, installed once with `bt-audio install`; without them it raises
+`ModelUnavailableError` naming that command. `Notes` (thresholds, minimum length, cleanup shares) is set with
+`song.with_notes(...)`. The cleanup is relative to the model's own strengths; octave aliases are not corrected.
 
 ## 5. Hand everything to video or a file
 

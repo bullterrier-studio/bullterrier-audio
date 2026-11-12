@@ -15,7 +15,7 @@ into one of those seams.
 | A1 | Rust core, `Sound`, edits, formats out | M | sound in → `Sound` → sound and Bundle out | done |
 | A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | done |
 | A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | done |
-| A4 | Models, and notes | M | an ONNX model behind a method | |
+| A4 | Models, and notes | M | an ONNX model behind a method | done |
 | A5 | Stems | L | a stem is a `Sound` | |
 | A6 | Drum hits | M | labelled events from a part | |
 | A7 | Measures by name, API review, first release | M | the extension point | |
@@ -79,12 +79,18 @@ The milestone below happens in the demo repositories, not here.
   synthesised parts with known section boundaries; chord progressions in a known key.
 - **Milestone:** the demos run on bullterrier-audio and their hacked analysis is deleted.
 
-## A4 Models, and notes
+## A4 Models, and notes (done)
+
+Built: the runtime and catalogue (`models/`), `Sound::notes()` / `notes_with(&Infer)`, the `Notes` parameters,
+`bt-audio install | models | doctor`, `ModelUnavailableError`. Octave-alias correction was not done: it needs per-pitch band
+analysis of the audio, which the posteriorgram does not give (the on-demand "Contours" item). `notes()` takes 5.9 s for five
+minutes of stereo (183 windows of 26 ms), so the **disk cache lands in A5**, where separation takes minutes. The real-model tests
+are `#[ignore]`d and run by `poe rust-test-models` (in `poe full` and in the CI job `project.yml`), never skipped silently.
 
 - The model runtime, ported from image's pattern: ONNX Runtime loaded at run time, models as pinned URL and sha256,
   downloads only through `bt-audio install`; `bt-audio models`, `bt-audio doctor`; a seam so tests run without a model.
-- **Entry condition for every model in the catalogue:** its weights' licence is verified and allows redistribution through
-  a download; recorded in design-decisions.
+- **Every model in the catalogue** records its weights' licence (design-decisions). Licences do not gate the choice until a
+  commercial release (owner decision 2026-11-12); a download needs a pinned URL and sha256.
 - `notes()`: Basic Pitch (Apache-2.0, ONNX published by its authors), then cleanup (held notes merged, ghosts, octave aliases
   and partials dropped, each rule relative to the note's own level).
 - `ModelUnavailableError` names the install command.
@@ -92,9 +98,9 @@ The milestone below happens in the demo repositories, not here.
 
 ## A5 Stems
 
-- **Entry condition:** a separator whose weights' licence is verified. Demucs (HTDemucs, ONNX exports exist) is the
-  candidate; its code is MIT but the weights' terms are unclear. If they do not allow it, search for another separator
-  before this batch is planned.
+- **Model choice (owner decision 2026-11-12):** the best separator, with licences not yet gating the choice (no paid product
+  exists yet). Demucs (HTDemucs) is the candidate; its weights are science-only per its author, so the catalogue's `licence`
+  field says so and a commercial release needs a licensed or self-trained separator first (a catalogue change, not a rewrite).
 - `stems()` returns `Stems`, one `Sound` per `Stem`; every measure and edit works on a stem; a stem knows it is one
   (`sound.stem`); `stems.without(...)` recombines the rest (an instrumental); `bt-audio stems FILE -o DIR` writes them.
 - Parts per section (which stem carries drums, bass, lead), since separators route a part to different stems across a song.

@@ -110,6 +110,32 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   model's weights must allow commercial use before they enter the catalogue. A3 added no dependency (tempo crates were GPL or
   unmaintained; no maintained chroma crate; clustering crates cost about twelve dependencies for ten points).
 
+- **A model runtime ported from image, offline by default** (2026-11-12). `ort` (`=2.0.0-rc.15`, `load-dynamic`) loads ONNX Runtime
+  1.23.2 at run time; the runtime and each model are pinned URLs with sha256 and size, fetched only by `bt-audio install` (or a
+  call that sets `BT_AUDIO_ALLOW_DOWNLOAD`); the library never prompts or prints. Sessions run on one thread with basic graph
+  optimisation. *Reason:* one runtime for Python, Rust and apps; no torch environments; no `tract` (unverified operator coverage,
+  and two backends would break one-backend-per-measure). *Cost:* a first-run download; the `ort` release candidate is pinned
+  exactly. The core crate enables its `onnx` feature by default (the template's wiring test forbids enabling it from the
+  Python crate); an A7 API-review item.
+- **Model tests: an ignored test whose gate runs it** (2026-11-12). `notes_with(&impl Infer)` is the public seam: windowing, the
+  frame-to-sample mapping, post-processing and cleanup are tested with hand-built posteriorgrams and always run. The real-model
+  oracles are `#[ignore]` and run by `poe rust-test-models` (part of `poe full` and a CI job); this is an explicit exception to
+  "no skipped tests", because a gate step executes them.
+- **`notes()` is Basic Pitch's own note creation, with cleanup relative to the model's strengths** (2026-11-12). Windows of 43844
+  samples at 22.05 kHz, frames placed on a uniform 256-sample grid (a half-frame error at window seams, documented); the published
+  thresholds (onset 0.5, frame 0.3, 11-frame minimum and tolerance) are cited constants of the `Notes` parameters. The prototype's
+  16th-note, song-tuned rules became: merge same-pitch notes within `merge_gap` unless the onset posterior says re-attack, drop
+  ghosts below a share of the song's 90th-percentile strength, drop overtones (+12, +19, +24 semitones) weaker than a share of an
+  overlapping note. Defaults were measured on synthesised tones (ghost 0.65, partial 0.8). Octave-alias correction needs the
+  audio's band levels and waits for the contour work.
+- **Models are chosen for quality; their licences are recorded, not gating, for now** (2026-11-12). The catalogue's `licence` field
+  states each model's terms honestly. Surveyed: Basic Pitch Apache-2.0 (code and weights); Demucs MIT code, weights science-only
+  per its author; Open-Unmix umxl, ADTOF and madmom's models CC BY-NC-SA; Spleeter, UVR and RoFormer weights unclear; Beat This!
+  MIT. The owner decided that no paid product exists yet, so the best models are used behind the same interface (a model is a
+  catalogue entry), and the licences are revisited before any commercial release; a licensed or self-trained model then replaces
+  the entry. Dependencies of the libraries themselves stay permissive or MPL (`deny.toml`). Drum hits are chosen by measured
+  quality on synthesised drum parts (band-onset DSP against a transcriber), not by licence.
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI
