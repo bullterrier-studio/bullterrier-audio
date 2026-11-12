@@ -56,9 +56,9 @@ class Band:
 
 @final
 class Series:
-    def __init__(
-        self, start: float, rate: float, values: Sequence[float], unit: str, scaling: str | None = None
-    ) -> None: ...
+    def __new__(
+        cls, start: float, rate: float, values: Sequence[float], unit: str, scaling: str | None = None
+    ) -> Series: ...
     @property
     def start(self) -> float: ...
     @property
@@ -72,14 +72,14 @@ class Series:
 
 @final
 class Event:
-    def __init__(
-        self,
+    def __new__(
+        cls,
         t: float,
         strength: float,
         duration: float | None = None,
         label: str | None = None,
         pitch: float | None = None,
-    ) -> None: ...
+    ) -> Event: ...
     @property
     def t(self) -> float: ...
     @property
