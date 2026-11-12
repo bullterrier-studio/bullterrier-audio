@@ -656,6 +656,47 @@ mod ensemble {
         Ok(())
     }
 
+    /// The zeros at the start of the (single-segment) input of the first pass of each model, in the order the models
+    /// run: they differ with the shift of the pass.
+    fn first_zero_runs(seed: u64) -> Result<Vec<usize>, Error> {
+        struct Recorder(StandIn, Arc<Mutex<Vec<usize>>>);
+        impl Infer for Recorder {
+            fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error> {
+                let zeros = input.values().iter().take_while(|&&x| x == 0.0).count();
+                self.1
+                    .lock()
+                    .map_err(|_| Error::Invalid("poisoned".into()))?
+                    .push(zeros);
+                self.0.infer(input)
+            }
+        }
+        let runs = Arc::new(Mutex::new(Vec::new()));
+        let recorder = |sources| {
+            // each source is the input itself
+            let model = StandIn::new(move |_, input| (0..sources).flat_map(|_| input.iter().copied()).collect())
+                .with_sources(sources);
+            Ok(Recorder(model, Arc::clone(&runs)))
+        };
+        sound(mix(100), RATE)?
+            .with_separation(Separation::new(1, true, seed, true, 4)?)
+            .stems_with_ensemble(|| recorder(6), |_| recorder(4))?;
+        let runs = runs.lock().map_err(|_| Error::Invalid("poisoned".into()))?.clone();
+        Ok(runs)
+    }
+
+    #[test]
+    fn each_model_draws_its_own_shifts_from_the_seed() -> Outcome {
+        let runs = first_zero_runs(0)?;
+        assert_eq!(runs.len(), 5, "one pass per model");
+        assert!(
+            runs.iter().any(|&zeros| zeros != runs[0]),
+            "every model got the same shift: {runs:?}"
+        );
+        assert_eq!(first_zero_runs(0)?, runs, "one seed draws different shifts");
+        assert_ne!(first_zero_runs(1)?, runs, "two seeds draw the same shifts");
+        Ok(())
+    }
+
     #[test]
     fn an_ft_model_that_answers_with_six_sources_is_refused() -> Outcome {
         let log = Log::default();

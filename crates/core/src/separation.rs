@@ -21,7 +21,9 @@ use crate::Error;
 /// of this package, not Demucs': each shift is a whole separation, minutes for a song.
 ///
 /// `seed` draws the moves, with a fixed generator: the same sound, `shifts` and `seed` give the same stems on the same
-/// machine and library versions. Demucs draws them from Python's global random state, so its own are not repeatable.
+/// machine and library versions. Demucs draws them from Python's global random state, so its own are not repeatable. In
+/// the ensemble one generator draws for all five models in turn (the six-source model, then the ft models of drums,
+/// bass, other and vocals), so each model gets shifts of its own.
 ///
 /// `ensemble` runs the recipe of `Sound::stems_with_ensemble` with the four `htdemucs-ft-*` models, which are installed
 /// only when asked for (`models::install_ensemble`); it takes five times as long as one model (15 s of sound: 87 s, against 17 s for

@@ -23,7 +23,7 @@ pub(crate) const CHANNELS: usize = 2;
 /// The revision of the separation: part of the key of the stems on disk. Raise it whenever a change can alter the stems
 /// of a sound (the segmenting, normalisation, shifts or blending here, the resampling, the recipe of the ensemble),
 /// as the crate version stays 0.0.0 while the package is in development and so cannot tell old stems from new.
-pub(crate) const ALGORITHM_REVISION: u32 = 1;
+pub(crate) const ALGORITHM_REVISION: u32 = 2; // 2: each model of the ensemble draws its own shifts
 /// The most samples the stems of one sound may hold (all stems, both channels): 2^29 floats are 2 GiB, about 17
 /// minutes with six stems. A stated limit of this package, from the 4 GB memory budget of a run.
 const MAX_SAMPLES: usize = 1 << 29;
@@ -266,6 +266,7 @@ pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error
         run(
             mix,
             sound.separation(),
+            &mut Generator(sound.separation().seed()),
             model,
             STEMS,
             &(0..STEMS * CHANNELS).collect::<Vec<_>>(),
@@ -287,11 +288,15 @@ pub(crate) fn separate_ensemble<M: Infer>(
 ) -> Result<Stems, Error> {
     separate_with(sound, |mix| {
         let separation = sound.separation();
+        // one generator for the whole recipe, so that each model draws shifts of its own, as each sub-model of a
+        // Demucs bag does
+        let mut generator = Generator(separation.seed());
         let mut total = {
             let model = six()?;
             run(
                 mix,
                 separation,
+                &mut generator,
                 &model,
                 STEMS,
                 &(0..STEMS * CHANNELS).collect::<Vec<_>>(),
@@ -302,7 +307,7 @@ pub(crate) fn separate_ensemble<M: Infer>(
             let rows = {
                 let model = ft(own)?;
                 let row = own.index() * CHANNELS;
-                run(mix, separation, &model, FT_STEMS, &[row, row + 1])?
+                run(mix, separation, &mut generator, &model, FT_STEMS, &[row, row + 1])?
             };
             for (channel, ft_row) in rows.iter().enumerate() {
                 let at = |stem: Stem| stem.index() * CHANNELS + channel;
@@ -362,11 +367,12 @@ fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>
 }
 
 /// The rows `wanted` (source by channel) of a model with `sources` sources, over the whole mixture, in the normalised
-/// domain: the mean of its passes, one per shift.
+/// domain: the mean of its passes, one per shift, each shift drawn from `generator`.
 #[allow(clippy::cast_possible_truncation)] // f32 samples
 fn run(
     mixture: &Mix,
     separation: &Separation,
+    generator: &mut Generator,
     model: &impl Infer,
     sources: usize,
     wanted: &[usize],
@@ -385,7 +391,6 @@ fn run(
     if separation.shifts() == 0 {
         pass.run(0, 0, frames, &mut total)?;
     }
-    let mut generator = Generator(separation.seed());
     for _ in 0..separation.shifts() {
         // `offset = random.randint(0, max_shift)` (apply.py:214), both ends included
         #[allow(clippy::cast_possible_truncation)] // below 22 051
