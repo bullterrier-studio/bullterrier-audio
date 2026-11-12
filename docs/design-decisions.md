@@ -58,6 +58,16 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 - **Results are immutable artifacts.** A refined measure is a new producer, never an overwrite. *Reason:* a step that
   rewrote another step's output was the prototypes' most costly failure.
 
+- **Audio I/O crates** (2026-11-12). Decoding: symphonia (wav, flac, mp3, ogg, m4a in pure Rust; MPL-2.0, accepted by the
+  owner: an unmodified dependency puts no duty on our MIT code). Resampling: rubato's default sinc preset, no knobs. Writing:
+  hound (wav, 32-bit float) and flacenc (flac, 24-bit; a sample outside [-1, 1) is refused, never clamped). Formats: serde and
+  serde_json. The numpy crate (BSD-2-Clause) and the numpy package carry samples across the Python boundary. *Reason:* each is
+  the well-known maintained crate for its job; nothing is hand-written that a crate covers.
+- **Edits are defined once.** `cut` rounds both ends with `round(t * rate)`, so adjacent cuts tile exactly. `fade` is linear in
+  amplitude: sample `i` of the fade-in gets `i / n`, the sample `k` places before the end of the fade-out gets `k / n`.
+  *Reason:* a fade shape and a rounding rule shape the result, so they are fixed and documented, not parameters.
+- **The cache arrives in A2.** A1 produces no artifact, so a store would have nothing to hold and no honest test.
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI

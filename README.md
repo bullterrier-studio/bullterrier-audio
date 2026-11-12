@@ -10,13 +10,14 @@ information retrieval (MIR).
 
 ## Status
 
-Pre-alpha. The project is scaffolded and gated; no analysis exists yet. The work is planned in batches
-([docs/roadmap.md](docs/roadmap.md)): first one `analyse()` call for the clock and the band energies, then stems, then
-notes.
+Pre-alpha. A `Sound` can be loaded (wav, flac, mp3, ogg, m4a), cut, faded, mixed to mono, resampled and written (wav,
+flac), and `bt-audio info FILE` prints its rate, channels and duration. Measures (spectrum, grid, stems, notes) come next, in
+batches ([docs/roadmap.md](docs/roadmap.md)).
 
 ```bash
 uv sync
 uv run bt-audio --version
+uv run bt-audio info song.wav
 uv run poe check    # every gate: format, lint, dead code, types, tests
 ```
 

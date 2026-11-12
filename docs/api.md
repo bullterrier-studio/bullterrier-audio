@@ -1,6 +1,8 @@
 # The API, from the tasks it serves
 
-**Design, not yet built.** Each task below shows the intended call in Python and Rust; the batch that builds it is named
+**Built in part.** Load, `from_samples`, `cut`, `fade`, `mono`, `resampled`, `write`, `origin` and `bt-audio info` exist (A1,
+tested in `tests/test_sound.py` and `crates/core/tests/it/`); the measures, stems, `normalised` and `bundle()` are design.
+Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
 
@@ -109,7 +111,7 @@ came from (`drop.origin`: the source and its offset), so a caller can map them b
 
 ```rust
 // a video renderer or a server: no files, no subprocess
-let song = Sound::from_samples(&samples, sample_rate)?;
+let song = Sound::from_samples(channels, sample_rate)?;   // planar: one Vec<f32> per channel
 for beat in song.grid()?.beats() { /* ... */ }
 ```
 
@@ -140,5 +142,6 @@ measures are registered too, so `bundle()` and the command list them all; the ty
 | Confidence | A field on each result type (`Grid.confidence`, `Key.confidence`, `Section.confidence`, `Event.strength`), not a wrapper type | One less type to unwrap |
 | Models | ONNX, run from the Rust core with image's pattern: pinned URL and sha256, the runtime loaded at run time, `bt-audio install`, `bt-audio models`, `bt-audio doctor`; no download at import, no prompt from the library | No torch or TensorFlow environments; the same in Python, Rust and an app |
 | A model missing | `ModelUnavailableError` naming the install command; never a silent other method | One backend per measure, chosen in design, as image's finders |
-| Errors | `BullterrierAudioError` > `DecodeError`, `InvalidError` (also `ValueError`), `ModelUnavailableError` (also `NotImplementedError`) | The house pattern |
+| Errors | `BullterrierAudioError` > `DecodeError` and `WriteError` (also `OSError`), `InvalidError` (also `ValueError`), `ModelUnavailableError` (also `NotImplementedError`, with A4) | The house pattern |
+| Grid | `beats`, `meter`, `first_downbeat` only, as control's bundle v1; `tempo(i)` and `downbeats()` are methods. `confidence` has no slot in v1: a change for control before A3 | The format is control's; audio writes it, it does not extend it |
 | Limits of the first version | Steady tempo (no tempo map), one meter per song, straight time (no swing) | Stated in `summary()` and the docs, not hidden |

@@ -12,30 +12,28 @@ into one of those seams.
 | # | Batch | Size | Seam it proves | State |
 |---|---|---|---|---|
 | A0 | Scaffold: gate, hooks, CI, release tooling, CLAUDE.md | S | | done |
-| A1 | Rust core, `Sound`, edits, cache, formats out | M | sound in → `Sound` → sound and Bundle out | |
-| A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | |
+| A1 | Rust core, `Sound`, edits, formats out | M | sound in → `Sound` → sound and Bundle out | done |
+| A2 | Cache, spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum; artifacts cached | |
 | A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | |
 | A4 | Models, and notes | M | an ONNX model behind a method | |
 | A5 | Stems | L | a stem is a `Sound` | |
 | A6 | Drum hits | M | labelled events from a part | |
 | A7 | Measures by name, API review, first release | M | the extension point | |
 
-## A1 Rust core, `Sound`, edits, cache, formats out
+## A1 Rust core, `Sound`, edits, formats out (done)
 
 - Switch to the template's Rust layout (`copier update` with `rust: true`; not hand-made crates): `crates/core`
   (`bullterrier-audio`), `crates/python` (`_core`), the Python package as a thin facade with a typed stub.
 - Record the language decision (design-decisions) and update `CLAUDE.md` (state, architecture, parameters as Rust structs).
   Ask the owner to update the ecosystem text in the design notes and in control's and image's `docs/ecosystem.md`, which
   still say models are Python adapters (image already runs ONNX in Rust).
-- `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), resampling to the analysis rate, `duration`,
+- `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), `duration`,
   `channels`. `DecodeError` names the file and the reason.
 - Edits that return a `Sound`: `cut(start, end)` (with `origin`), `fade`, `mono`, `resampled(rate)`, `normalised(lufs=)`
-  (needs A2's loudness: lands there); `write(path)` as wav and flac.
-- Oracles for edits: a cut's length is `end - start` to the sample; cutting then measuring equals measuring then taking
-  the same span (within one hop); a write then load gives the samples back (lossless); a fade's gain curve matches its
-  formula at known samples.
-- Cache: the whole-file fingerprint plus producer identity; in memory per `Sound`, on disk in the `bt-audio` cache folder;
-  immutable artifacts.
+  (needs A2's loudness: lands there); `write(path)` as wav and flac. Parameter structs wait for the first analyser (A2).
+- Oracles for edits: a cut's length is `round(end*rate) - round(start*rate)`; a write then load gives the samples back
+  (lossless); a fade's gain curve matches its formula at known samples. "Cutting then measuring equals measuring then taking
+  the same span (within one hop)" moves to A2, which has the first measure.
 - Formats: own `Series`, `Event`, `Grid`, `Bundle` types that write control's bundle format, with a copy of its schema. The
   writer enforces the rules the schema cannot express (events sorted by time, durations inside the file, beats strictly
   increasing, fractions in 0..1, finite numbers); the conformance test runs every output through the schema and those rules.
@@ -43,8 +41,11 @@ into one of those seams.
 - Oracles: synthesised files written in the test (a sine of known length and rate decodes to that length; the same file in
   two containers gives the same samples within codec tolerance).
 
-## A2 Spectrum: bands, loudness, brightness, onsets
+## A2 Cache, spectrum: bands, loudness, brightness, onsets
 
+- Cache: the whole-file fingerprint plus producer identity; in memory per `Sound`, on disk in the `bt-audio` cache folder;
+  immutable artifacts.
+  Moved here from A1: A1 produces no artifact, so the cache arrives with its first producers.
 - One `spectrum` module owns the STFT, the bands (`Band`, edges in api.md) and onset strength; every later measure uses it.
 - `energy(band)`, `loudness()` (EBU R128 short-term, decibels), `brightness()` (centroid, hertz), `onsets()`;
   `normalised(lufs=)` from A1 lands here, on the same loudness.
@@ -52,7 +53,7 @@ into one of those seams.
   docstring).
 - Acceptance: detection does not depend on the analysis hop. The same file analysed at two hops gives the same onsets within one
   hop, and a strength keeps its 0..1 meaning. Why: a prototype had to rescale its kick threshold when its frame rate changed.
-- Oracles: a tone in one band and silence in the others; clicks at known times give onsets at those times; EBU R128 test
+- Oracles: cutting then measuring equals measuring then taking the same span (within one hop); a tone in one band and silence in the others; clicks at known times give onsets at those times; EBU R128 test
   signals at their published loudness. librosa as a dev-only parity reference for the spectrum, never a runtime dependency.
 
 ## A3 Grid, sections, key, drops
