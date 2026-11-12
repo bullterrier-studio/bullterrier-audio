@@ -15,15 +15,17 @@ use crate::write::write;
 use crate::{Error, Sound, Stem, Stems};
 
 /// The stems of `sound`: read from the folder of its key under `cache` if that holds all six, else made by `compute`
-/// and stored there.
-pub(crate) fn cached(
+/// and stored there. On a miss, `needs` runs first (what `compute` cannot do without, found now so that a missing piece
+/// fails at once; its result goes to `compute`), then the folder is made and proved writable, then `compute` runs.
+pub(crate) fn cached<T>(
     sound: &Sound,
     cache: &Path,
     models: &[&str],
-    compute: impl FnOnce() -> Result<Stems, Error>,
+    needs: impl FnOnce() -> Result<T, Error>,
+    compute: impl FnOnce(T) -> Result<Stems, Error>,
 ) -> Result<Stems, Error> {
     if !sound.separation().cache() {
-        return compute();
+        return compute(needs()?);
     }
     let root = cache.join("stems");
     let folder = root.join(key(sound, models, ALGORITHM_REVISION));
@@ -31,9 +33,10 @@ pub(crate) fn cached(
     if let Some(rows) = load(&folder, frames) {
         return finish(sound, rows);
     }
+    let needed = needs()?;
     // a folder that cannot be written fails now, not after minutes of separation
     prepare(&root, &folder)?;
-    let stems = compute()?;
+    let stems = compute(needed)?;
     store(&folder, &stems)?;
     Ok(stems)
 }

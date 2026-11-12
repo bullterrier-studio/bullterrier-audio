@@ -255,23 +255,31 @@ pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
         .collect();
     let hashes: Vec<&str> = used.iter().map(|model| model.sha256).collect();
     let threads = sound.separation().threads() as usize;
-    sound.stems_cached(&options.cache()?, &hashes, || {
-        // every file is found (and verified) before the first session opens, so a missing model fails at once and
-        // not after the passes of the models before it; `used` is the six-source model, then drums, bass, other, vocals
-        let files = used
-            .iter()
-            .map(|model| model_file(model, &options))
-            .collect::<Result<Vec<_>, _>>()?;
-        let library = runtime_library(&options)?;
-        // a session holds gigabytes: separation never uses the sessions `OrtInfer::open` keeps for the life of the
-        // process, so that dropping one frees its memory
-        let open = |file: &std::path::Path| OrtInfer::from_file(&library, file, threads);
-        if ensemble {
-            sound.stems_with_ensemble(|| open(&files[0]), |stem| open(&files[1 + stem.index()]))
-        } else {
-            sound.stems_with(&open(&files[0])?)
-        }
-    })
+    crate::stem_cache::cached(
+        sound,
+        &options.cache()?,
+        &hashes,
+        // every file is found (and verified) before the cache folder is made and before the first session opens, so a
+        // missing model fails at once and not after the passes of the models before it; `used` is the six-source
+        // model, then drums, bass, other, vocals
+        || {
+            let files = used
+                .iter()
+                .map(|model| model_file(model, &options))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((files, runtime_library(&options)?))
+        },
+        |(files, library)| {
+            // a session holds gigabytes: separation never uses the sessions `OrtInfer::open` keeps for the life of
+            // the process, so that dropping one frees its memory
+            let open = |file: &std::path::Path| OrtInfer::from_file(&library, file, threads);
+            if ensemble {
+                sound.stems_with_ensemble(|| open(&files[0]), |stem| open(&files[1 + stem.index()]))
+            } else {
+                sound.stems_with(&open(&files[0])?)
+            }
+        },
+    )
 }
 
 /// Separates `sound` with the single model.

@@ -523,7 +523,7 @@ impl Sound {
         models: &[&str],
         compute: impl FnOnce() -> Result<Stems, Error>,
     ) -> Result<Stems, Error> {
-        stem_cache::cached(self, cache, models, compute)
+        stem_cache::cached(self, cache, models, || Ok(()), |()| compute())
     }
 
     /// The notes of the sound, found by the installed Basic Pitch model and cleaned up; see [`Sound::notes_with`] for
