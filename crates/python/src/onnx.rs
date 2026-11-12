@@ -6,8 +6,8 @@ use pyo3::prelude::*;
 
 use bullterrier_audio::Error;
 use bullterrier_audio::models::{
-    Options, RUNTIME_VERSION, Status, install_model, install_runtime, load_runtime, model_status, models as catalogue,
-    runtime_status, runtimes,
+    Options, RUNTIME_VERSION, Status, ensemble_models, install_model, install_runtime, load_runtime, model_status,
+    models as catalogue, runtime_status, runtimes,
 };
 
 use crate::error;
@@ -40,6 +40,13 @@ impl ModelInfo {
     }
 }
 
+/// The models `install`, `models` and `doctor` deal with: all but the ensemble's, which are installed only when asked for.
+fn standard_models() -> impl Iterator<Item = &'static bullterrier_audio::models::Model> {
+    catalogue()
+        .iter()
+        .filter(|model| ensemble_models().iter().all(|ensemble| ensemble.name != model.name))
+}
+
 fn options(cache: Option<PathBuf>) -> Options {
     let options = Options::from_env();
     cache.map_or(options.clone(), |folder| options.with_cache(folder))
@@ -50,8 +57,7 @@ fn options(cache: Option<PathBuf>) -> Options {
 #[pyo3(signature = (cache=None))]
 pub(crate) fn models(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<Vec<ModelInfo>> {
     let options = options(cache);
-    catalogue()
-        .iter()
+    standard_models()
         .map(|model| {
             let info = ModelInfo {
                 name: model.name.to_owned(),
@@ -117,7 +123,7 @@ pub(crate) fn install(py: Python<'_>, cache: Option<PathBuf>, runtime: bool, mod
             kept.push(install_runtime(&options)?);
         }
         if models {
-            for model in catalogue() {
+            for model in standard_models() {
                 kept.push(install_model(model, &options)?);
             }
         }
