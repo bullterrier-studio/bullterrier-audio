@@ -322,7 +322,7 @@ def test_stems_of_silence_are_six_silent_wavs_in_a_folder_it_makes_and_overwrite
 def test_the_doctor_passes_when_only_the_ensemble_models_are_missing(tmp_path, capsys, monkeypatch):
     # the installed library by its own path (a process loads one library only), the required models by link
     monkeypatch.setenv("BT_AUDIO_ONNX_LIB", str(onnx_runtime_status().path))
-    for model in ("basic-pitch", "htdemucs-6s"):
+    for model in ("basic-pitch", "htdemucs-6s", "adtof-frame-rnn"):
         (tmp_path / f"{model}.onnx").symlink_to(cache_dir() / f"{model}.onnx")
     assert main(["doctor", "--cache", str(tmp_path)]) == 0
     out = capsys.readouterr().out
