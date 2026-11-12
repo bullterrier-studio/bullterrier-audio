@@ -12,10 +12,11 @@ use crate::{Error, Infer, Tensor};
 
 /// A model file loaded into ONNX Runtime on the CPU (loading takes a moment). A handle is cheap to clone; clones are
 /// the one session. [`open`](Self::open) keeps the session it loads, so the next call for the same model and library
-/// gets it back.
+/// gets it back (the same threads too).
 ///
-/// Determinism: the session runs one thread inside operators and one across them, and applies no graph rewrites
-/// (optimisation level `Disable`), so what runs does not depend on the processor. The same input then gives the same
+/// Determinism: the session runs `threads` threads inside operators and one across them, and applies no graph rewrites
+/// (optimisation level `Disable`), so what runs does not depend on the processor. (The six-source Demucs model gave
+/// the same bits on 1, 2, 4 and 8 threads on the machine it was measured on: see `Separation`.) The same input then gives the same
 /// output on the same machine and library. Rewrites are off for memory: with the basic ones, the six-source Demucs
 /// model peaked at 3.7 to 5.2 GB resident for one segment, and without them at 1.9 GB.
 #[derive(Clone)]
@@ -29,13 +30,14 @@ struct Loaded {
 }
 
 impl OrtInfer {
-    /// The model in `file`, run by the ONNX Runtime library at `library` (a `.so`, `.dylib` or `.dll`). The library is
+    /// The model in `file`, run by the ONNX Runtime library at `library` (a `.so`, `.dylib` or `.dll`) on `threads`
+    /// threads inside an operator. The library is
     /// loaded once per process: a second, different `library` is refused.
     ///
     /// # Errors
     /// [`Error::ModelUnavailable`] naming the files if the library cannot be loaded, is not the one this process
     /// already loaded, or cannot use the model file.
-    pub fn from_file(library: &Path, file: &Path) -> Result<Self, Error> {
+    pub fn from_file(library: &Path, file: &Path, threads: usize) -> Result<Self, Error> {
         let unavailable = |error: &dyn std::fmt::Display| {
             Error::ModelUnavailable(format!(
                 "onnxruntime ({}) cannot use the model file {}: {error}",
@@ -46,7 +48,7 @@ impl OrtInfer {
         let environment = environment(library).map_err(|error| unavailable(&error))?;
         let load = || -> Result<OrtSession, ort::Error> {
             let mut builder = OrtSession::builder(environment)?
-                .with_intra_threads(1)?
+                .with_intra_threads(threads)?
                 .with_inter_threads(1)?
                 .with_optimization_level(GraphOptimizationLevel::Disable)?;
             builder.commit_from_file(file)
@@ -75,16 +77,19 @@ impl OrtInfer {
     ///
     /// # Errors
     /// As [`model_file`], [`runtime_library`] and [`from_file`](Self::from_file).
-    pub fn open(model: &Model, options: &Options) -> Result<Self, Error> {
-        static KEPT: Mutex<Vec<(PathBuf, PathBuf, OrtInfer)>> = Mutex::new(Vec::new());
+    pub fn open(model: &Model, options: &Options, threads: usize) -> Result<Self, Error> {
+        static KEPT: Mutex<Vec<(PathBuf, PathBuf, usize, OrtInfer)>> = Mutex::new(Vec::new());
         let (library, file) = (runtime_library(options)?, model_file(model, options)?);
         // a panic while the lock is held leaves the list valid, so a poisoned lock is still usable
         let mut kept = KEPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((_, _, session)) = kept.iter().find(|(l, f, _)| *l == library && *f == file) {
+        if let Some((_, _, _, session)) = kept
+            .iter()
+            .find(|(l, f, t, _)| *l == library && *f == file && *t == threads)
+        {
             return Ok(session.clone());
         }
-        let session = Self::from_file(&library, &file)?;
-        kept.push((library, file, session.clone()));
+        let session = Self::from_file(&library, &file, threads)?;
+        kept.push((library, file, threads, session.clone()));
         Ok(session)
     }
 

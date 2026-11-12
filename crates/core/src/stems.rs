@@ -236,13 +236,14 @@ pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
         .chain(ensemble_models().iter().filter(|_| ensemble))
         .map(|model| model.sha256)
         .collect();
+    let threads = sound.separation().threads() as usize;
     sound.stems_cached(&options.cache()?, &used, || {
         if ensemble {
             // sessions that are not kept for the life of the process, so that dropping one frees its memory
-            let open = |model| OrtInfer::from_file(&runtime_library(&options)?, &model_file(model, &options)?);
+            let open = |model| OrtInfer::from_file(&runtime_library(&options)?, &model_file(model, &options)?, threads);
             sound.stems_with_ensemble(|| open(six), |stem| open(&ensemble_models()[stem.index()]))
         } else {
-            sound.stems_with(&OrtInfer::open(six, &options)?)
+            sound.stems_with(&OrtInfer::open(six, &options, threads)?)
         }
     })
 }

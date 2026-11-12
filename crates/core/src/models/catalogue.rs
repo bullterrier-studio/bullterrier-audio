@@ -166,14 +166,19 @@ pub fn install_model(model: &Model, options: &Options) -> Result<PathBuf, Error>
 /// `options` allow downloading.
 ///
 /// # Errors
-/// [`Error::ModelUnavailable`] saying to run `bt-audio install`, or to allow downloading (`BT_AUDIO_ALLOW_DOWNLOAD=1`),
+/// [`Error::ModelUnavailable`] saying to run `bt-audio install` (`bt-audio install --ensemble` for an ensemble model), or to allow downloading (`BT_AUDIO_ALLOW_DOWNLOAD=1`),
 /// when it is not there and downloading is not allowed; otherwise as [`install_model`].
 pub fn model_file(model: &Model, options: &Options) -> Result<PathBuf, Error> {
     match model_status(model, options)? {
         Status::Installed(path) => Ok(path),
         Status::NotInstalled(path) | Status::Damaged { path, .. } if !options.downloads() => {
+            let command = if ensemble_models().iter().any(|member| member.name == model.name) {
+                "bt-audio install --ensemble"
+            } else {
+                "bt-audio install"
+            };
             Err(Error::ModelUnavailable(format!(
-                "the {} model is not installed (expected at {}): run `bt-audio install`, or allow downloading it (BT_AUDIO_ALLOW_DOWNLOAD=1)",
+                "the {} model is not installed (expected at {}): run `{command}`, or allow downloading it (BT_AUDIO_ALLOW_DOWNLOAD=1)",
                 model.name,
                 path.display()
             )))

@@ -421,6 +421,16 @@ mod where_things_are {
             matches!(&missing, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install`") && m.contains("basic-pitch") && m.contains("BT_AUDIO_ALLOW_DOWNLOAD=1")),
             "{missing:?}"
         );
+        let ft = model_file(&bullterrier_audio::models::ensemble_models()[0], &options);
+        assert!(
+            matches!(&ft, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install --ensemble`")),
+            "{ft:?}"
+        );
+        let six = model_file(&models()[1], &options);
+        assert!(
+            matches!(&six, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install`") && !m.contains("--ensemble")),
+            "{six:?}"
+        );
         let bytes = b"abc";
         let stand_in = model(&format!("{}/m", serve(vec![ok(bytes)])?), bytes);
         let file = model_file(&stand_in, &options.allow_download(true))?;
@@ -530,7 +540,7 @@ mod where_things_are {
     #[test]
     fn a_library_that_is_not_there_cannot_be_loaded() -> Outcome {
         let dir = tempfile::tempdir()?;
-        let loaded = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &dir.path().join("m.onnx"));
+        let loaded = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &dir.path().join("m.onnx"), 1);
         assert!(matches!(loaded, Err(Error::ModelUnavailable(m)) if m.contains("no-lib.dylib")));
         Ok(())
     }
@@ -588,7 +598,7 @@ mod tensors {
 #[test]
 #[ignore = "needs the installed runtime and model: poe rust-test-models"]
 fn the_real_basic_pitch_has_the_verified_input_and_outputs() -> Outcome {
-    let infer = OrtInfer::open(&models()[0], &Options::from_env())?;
+    let infer = OrtInfer::open(&models()[0], &Options::from_env(), 1)?;
     assert_eq!(infer.input_name(), "serving_default_input_2:0");
     assert_eq!(
         infer.output_names(),
@@ -618,9 +628,9 @@ fn a_library_that_failed_to_load_does_not_stop_a_good_one_later() -> Outcome {
     let dir = tempfile::tempdir()?;
     let options = Options::from_env();
     let model = model_file(&models()[0], &options)?;
-    let failed = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &model);
+    let failed = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &model, 1);
     assert!(matches!(failed, Err(Error::ModelUnavailable(m)) if m.contains("no-lib.dylib")));
-    let opened = OrtInfer::open(&models()[0], &options)?;
+    let opened = OrtInfer::open(&models()[0], &options, 1)?;
     assert_eq!(opened.output_names().len(), 3);
     Ok(())
 }
@@ -630,9 +640,9 @@ fn a_library_that_failed_to_load_does_not_stop_a_good_one_later() -> Outcome {
 #[ignore = "needs the installed runtime and model: poe rust-test-models"]
 fn opening_a_model_again_gives_the_session_already_loaded() -> Outcome {
     let options = Options::from_env();
-    let first = OrtInfer::open(&models()[0], &options)?;
-    assert!(first == OrtInfer::open(&models()[0], &options)?);
-    let own = OrtInfer::from_file(&runtime_library(&options)?, &model_file(&models()[0], &options)?)?;
+    let first = OrtInfer::open(&models()[0], &options, 1)?;
+    assert!(first == OrtInfer::open(&models()[0], &options, 1)?);
+    let own = OrtInfer::from_file(&runtime_library(&options)?, &model_file(&models()[0], &options)?, 1)?;
     assert!(first != own, "from_file always loads a session of its own");
     Ok(())
 }

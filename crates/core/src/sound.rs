@@ -534,7 +534,7 @@ impl Sound {
         if let Some(events) = self.memo.0.notes.get() {
             return Ok(events.clone());
         }
-        let model = crate::models::OrtInfer::open(&crate::models::models()[0], &crate::models::Options::from_env())?;
+        let model = crate::models::OrtInfer::open(&crate::models::models()[0], &crate::models::Options::from_env(), 1)?;
         let events = self.notes_with(&model)?;
         Ok(self.memo.0.notes.get_or_init(|| events).clone())
     }
