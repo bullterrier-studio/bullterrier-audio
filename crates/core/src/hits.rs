@@ -96,10 +96,10 @@ pub(crate) fn activations(sound: &Sound, model: &impl Infer) -> Result<Vec<f32>,
     Ok(activations.values().to_vec())
 }
 
-/// `round(seconds * FRAME_RATE)`: a window in whole frames.
+/// `round(seconds * FRAME_RATE)` with halves to the even frame, as Python's `round` (ADTOF): a window in whole frames.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a small, not negative number of frames
 fn in_frames(seconds: f64) -> usize {
-    (seconds * FRAME_RATE).round() as usize
+    (seconds * FRAME_RATE).round_ties_even() as usize
 }
 
 /// The hits of `hit` in `activations` (from [`activations`]): ADTOF's `NotePeakPickingProcessor.process`, in `f64`.
@@ -115,14 +115,19 @@ pub(crate) fn events(activations: &[f32], hit: Hit, params: &Hits) -> Vec<Event>
         .collect();
     let n = column.len();
     let (before, after) = (in_frames(params.pre_average()), in_frames(params.post_average()));
-    // what rises above the average of the frames `i - before..=i + after`, the ends repeated
-    let remainder: Vec<f64> = (0..n)
-        .map(|i| {
-            let window = |k: usize| column[(i + k).saturating_sub(before).min(n - 1)];
-            let sum: f64 = (0..=before + after).map(window).sum();
-            (column[i] - sum / (before + 1 + after) as f64).max(0.0)
-        })
-        .collect();
+    // what rises above the average of the frames `i - before..=i + after`, the ends repeated; with no frame either side
+    // there is no average to take, as in ADTOF
+    let remainder: Vec<f64> = if before == 0 && after == 0 {
+        column.clone()
+    } else {
+        (0..n)
+            .map(|i| {
+                let window = |k: usize| column[(i + k).saturating_sub(before).min(n - 1)];
+                let sum: f64 = (0..=before + after).map(window).sum();
+                (column[i] - sum / (before + 1 + after) as f64).max(0.0)
+            })
+            .collect()
+    };
     let (before, after) = (in_frames(params.pre_max()), in_frames(params.post_max()));
     let threshold = hit.threshold(params);
     let peaks = (0..n).filter(|&i| {

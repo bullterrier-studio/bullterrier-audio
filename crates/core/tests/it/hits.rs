@@ -178,6 +178,36 @@ mod picking {
     }
 
     #[test]
+    fn no_averaging_windows_means_no_average_is_taken() -> Outcome {
+        // ADTOF skips the average when both windows are 0 frames (`if pre_avg_frames > 0 or post_avg_frames > 0`): the
+        // activation itself is picked. 0.004 s is 0.4 frames, 0 after rounding.
+        let lone = Grid::new(1000).set(0, 200, 0.9);
+        for (before, after) in [(0.0, 0.0), (0.004, 0.004)] {
+            let params = Hits::new(0.22, 0.24, 0.22, before, after, 0.02, 0.01, 0.02)?;
+            assert_eq!(
+                pairs(&found_with(&lone, Hit::Kick, params)?),
+                [(2.0, act(0.9))],
+                "{before} {after}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn half_a_frame_rounds_to_the_even_frame_as_pythons_round_does() -> Outcome {
+        // combine 0.025 s is 2.5 frames, Python's round(2.5) is 2: peaks 3 frames apart stay two hits
+        let three = Grid::new(1000).set(0, 200, 0.5).set(0, 203, 0.9);
+        let params = Hits::new(0.22, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.025)?;
+        assert_eq!(found_with(&three, Hit::Kick, params)?.len(), 2, "combine");
+        // pre_average 0.005 s is 0.5 frames, round(0.5) is 0: a spike of 0.8 on a floor of 0.4 has the average of
+        // itself and the next frame, 0.6, remainder 0.2, under the threshold (one frame back it would be 0.2667)
+        let spike = Grid::new(1000).fill(0, 0, 1000, 0.4).set(0, 200, 0.8);
+        let params = Hits::new(0.22, 0.24, 0.22, 0.005, 0.01, 0.02, 0.01, 0.02)?;
+        assert_eq!(found_with(&spike, Hit::Kick, params)?, [], "pre_average");
+        Ok(())
+    }
+
+    #[test]
     fn a_spike_on_the_first_frame_is_its_own_average() -> Outcome {
         // average (11 * 0.9 + 0) / 12 = 0.825, remainder 0.075: under every threshold
         assert_eq!(found(&Grid::new(1000).set(0, 0, 0.9), Hit::Kick)?, []);

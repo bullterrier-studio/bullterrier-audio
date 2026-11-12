@@ -18,10 +18,12 @@ use crate::analysis::within;
 /// | `combine` | seconds | 0.01 to 0.5 | 0.02 |
 ///
 /// All defaults are the published ones of ADTOF's `Frame_RNN` (`post_processing.py`: `FRAME_RNN_THRESHOLDS` at line 8
-/// for the kick, snare and hat thresholds; the `NotePeakPickingProcessor` defaults at lines 21 to 24 and the
+/// for the kick, snare and hat thresholds; the `NotePeakPickingProcessor` defaults at lines 20 to 24 and the
 /// `PeakPicker` arguments at line 96 for the windows). The picker works per class on the activations, 100 frames per
-/// second, and every window is rounded to whole frames:
-/// 1. the average of the activation over the `pre_average` before a frame, the frame itself and the `post_average`
+/// second, and every window is rounded to whole frames (halves to the even frame, as Python's `round`: 0.025 s is 2
+/// frames, 0.005 s is 0):
+/// 1. unless both `pre_average` and `post_average` are 0 frames (then the activation itself is picked, lines 57 to 61),
+///    the average of the activation over the `pre_average` before a frame, the frame itself and the `post_average`
 ///    after it is subtracted (the result is not below 0), so a level that stays high is not a hit and a spike on a raised
 ///    floor counts by its height above the floor;
 /// 2. a frame is a peak when that remainder reaches the class's threshold and is the greatest within `pre_max` before
