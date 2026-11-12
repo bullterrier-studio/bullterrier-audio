@@ -121,6 +121,14 @@ def no_models(tmp_path, monkeypatch):
     return tmp_path / "home"
 
 
+@pytest.fixture(autouse=True)
+def hermetic_environment(request):
+    """Every test of the project's own runs in `no_models`, so that it behaves on a developer's machine as in CI. Not
+    the template's `tests/tools`, and not a test marked `models`, which runs against the installed models."""
+    if not request.node.get_closest_marker("models") and request.node.path.parent.name != "tools":
+        request.getfixturevalue("no_models")
+
+
 CLICK_PERIOD = 0.5
 CLICK_LENGTH = 0.005
 
