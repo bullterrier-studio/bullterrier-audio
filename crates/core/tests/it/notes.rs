@@ -193,18 +193,26 @@ mod making_notes {
         Ok(())
     }
 
+    /// Hand trace of Basic Pitch's `output_to_notes_polyphonic` (v0.4.0) for a played note at frames 10..30 (0.6), a
+    /// dip of `dip` frames at 0.29 (under the 0.3 threshold), then 0.6 for 20 frames. The tolerance is 11 frames. The
+    /// rise after the dip is 0.31, scaled by 0.9 / 0.6 to 0.465: under the onset threshold of 0.5, so the only onset is
+    /// frame 10. Its walk starts at frame 11 and counts `k`, the frames in a row under the threshold; it stops at
+    /// `k = 11` and the end is where it stopped less `k`.
+    /// - dip 10: `k` reaches 10 at frame 39, the plateau resets it, and it reaches 11 after frame 70 (the walk is at
+    ///   frame 71): end = 71 - 11 = 60. One note, frames 10..60.
+    /// - dip 11: `k` reaches 11 after frame 40 (the walk is at 41): end = 41 - 11 = 30. The note is frames 10..30. The
+    ///   plateau 41..60 is left over: the melodia pass starts at its strongest first frame, 41, and walks forward to
+    ///   the last frame over the threshold less one (the reference's `i - 1 - k` = 72 - 1 - 11 = 60) and back through
+    ///   the 11 dip frames to 41 (`i + k` = 30 + 11). Second note, frames 41..60.
     #[test]
     fn a_dip_of_11_frames_ends_a_note_and_one_of_10_does_not() -> Outcome {
-        // the dip lies just under the threshold, so the rise after it is too small to be an onset of its own
-        for (dip, expected) in [(10, vec![(60, 10, 60)]), (11, vec![(60, 10, 31), (60, 42, 62)])] {
+        let rows: [(usize, Vec<Span>); 2] = [(10, vec![(60, 10, 60)]), (11, vec![(60, 10, 30), (60, 41, 60)])];
+        for (dip, expected) in rows {
             let score = Score::new(258)
                 .played(60, 10, 30, 0.6)
                 .plateau(60, 30, 30 + dip, 0.29)
                 .plateau(60, 30 + dip, 50 + dip, 0.6);
-            assert_eq!(run(&score, bare()?)?.len(), expected.len(), "dip {dip}");
-            if dip == 10 {
-                assert_eq!(run(&score, bare()?)?, expected);
-            }
+            assert_eq!(run(&score, bare()?)?, expected, "dip {dip}");
         }
         Ok(())
     }
