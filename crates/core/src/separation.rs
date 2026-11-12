@@ -2,6 +2,36 @@
 
 use crate::Error;
 
+/// The values of a [`Separation`], with a public field for each.
+///
+/// Passed to [`Separation::new`], which checks every value; `SeparationParts::default()` holds the defaults of the table of
+/// [`Separation`]. Fields left out of a struct literal keep their default: `SeparationParts { shifts: …, ..SeparationParts::default() }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeparationParts {
+    /// See the table of [`Separation`].
+    pub shifts: u32,
+    /// See the table of [`Separation`].
+    pub ensemble: bool,
+    /// See the table of [`Separation`].
+    pub seed: u64,
+    /// See the table of [`Separation`].
+    pub cache: bool,
+    /// See the table of [`Separation`].
+    pub threads: u32,
+}
+
+impl Default for SeparationParts {
+    fn default() -> Self {
+        SeparationParts {
+            shifts: 1,
+            ensemble: false,
+            seed: 0,
+            cache: true,
+            threads: 4,
+        }
+    }
+}
+
 /// How a sound is separated into stems. Every value is checked once, in [`Separation::new`]; a `Separation` that
 /// exists is valid, and its fields are read through methods. The default holds every default below.
 ///
@@ -38,13 +68,9 @@ use crate::Error;
 /// 2.17 GB; 8 threads 7.8 s, 2.20 GB. The stems of every count, and of two runs of each, were bit-identical (SHA-256 of
 /// the `f32` samples) there, which is not guaranteed on another processor or library; so `threads` is not part of the
 /// cache key, and the cached stems of another count are read as they are. 64 is a stated limit of this package.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Separation {
-    shifts: u32,
-    ensemble: bool,
-    seed: u64,
-    cache: bool,
-    threads: u32,
+    parts: SeparationParts,
 }
 
 /// The most shifts: see the table of [`Separation`].
@@ -53,18 +79,6 @@ const MAX_SHIFTS: u32 = 32;
 /// The most threads: see the table of [`Separation`].
 const MAX_THREADS: u32 = 64;
 
-impl Default for Separation {
-    fn default() -> Self {
-        Self {
-            shifts: 1,
-            ensemble: false,
-            seed: 0,
-            cache: true,
-            threads: 4,
-        }
-    }
-}
-
 impl Separation {
     /// Parameters with these values (units and ranges in the table of [`Separation`]).
     ///
@@ -72,7 +86,8 @@ impl Separation {
     ///
     /// [`Error::Invalid`] naming `Separation`, the field, its range and the value when `shifts` or `threads` is out of
     /// range.
-    pub fn new(shifts: u32, ensemble: bool, seed: u64, cache: bool, threads: u32) -> Result<Self, Error> {
+    pub fn new(parts: SeparationParts) -> Result<Self, Error> {
+        let SeparationParts { shifts, threads, .. } = parts;
         if shifts > MAX_SHIFTS {
             return Err(Error::Invalid(format!(
                 "Separation shifts must be a count from 0 to {MAX_SHIFTS}, got {shifts}"
@@ -83,42 +98,36 @@ impl Separation {
                 "Separation threads must be a count from 1 to {MAX_THREADS}, got {threads}"
             )));
         }
-        Ok(Self {
-            shifts,
-            ensemble,
-            seed,
-            cache,
-            threads,
-        })
+        Ok(Self { parts })
     }
 
     /// How many shifted separations are averaged; 0 is one without a shift.
     #[must_use]
     pub fn shifts(&self) -> u32 {
-        self.shifts
+        self.parts.shifts
     }
 
     /// Whether the slower, better recipe with the second model bag is used.
     #[must_use]
     pub fn ensemble(&self) -> bool {
-        self.ensemble
+        self.parts.ensemble
     }
 
     /// The seed that draws the shifts.
     #[must_use]
     pub fn seed(&self) -> u64 {
-        self.seed
+        self.parts.seed
     }
 
     /// Whether stems are kept on disk and read back for the same sound.
     #[must_use]
     pub fn cache(&self) -> bool {
-        self.cache
+        self.parts.cache
     }
 
     /// How many threads the model runs on inside an operator; the stems do not depend on it.
     #[must_use]
     pub fn threads(&self) -> u32 {
-        self.threads
+        self.parts.threads
     }
 }

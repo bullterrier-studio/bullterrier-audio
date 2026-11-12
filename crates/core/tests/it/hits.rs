@@ -10,7 +10,7 @@
 use std::sync::Mutex;
 
 use bullterrier_audio::formats::Event;
-use bullterrier_audio::{Error, Hit, Hits, Infer, Sound, Tensor};
+use bullterrier_audio::{Error, Hit, Hits, HitsParts, Infer, Sound, Tensor};
 
 use crate::common::Outcome;
 
@@ -105,7 +105,16 @@ fn act(value: f32) -> f64 {
 fn hits_with_field(index: usize, value: f64) -> Result<Hits, Error> {
     let mut v = [0.22, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.02];
     v[index] = value;
-    Hits::new(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7])
+    Hits::new(HitsParts {
+        kick_threshold: v[0],
+        snare_threshold: v[1],
+        hat_threshold: v[2],
+        pre_average: v[3],
+        post_average: v[4],
+        pre_max: v[5],
+        post_max: v[6],
+        combine: v[7],
+    })
 }
 
 const FIELDS: [&str; 8] = [
@@ -183,7 +192,11 @@ mod picking {
         // activation itself is picked. 0.004 s is 0.4 frames, 0 after rounding.
         let lone = Grid::new(1000).set(0, 200, 0.9);
         for (before, after) in [(0.0, 0.0), (0.004, 0.004)] {
-            let params = Hits::new(0.22, 0.24, 0.22, before, after, 0.02, 0.01, 0.02)?;
+            let params = Hits::new(HitsParts {
+                pre_average: before,
+                post_average: after,
+                ..Default::default()
+            })?;
             assert_eq!(
                 pairs(&found_with(&lone, Hit::Kick, params)?),
                 [(2.0, act(0.9))],
@@ -197,12 +210,18 @@ mod picking {
     fn half_a_frame_rounds_to_the_even_frame_as_pythons_round_does() -> Outcome {
         // combine 0.025 s is 2.5 frames, Python's round(2.5) is 2: peaks 3 frames apart stay two hits
         let three = Grid::new(1000).set(0, 200, 0.5).set(0, 203, 0.9);
-        let params = Hits::new(0.22, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.025)?;
+        let params = Hits::new(HitsParts {
+            combine: 0.025,
+            ..Default::default()
+        })?;
         assert_eq!(found_with(&three, Hit::Kick, params)?.len(), 2, "combine");
         // pre_average 0.005 s is 0.5 frames, round(0.5) is 0: a spike of 0.8 on a floor of 0.4 has the average of
         // itself and the next frame, 0.6, remainder 0.2, under the threshold (one frame back it would be 0.2667)
         let spike = Grid::new(1000).fill(0, 0, 1000, 0.4).set(0, 200, 0.8);
-        let params = Hits::new(0.22, 0.24, 0.22, 0.005, 0.01, 0.02, 0.01, 0.02)?;
+        let params = Hits::new(HitsParts {
+            pre_average: 0.005,
+            ..Default::default()
+        })?;
         assert_eq!(found_with(&spike, Hit::Kick, params)?, [], "pre_average");
         Ok(())
     }
@@ -263,7 +282,11 @@ mod picking {
     fn a_merged_group_keeps_its_greatest_peak_whichever_comes_first() -> Outcome {
         // without local-maximum windows every frame over the threshold is a peak: 0.9 at 200 (remainder 0.825) and 0.5
         // at 202 (0.5 - 1.4 / 12 = 0.383) merge into the first, which is greater
-        let params = Hits::new(0.22, 0.24, 0.22, 0.1, 0.01, 0.0, 0.0, 0.02)?;
+        let params = Hits::new(HitsParts {
+            pre_max: 0.0,
+            post_max: 0.0,
+            ..Default::default()
+        })?;
         let grid = Grid::new(1000).set(0, 200, 0.9).set(0, 202, 0.5);
         assert_eq!(pairs(&found_with(&grid, Hit::Kick, params)?), [(2.0, act(0.9))]);
         // equal remainders, built exactly: 11/16 at 200 leaves 11/16 * 11/12 = 121/192, and 12/16 at 202 leaves
@@ -277,7 +300,11 @@ mod picking {
     fn peaks_each_within_the_window_of_the_one_before_chain_into_one_hit() -> Outcome {
         // 0.5, 0.6, 0.9 at 200, 202, 204 (remainders 0.458, 0.508, 0.733), all peaks without local-maximum windows;
         // 200 to 204 is 4 frames but each step is 2: one hit, at 204
-        let params = Hits::new(0.22, 0.24, 0.22, 0.1, 0.01, 0.0, 0.0, 0.02)?;
+        let params = Hits::new(HitsParts {
+            pre_max: 0.0,
+            post_max: 0.0,
+            ..Default::default()
+        })?;
         let grid = Grid::new(1000).set(0, 200, 0.5).set(0, 202, 0.6).set(0, 204, 0.9);
         assert_eq!(pairs(&found_with(&grid, Hit::Kick, params)?), [(2.04, act(0.9))]);
         Ok(())
@@ -505,7 +532,7 @@ mod refusals {
 #[cfg(feature = "onnx")]
 mod installed_model {
     use bullterrier_audio::models::{ADTOF_FRAME_RNN, Options, OrtInfer};
-    use bullterrier_audio::{Separation, Stem};
+    use bullterrier_audio::{Separation, SeparationParts, Stem};
 
     use super::*;
     use crate::common::drums::{self, Grid as Pattern, drum_part, score_onsets};
@@ -587,7 +614,7 @@ mod installed_model {
         let sound = Sound::from_samples(vec![samples], drums::RATE)?
             .cut(0.0, SHORT)?
             // no cache: the separator must run
-            .with_separation(Separation::new(0, false, 0, false, 4)?);
+            .with_separation(Separation::new(SeparationParts { shifts: 0, cache: false, ..Default::default() })?);
         Ok((sound, part.truth[0].iter().copied().filter(|&t| t < SHORT).collect()))
     }
 

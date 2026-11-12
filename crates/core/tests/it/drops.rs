@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use bullterrier_audio::formats::Bundle;
-use bullterrier_audio::{Error, Sound, Structure};
+use bullterrier_audio::{Error, Sound, Structure, StructureParts};
 
 use crate::common::Outcome;
 use crate::common::arrangement::{
@@ -199,23 +199,12 @@ fn drops_are_sorted_inside_the_sound_scaled_and_written_by_a_bundle() -> Outcome
 }
 
 fn structure(drop_bars: u32, drop_share: f64, drop_min_span: f64) -> Structure {
-    Structure::new(
-        70.0,
-        180.0,
-        0.03,
-        0.2,
-        0.1,
-        4,
-        0.3,
-        3.0,
-        None,
-        1.0,
-        100.0,
-        5000.0,
+    Structure::new(StructureParts {
         drop_bars,
         drop_share,
         drop_min_span,
-    )
+        ..Default::default()
+    })
     .unwrap_or_else(|e| unreachable!("{e}"))
 }
 
@@ -284,9 +273,12 @@ fn a_rise_beyond_the_span_is_as_strong_as_it_gets() -> Outcome {
 #[test]
 fn a_structure_is_checked_once_at_construction() {
     let build = |bars, share, span| {
-        Structure::new(
-            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, 100.0, 5000.0, bars, share, span,
-        )
+        Structure::new(StructureParts {
+            drop_bars: bars,
+            drop_share: share,
+            drop_min_span: span,
+            ..Default::default()
+        })
     };
     let rows = [
         ("drop_bars", build(0, 0.8, 10.0)),

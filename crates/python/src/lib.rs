@@ -582,15 +582,15 @@ impl Sound {
         floor: Option<f64>,
     ) -> PyResult<Self> {
         let a = self.0.analysis();
-        let analysis = bullterrier_audio::Analysis::new(
-            window.unwrap_or(a.window()),
-            hop.unwrap_or(a.hop()),
-            lag.unwrap_or(a.lag()),
-            min_gap.unwrap_or(a.min_gap()),
-            relative_height.unwrap_or(a.relative_height()),
-            min_rise.unwrap_or(a.min_rise()),
-            floor.unwrap_or(a.floor()),
-        );
+        let analysis = bullterrier_audio::Analysis::new(bullterrier_audio::AnalysisParts {
+            window: window.unwrap_or(a.window()),
+            hop: hop.unwrap_or(a.hop()),
+            lag: lag.unwrap_or(a.lag()),
+            min_gap: min_gap.unwrap_or(a.min_gap()),
+            relative_height: relative_height.unwrap_or(a.relative_height()),
+            min_rise: min_rise.unwrap_or(a.min_rise()),
+            floor: floor.unwrap_or(a.floor()),
+        });
         analysis
             .map(|analysis| Self(self.0.with_analysis(analysis)))
             .map_err(|error| error::raised(py, &error))
@@ -647,27 +647,27 @@ impl Sound {
         drop_min_span: Option<f64>,
     ) -> PyResult<Self> {
         let s = self.0.structure();
-        let structure = bullterrier_audio::Structure::new(
-            tempo_min.unwrap_or(s.tempo_min()),
-            tempo_max.unwrap_or(s.tempo_max()),
-            tolerance.unwrap_or(s.tolerance()),
-            slower_margin.unwrap_or(s.slower_margin()),
-            meter_margin.unwrap_or(s.meter_margin()),
-            min_section_bars.unwrap_or(s.min_section_bars()),
-            novelty_share.unwrap_or(s.novelty_share()),
-            label_spread.unwrap_or(s.label_spread()),
-            match phrase_bars {
+        let structure = bullterrier_audio::Structure::new(bullterrier_audio::StructureParts {
+            tempo_min: tempo_min.unwrap_or(s.tempo_min()),
+            tempo_max: tempo_max.unwrap_or(s.tempo_max()),
+            tolerance: tolerance.unwrap_or(s.tolerance()),
+            slower_margin: slower_margin.unwrap_or(s.slower_margin()),
+            meter_margin: meter_margin.unwrap_or(s.meter_margin()),
+            min_section_bars: min_section_bars.unwrap_or(s.min_section_bars()),
+            novelty_share: novelty_share.unwrap_or(s.novelty_share()),
+            label_spread: label_spread.unwrap_or(s.label_spread()),
+            phrase_bars: match phrase_bars {
                 None => s.phrase_bars(),
                 Some(0) => None,
                 Some(n) => Some(n),
             },
-            novelty_floor.unwrap_or(s.novelty_floor()),
-            chroma_low.unwrap_or(s.chroma_low()),
-            chroma_high.unwrap_or(s.chroma_high()),
-            drop_bars.unwrap_or(s.drop_bars()),
-            drop_share.unwrap_or(s.drop_share()),
-            drop_min_span.unwrap_or(s.drop_min_span()),
-        );
+            novelty_floor: novelty_floor.unwrap_or(s.novelty_floor()),
+            chroma_low: chroma_low.unwrap_or(s.chroma_low()),
+            chroma_high: chroma_high.unwrap_or(s.chroma_high()),
+            drop_bars: drop_bars.unwrap_or(s.drop_bars()),
+            drop_share: drop_share.unwrap_or(s.drop_share()),
+            drop_min_span: drop_min_span.unwrap_or(s.drop_min_span()),
+        });
         structure
             .map(|structure| Self(self.0.with_structure(structure)))
             .map_err(|error| error::raised(py, &error))
@@ -699,13 +699,13 @@ impl Sound {
         threads: Option<u32>,
     ) -> PyResult<Self> {
         let s = self.0.separation();
-        bullterrier_audio::Separation::new(
-            shifts.unwrap_or(s.shifts()),
-            ensemble.unwrap_or(s.ensemble()),
-            seed.unwrap_or(s.seed()),
-            cache.unwrap_or(s.cache()),
-            threads.unwrap_or(s.threads()),
-        )
+        bullterrier_audio::Separation::new(bullterrier_audio::SeparationParts {
+            shifts: shifts.unwrap_or(s.shifts()),
+            ensemble: ensemble.unwrap_or(s.ensemble()),
+            seed: seed.unwrap_or(s.seed()),
+            cache: cache.unwrap_or(s.cache()),
+            threads: threads.unwrap_or(s.threads()),
+        })
         .map(|separation| Self(self.0.with_separation(separation)))
         .map_err(|error| error::raised(py, &error))
     }
@@ -811,17 +811,17 @@ impl Sound {
         partial_overlap: Option<f64>,
     ) -> PyResult<Self> {
         let n = self.0.notes_params();
-        bullterrier_audio::Notes::new(
-            onset_threshold.unwrap_or(n.onset_threshold()),
-            frame_threshold.unwrap_or(n.frame_threshold()),
-            min_note.unwrap_or(n.min_note()),
-            energy_tolerance.unwrap_or(n.energy_tolerance()),
-            merge_gap.unwrap_or(n.merge_gap()),
-            reattack.unwrap_or(n.reattack()),
-            ghost_share.unwrap_or(n.ghost_share()),
-            partial_share.unwrap_or(n.partial_share()),
-            partial_overlap.unwrap_or(n.partial_overlap()),
-        )
+        bullterrier_audio::Notes::new(bullterrier_audio::NotesParts {
+            onset_threshold: onset_threshold.unwrap_or(n.onset_threshold()),
+            frame_threshold: frame_threshold.unwrap_or(n.frame_threshold()),
+            min_note: min_note.unwrap_or(n.min_note()),
+            energy_tolerance: energy_tolerance.unwrap_or(n.energy_tolerance()),
+            merge_gap: merge_gap.unwrap_or(n.merge_gap()),
+            reattack: reattack.unwrap_or(n.reattack()),
+            ghost_share: ghost_share.unwrap_or(n.ghost_share()),
+            partial_share: partial_share.unwrap_or(n.partial_share()),
+            partial_overlap: partial_overlap.unwrap_or(n.partial_overlap()),
+        })
         .map(|notes| Self(self.0.with_notes(notes)))
         .map_err(|error| error::raised(py, &error))
     }
@@ -869,16 +869,16 @@ impl Sound {
         combine: Option<f64>,
     ) -> PyResult<Self> {
         let h = self.0.hits_params();
-        bullterrier_audio::Hits::new(
-            kick_threshold.unwrap_or(h.kick_threshold()),
-            snare_threshold.unwrap_or(h.snare_threshold()),
-            hat_threshold.unwrap_or(h.hat_threshold()),
-            pre_average.unwrap_or(h.pre_average()),
-            post_average.unwrap_or(h.post_average()),
-            pre_max.unwrap_or(h.pre_max()),
-            post_max.unwrap_or(h.post_max()),
-            combine.unwrap_or(h.combine()),
-        )
+        bullterrier_audio::Hits::new(bullterrier_audio::HitsParts {
+            kick_threshold: kick_threshold.unwrap_or(h.kick_threshold()),
+            snare_threshold: snare_threshold.unwrap_or(h.snare_threshold()),
+            hat_threshold: hat_threshold.unwrap_or(h.hat_threshold()),
+            pre_average: pre_average.unwrap_or(h.pre_average()),
+            post_average: post_average.unwrap_or(h.post_average()),
+            pre_max: pre_max.unwrap_or(h.pre_max()),
+            post_max: post_max.unwrap_or(h.post_max()),
+            combine: combine.unwrap_or(h.combine()),
+        })
         .map(|hits| Self(self.0.with_hits(hits)))
         .map_err(|error| error::raised(py, &error))
     }

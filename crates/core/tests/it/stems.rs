@@ -13,7 +13,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use bullterrier_audio::{Error, Infer, Section, Separation, Sound, Stem, Stems, Tensor};
+use bullterrier_audio::{Error, Infer, Section, Separation, SeparationParts, Sound, Stem, Stems, Tensor};
 
 use crate::common::{Outcome, first_difference};
 
@@ -171,7 +171,10 @@ mod adding_up {
         ] {
             let samples = mix(frames);
             let stems = sound(samples.clone(), RATE)?
-                .with_separation(Separation::new(0, false, 0, true, 4)?)
+                .with_separation(Separation::new(SeparationParts {
+                    shifts: 0,
+                    ..Default::default()
+                })?)
                 .stems_with(&StandIn::split(SPLIT))?;
             let error = sum_error(&stems, &samples);
             assert!(
@@ -240,7 +243,12 @@ mod adding_up {
 
     #[test]
     fn stems_keep_the_origin_and_parameters_of_the_sound() -> Outcome {
-        let separation = Separation::new(0, false, 7, false, 4)?;
+        let separation = Separation::new(SeparationParts {
+            shifts: 0,
+            seed: 7,
+            cache: false,
+            ..Default::default()
+        })?;
         let cut = sound(mix(50_000), RATE)?.with_separation(separation).cut(0.1, 1.0)?;
         let stems = cut.stems_with(&StandIn::split(SPLIT))?;
         for (_, part) in stems.iter() {
@@ -275,7 +283,10 @@ mod demucs_arithmetic {
                 .collect()
         });
         let stems = sound(samples.clone(), RATE)?
-            .with_separation(Separation::new(0, false, 0, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                shifts: 0,
+                ..Default::default()
+            })?)
             .stems_with(&model)?;
         let seen = seen.lock().map_err(|_| "poisoned")?.clone();
         let mean = seen.iter().sum::<f64>() / 100.0;
@@ -309,7 +320,10 @@ mod demucs_arithmetic {
         let samples = mix(2 * SEGMENT + 5);
         let (mean, std) = reference_stats(&samples);
         let stems = sound(samples, RATE)?
-            .with_separation(Separation::new(0, false, 0, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                shifts: 0,
+                ..Default::default()
+            })?)
             .stems_with(&StandIn::constant(|_| 1.0))?;
         for (stem, part) in stems.iter() {
             for channel in part.samples() {
@@ -326,7 +340,10 @@ mod demucs_arithmetic {
         let samples = mix(SEGMENT + 1000);
         let (mean, std) = reference_stats(&samples);
         let stems = sound(samples, RATE)?
-            .with_separation(Separation::new(0, false, 0, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                shifts: 0,
+                ..Default::default()
+            })?)
             .stems_with(&StandIn::constant(|call| call as f32))?;
         let out = &stems.get(Stem::Bass).samples()[1];
         // H = 171 990. At STRIDE the first segment's weight is 85 995 / H and the second's 1 / H.
@@ -360,7 +377,10 @@ mod demucs_arithmetic {
         for (frames, calls) in rows {
             let model = StandIn::constant(|_| 0.0);
             sound(mix(frames), RATE)?
-                .with_separation(Separation::new(0, false, 0, true, 4)?)
+                .with_separation(Separation::new(SeparationParts {
+                    shifts: 0,
+                    ..Default::default()
+                })?)
                 .stems_with(&model)?;
             assert_eq!(model.calls(), calls, "{frames} frames");
         }
@@ -422,7 +442,11 @@ mod shifts {
 
     fn stems_of(samples: &[Vec<f32>], shifts: u32, seed: u64, model: &StandIn) -> Result<Stems, Error> {
         sound(samples.to_vec(), RATE)?
-            .with_separation(Separation::new(shifts, false, seed, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                shifts,
+                seed,
+                ..Default::default()
+            })?)
             .stems_with(model)
     }
 
@@ -555,7 +579,11 @@ mod ensemble {
     fn run(samples: &[Vec<f32>], shifts: u32, log: &Log) -> Result<Stems, Error> {
         let (log_six, log_ft) = (Arc::clone(log), Arc::clone(log));
         sound(samples.to_vec(), RATE)?
-            .with_separation(Separation::new(shifts, true, 0, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                shifts,
+                ensemble: true,
+                ..Default::default()
+            })?)
             .stems_with_ensemble(
                 || {
                     opened(&log_six, "open six".into());
@@ -678,7 +706,11 @@ mod ensemble {
             Ok(Recorder(model, Arc::clone(&runs)))
         };
         sound(mix(100), RATE)?
-            .with_separation(Separation::new(1, true, seed, true, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                ensemble: true,
+                seed,
+                ..Default::default()
+            })?)
             .stems_with_ensemble(|| recorder(6), |_| recorder(4))?;
         let runs = runs.lock().map_err(|_| Error::Invalid("poisoned".into()))?.clone();
         Ok(runs)
@@ -752,7 +784,13 @@ mod cache {
     ];
 
     fn separation(shifts: u32, ensemble: bool, seed: u64, cache: bool) -> Result<Separation, Error> {
-        Separation::new(shifts, ensemble, seed, cache, 4)
+        Separation::new(SeparationParts {
+            shifts,
+            ensemble,
+            seed,
+            cache,
+            ..Default::default()
+        })
     }
 
     /// The stems of `sound` through the cache in `dir`, and how many times the model ran.
@@ -907,7 +945,10 @@ mod cache {
         // the order the models are named in does not matter; neither do the cache flag and the thread count
         let dir = tempfile::tempdir()?;
         run(&base()?, dir.path(), &[SIX])?;
-        let more_threads = base()?.with_separation(Separation::new(1, false, 0, true, 9)?);
+        let more_threads = base()?.with_separation(Separation::new(SeparationParts {
+            threads: 9,
+            ..Default::default()
+        })?);
         let (_, calls) = run(&more_threads, dir.path(), &[SIX])?;
         assert_eq!((calls, keys(dir.path()).len()), (0, 1), "threads");
         let dir = tempfile::tempdir()?;
@@ -1169,25 +1210,80 @@ mod separation {
     #[test]
     fn values_out_of_range_are_refused_naming_the_field_and_the_value() {
         let rows = [
-            ("shifts 33", Separation::new(33, false, 0, true, 4), "shifts", "33"),
-            ("threads 0", Separation::new(1, false, 0, true, 0), "threads", "0"),
-            ("threads 65", Separation::new(1, false, 0, true, 65), "threads", "65"),
+            (
+                "shifts 33",
+                Separation::new(SeparationParts {
+                    shifts: 33,
+                    ..Default::default()
+                }),
+                "shifts",
+                "33",
+            ),
+            (
+                "threads 0",
+                Separation::new(SeparationParts {
+                    threads: 0,
+                    ..Default::default()
+                }),
+                "threads",
+                "0",
+            ),
+            (
+                "threads 65",
+                Separation::new(SeparationParts {
+                    threads: 65,
+                    ..Default::default()
+                }),
+                "threads",
+                "65",
+            ),
         ];
         for (name, result, field, value) in rows {
             let refused = matches!(&result, Err(Error::Invalid(m)) if m.contains(field) && m.contains(value));
             assert!(refused, "{name}: {result:?}");
         }
-        assert!(Separation::new(0, true, u64::MAX, false, 4).is_ok());
-        assert!(Separation::new(32, false, 0, true, 4).is_ok());
-        assert!(Separation::new(1, false, 0, true, 1).is_ok());
-        assert!(Separation::new(1, false, 0, true, 64).is_ok());
+        assert!(
+            Separation::new(SeparationParts {
+                shifts: 0,
+                ensemble: true,
+                seed: u64::MAX,
+                cache: false,
+                ..Default::default()
+            })
+            .is_ok()
+        );
+        assert!(
+            Separation::new(SeparationParts {
+                shifts: 32,
+                ..Default::default()
+            })
+            .is_ok()
+        );
+        assert!(
+            Separation::new(SeparationParts {
+                threads: 1,
+                ..Default::default()
+            })
+            .is_ok()
+        );
+        assert!(
+            Separation::new(SeparationParts {
+                threads: 64,
+                ..Default::default()
+            })
+            .is_ok()
+        );
     }
 
     #[test]
     fn with_separation_changes_what_a_sound_is_separated_under_and_keeps_its_edits() -> Outcome {
         let base = sound(mix(100), RATE)?;
         assert_eq!(base.separation(), &Separation::default());
-        let set = Separation::new(2, false, 9, true, 4)?;
+        let set = Separation::new(SeparationParts {
+            shifts: 2,
+            seed: 9,
+            ..Default::default()
+        })?;
         let changed = base.with_separation(set);
         assert_eq!(changed.separation(), &set);
         assert_eq!(changed.cut(0.0, 0.001)?.separation(), &set);
@@ -1400,7 +1496,10 @@ mod real_model {
         let samples = reference.mix.clone();
         // no cache: the model must run
         let stems = sound(samples.clone(), RATE)?
-            .with_separation(Separation::new(1, false, 0, false, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                cache: false,
+                ..Default::default()
+            })?)
             .stems()?;
         // the model's sources only approximately add up to the mix: measure how closely, as the share of the mix's
         // energy that the difference holds
@@ -1473,7 +1572,11 @@ mod real_model {
         let song = song(15);
         let start = std::time::Instant::now();
         let ensemble = sound(song.mix.clone(), RATE)?
-            .with_separation(Separation::new(1, true, 0, false, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                ensemble: true,
+                cache: false,
+                ..Default::default()
+            })?)
             .stems()?;
         println!(
             "ensemble: {:.1} s for 15 s; SDR bass {:.1} dB, drums {:.1} dB",
@@ -1519,7 +1622,10 @@ mod real_model {
         let song = song(60);
         let start = std::time::Instant::now();
         let stems = sound(song.mix.clone(), RATE)?
-            .with_separation(Separation::new(1, false, 0, false, 4)?)
+            .with_separation(Separation::new(SeparationParts {
+                cache: false,
+                ..Default::default()
+            })?)
             .stems()?;
         println!(
             "60 s of audio, one shift, one model: {:.1} s",
@@ -1536,7 +1642,12 @@ mod real_model {
         let samples = song(9).mix;
         let run = |threads| -> Result<Stems, Error> {
             sound(samples.clone(), RATE)?
-                .with_separation(Separation::new(0, false, 0, false, threads)?)
+                .with_separation(Separation::new(SeparationParts {
+                    shifts: 0,
+                    cache: false,
+                    threads,
+                    ..Default::default()
+                })?)
                 .stems()
         };
         let (one, four) = (run(1)?, run(4)?);
@@ -1565,7 +1676,12 @@ mod real_model {
         // under that and one session.
         for threads in [4, 2] {
             sound(samples.clone(), RATE)?
-                .with_separation(Separation::new(0, false, 0, false, threads)?)
+                .with_separation(Separation::new(SeparationParts {
+                    shifts: 0,
+                    cache: false,
+                    threads,
+                    ..Default::default()
+                })?)
                 .stems()?;
             let resident = resident_mb()?;
             println!("resident after a separation on {threads} threads: {resident:.0} MB");
@@ -1587,7 +1703,12 @@ mod real_model {
         // a sound no other test makes: a 3 s bass tone and a click, so the key is new
         let samples = vec![song(3).mix[0].iter().map(|x| x * 0.97).collect::<Vec<f32>>()];
         let make = || -> Result<Sound, Error> {
-            Ok(sound(samples.clone(), RATE)?.with_separation(Separation::new(0, false, 0, true, 4)?))
+            Ok(
+                sound(samples.clone(), RATE)?.with_separation(Separation::new(SeparationParts {
+                    shifts: 0,
+                    ..Default::default()
+                })?),
+            )
         };
         // that the second does no model work is proved with a counting stand-in (`cache`), not by timing
         let (first, second) = (make()?.stems()?, make()?.stems()?);

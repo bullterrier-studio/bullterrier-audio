@@ -10,7 +10,7 @@
     clippy::cast_sign_loss
 )]
 
-use bullterrier_audio::{Analysis, Error, Key, Mode, PitchClass, Sound, Structure};
+use bullterrier_audio::{Analysis, AnalysisParts, Error, Key, Mode, PitchClass, Sound, Structure, StructureParts};
 
 use crate::common::{Outcome, sine};
 
@@ -179,9 +179,11 @@ fn the_pitch_range_decides_what_counts_as_pitch() -> Outcome {
         for (sample, tone) in samples.iter_mut().zip(sine(tone_hz, 0.5, RATE, 16 * 44100)) {
             *sample += tone;
         }
-        let structure = Structure::new(
-            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high, 4, 0.8, 10.0,
-        )?;
+        let structure = Structure::new(StructureParts {
+            chroma_low: low,
+            chroma_high: high,
+            ..Default::default()
+        })?;
         let key = Sound::from_samples(vec![samples], RATE)?
             .with_structure(structure)
             .key()?;
@@ -210,18 +212,22 @@ fn structure_refuses_a_pitch_range_outside_its_limits() {
         ("low above high", 900.0, 500.0, "chroma_low must be below chroma_high"),
     ];
     for (id, low, high, refusal) in rows {
-        let result = Structure::new(
-            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high, 4, 0.8, 10.0,
-        );
+        let result = Structure::new(StructureParts {
+            chroma_low: low,
+            chroma_high: high,
+            ..Default::default()
+        });
         assert!(
             matches!(&result, Err(Error::Invalid(text)) if text.contains("Structure") && text.contains(refusal)),
             "{id}: {result:?}"
         );
     }
     assert!(
-        Structure::new(
-            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, 20.0, 20000.0, 4, 0.8, 10.0
-        )
+        Structure::new(StructureParts {
+            chroma_low: 20.0,
+            chroma_high: 20000.0,
+            ..Default::default()
+        })
         .is_ok()
     );
 }
@@ -254,7 +260,10 @@ fn the_key_is_deterministic_and_independent_of_the_analysis_hop() -> Outcome {
     let sound = progression(&AM_DM_E_AM)?;
     let key = sound.key()?;
     assert_eq!(key, progression(&AM_DM_E_AM)?.key()?);
-    let coarse = Analysis::new(0.0464, 0.05, 0.03, 0.05, 0.1, 0.1, -80.0)?;
+    let coarse = Analysis::new(AnalysisParts {
+        hop: 0.05,
+        ..Default::default()
+    })?;
     assert_eq!(key, sound.with_analysis(coarse).key()?);
     Ok(())
 }

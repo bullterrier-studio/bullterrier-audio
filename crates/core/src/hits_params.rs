@@ -3,6 +3,45 @@
 use crate::Error;
 use crate::analysis::within;
 
+/// The values of a [`Hits`], with a public field for each.
+///
+/// Passed to [`Hits::new`], which checks every value; `HitsParts::default()` holds the defaults of the table of
+/// [`Hits`]. Fields left out of a struct literal keep their default: `HitsParts { kick_threshold: …, ..HitsParts::default() }`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HitsParts {
+    /// See the table of [`Hits`].
+    pub kick_threshold: f64,
+    /// See the table of [`Hits`].
+    pub snare_threshold: f64,
+    /// See the table of [`Hits`].
+    pub hat_threshold: f64,
+    /// See the table of [`Hits`].
+    pub pre_average: f64,
+    /// See the table of [`Hits`].
+    pub post_average: f64,
+    /// See the table of [`Hits`].
+    pub pre_max: f64,
+    /// See the table of [`Hits`].
+    pub post_max: f64,
+    /// See the table of [`Hits`].
+    pub combine: f64,
+}
+
+impl Default for HitsParts {
+    fn default() -> Self {
+        HitsParts {
+            kick_threshold: 0.22,
+            snare_threshold: 0.24,
+            hat_threshold: 0.22,
+            pre_average: 0.1,
+            post_average: 0.01,
+            pre_max: 0.02,
+            post_max: 0.01,
+            combine: 0.02,
+        }
+    }
+}
+
 /// How the hits of a drum class are picked from what ADTOF answers. Every value is checked once, in [`Hits::new`]; a
 /// `Hits` that exists is valid, and its fields are read through methods. The default holds every default below.
 ///
@@ -33,31 +72,9 @@ use crate::analysis::within;
 ///
 /// A threshold is a fraction of the activation, which the model gives between 0 and 1; under 0.01 every frame of
 /// silence would be a peak (a stated limit of this package). `combine` is at least one frame, as in ADTOF.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Hits {
-    kick_threshold: f64,
-    snare_threshold: f64,
-    hat_threshold: f64,
-    pre_average: f64,
-    post_average: f64,
-    pre_max: f64,
-    post_max: f64,
-    combine: f64,
-}
-
-impl Default for Hits {
-    fn default() -> Self {
-        Self {
-            kick_threshold: 0.22,
-            snare_threshold: 0.24,
-            hat_threshold: 0.22,
-            pre_average: 0.1,
-            post_average: 0.01,
-            pre_max: 0.02,
-            post_max: 0.01,
-            combine: 0.02,
-        }
-    }
+    parts: HitsParts,
 }
 
 impl Hits {
@@ -67,26 +84,8 @@ impl Hits {
     ///
     /// [`Error::Invalid`] naming `Hits`, the field, its range and the value when a value lies outside its range or is
     /// NaN.
-    #[allow(clippy::too_many_arguments)] // one argument per documented field, as `Notes::new`
-    pub fn new(
-        kick_threshold: f64,
-        snare_threshold: f64,
-        hat_threshold: f64,
-        pre_average: f64,
-        post_average: f64,
-        pre_max: f64,
-        post_max: f64,
-        combine: f64,
-    ) -> Result<Self, Error> {
-        within("Hits", "kick_threshold", kick_threshold, 0.01..=1.0, "a fraction")?;
-        within("Hits", "snare_threshold", snare_threshold, 0.01..=1.0, "a fraction")?;
-        within("Hits", "hat_threshold", hat_threshold, 0.01..=1.0, "a fraction")?;
-        within("Hits", "pre_average", pre_average, 0.0..=1.0, "seconds")?;
-        within("Hits", "post_average", post_average, 0.0..=0.1, "seconds")?;
-        within("Hits", "pre_max", pre_max, 0.0..=0.1, "seconds")?;
-        within("Hits", "post_max", post_max, 0.0..=0.1, "seconds")?;
-        within("Hits", "combine", combine, 0.01..=0.5, "seconds")?;
-        Ok(Self {
+    pub fn new(parts: HitsParts) -> Result<Self, Error> {
+        let HitsParts {
             kick_threshold,
             snare_threshold,
             hat_threshold,
@@ -95,54 +94,63 @@ impl Hits {
             pre_max,
             post_max,
             combine,
-        })
+        } = parts;
+        within("Hits", "kick_threshold", kick_threshold, 0.01..=1.0, "a fraction")?;
+        within("Hits", "snare_threshold", snare_threshold, 0.01..=1.0, "a fraction")?;
+        within("Hits", "hat_threshold", hat_threshold, 0.01..=1.0, "a fraction")?;
+        within("Hits", "pre_average", pre_average, 0.0..=1.0, "seconds")?;
+        within("Hits", "post_average", post_average, 0.0..=0.1, "seconds")?;
+        within("Hits", "pre_max", pre_max, 0.0..=0.1, "seconds")?;
+        within("Hits", "post_max", post_max, 0.0..=0.1, "seconds")?;
+        within("Hits", "combine", combine, 0.01..=0.5, "seconds")?;
+        Ok(Self { parts })
     }
 
     /// The least height above the local average at which a kick peak counts.
     #[must_use]
     pub fn kick_threshold(&self) -> f64 {
-        self.kick_threshold
+        self.parts.kick_threshold
     }
 
     /// The least height above the local average at which a snare peak counts.
     #[must_use]
     pub fn snare_threshold(&self) -> f64 {
-        self.snare_threshold
+        self.parts.snare_threshold
     }
 
     /// The least height above the local average at which a hat peak counts.
     #[must_use]
     pub fn hat_threshold(&self) -> f64 {
-        self.hat_threshold
+        self.parts.hat_threshold
     }
 
     /// Seconds before a frame that its local average reaches back.
     #[must_use]
     pub fn pre_average(&self) -> f64 {
-        self.pre_average
+        self.parts.pre_average
     }
 
     /// Seconds after a frame that its local average reaches forward.
     #[must_use]
     pub fn post_average(&self) -> f64 {
-        self.post_average
+        self.parts.post_average
     }
 
     /// Seconds before a peak within which no frame may be higher.
     #[must_use]
     pub fn pre_max(&self) -> f64 {
-        self.pre_max
+        self.parts.pre_max
     }
 
     /// Seconds after a peak within which no frame may be higher.
     #[must_use]
     pub fn post_max(&self) -> f64 {
-        self.post_max
+        self.parts.post_max
     }
 
     /// Seconds within which peaks of one class are one hit.
     #[must_use]
     pub fn combine(&self) -> f64 {
-        self.combine
+        self.parts.combine
     }
 }

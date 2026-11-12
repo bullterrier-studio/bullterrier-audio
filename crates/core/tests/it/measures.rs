@@ -9,7 +9,7 @@
     clippy::float_cmp
 )]
 
-use bullterrier_audio::{Analysis, Band, Error, Sound};
+use bullterrier_audio::{Analysis, AnalysisParts, Band, Error, Sound};
 use proptest::prelude::*;
 
 use bullterrier_audio::formats::Unit;
@@ -25,7 +25,12 @@ fn sound(channels: Vec<Vec<f32>>, rate: u32) -> Result<Sound, Error> {
 }
 
 fn analysis(window: f64, hop: f64) -> Result<Analysis, Error> {
-    Analysis::new(window, hop, 0.03, 0.05, 0.1, 0.1, FLOOR)
+    Analysis::new(AnalysisParts {
+        window,
+        hop,
+        floor: FLOOR,
+        ..Default::default()
+    })
 }
 
 /// A one-second sound analysed with `window` seconds.
@@ -155,7 +160,11 @@ fn the_scale_saturates_at_both_ends() -> Outcome {
 #[test]
 fn the_floor_moves_the_scale_and_is_stated() -> Outcome {
     let hz = bin_centre(1000.0, DEFAULT_WINDOW);
-    let floor = Analysis::new(DEFAULT_WINDOW, 0.01, 0.03, 0.05, 0.1, 0.1, -60.0)?;
+    let floor = Analysis::new(AnalysisParts {
+        window: DEFAULT_WINDOW,
+        floor: -60.0,
+        ..Default::default()
+    })?;
     let series = tone_sound(hz, 0.5, DEFAULT_WINDOW)?
         .with_analysis(floor)
         .energy(Band::Mid)?;
@@ -310,7 +319,18 @@ fn a_sine_inside_any_band_reads_within_five_db_of_its_level_at_the_shortest_wind
 #[test]
 fn analysis_refuses_values_outside_their_range() -> Outcome {
     let good = [0.0464, 0.01, 0.03, 0.05, 0.1, 0.1, -80.0];
-    assert!(Analysis::new(good[0], good[1], good[2], good[3], good[4], good[5], good[6]).is_ok());
+    assert!(
+        Analysis::new(AnalysisParts {
+            window: good[0],
+            hop: good[1],
+            lag: good[2],
+            min_gap: good[3],
+            relative_height: good[4],
+            min_rise: good[5],
+            floor: good[6]
+        })
+        .is_ok()
+    );
     let fields = [
         "window",
         "hop",
@@ -333,9 +353,15 @@ fn analysis_refuses_values_outside_their_range() -> Outcome {
         for value in bad[index].iter().copied().chain([f64::NAN, f64::INFINITY]) {
             let mut values = good;
             values[index] = value;
-            let refused = Analysis::new(
-                values[0], values[1], values[2], values[3], values[4], values[5], values[6],
-            );
+            let refused = Analysis::new(AnalysisParts {
+                window: values[0],
+                hop: values[1],
+                lag: values[2],
+                min_gap: values[3],
+                relative_height: values[4],
+                min_rise: values[5],
+                floor: values[6],
+            });
             let Err(Error::Invalid(message)) = refused else {
                 return Err(format!("{field} = {value} was not refused: {refused:?}").into());
             };
@@ -375,15 +401,15 @@ fn ten_minutes_at_the_default_analysis_is_not_refused() -> Outcome {
 #[test]
 fn the_default_analysis_is_valid() -> Outcome {
     let default = Analysis::default();
-    let built = Analysis::new(
-        default.window(),
-        default.hop(),
-        default.lag(),
-        default.min_gap(),
-        default.relative_height(),
-        default.min_rise(),
-        default.floor(),
-    )?;
+    let built = Analysis::new(AnalysisParts {
+        window: default.window(),
+        hop: default.hop(),
+        lag: default.lag(),
+        min_gap: default.min_gap(),
+        relative_height: default.relative_height(),
+        min_rise: default.min_rise(),
+        floor: default.floor(),
+    })?;
     assert_eq!(built, default);
     Ok(())
 }
@@ -446,7 +472,12 @@ fn the_series_starts_at_three_seconds_and_has_one_value_per_hop() -> Outcome {
     // hand computed for a 5 s sound: the last window ends at 5 s, so values = floor((5 - 3) / hop) + 1
     for (hop, values) in [(0.5, 5), (0.3, 7), (0.01, 201)] {
         let measured = stereo_tone(-23.0, 5)?
-            .with_analysis(Analysis::new(DEFAULT_WINDOW, hop, 0.03, 0.05, 0.1, 0.1, FLOOR)?)
+            .with_analysis(Analysis::new(AnalysisParts {
+                window: DEFAULT_WINDOW,
+                hop,
+                floor: FLOOR,
+                ..Default::default()
+            })?)
             .loudness()?;
         assert_eq!(measured.start, 3.0, "hop {hop}");
         assert!((measured.rate - 1.0 / hop).abs() < 1e-9, "hop {hop}");
@@ -463,7 +494,12 @@ fn a_window_ends_on_the_sample_nearest_its_time() -> Outcome {
     let mut samples = vec![0.0_f32; 5 * 22050];
     samples[66235] = 1.0;
     let measured = sound(vec![samples], 22050)?
-        .with_analysis(Analysis::new(DEFAULT_WINDOW, 0.0013, 0.03, 0.05, 0.1, 0.1, FLOOR)?)
+        .with_analysis(Analysis::new(AnalysisParts {
+            window: DEFAULT_WINDOW,
+            hop: 0.0013,
+            floor: FLOOR,
+            ..Default::default()
+        })?)
         .loudness()?;
     assert!(
         measured.values[..3].iter().all(|&v| v == -70.0),
@@ -508,7 +544,12 @@ fn a_step_in_level_shows_as_a_blend_of_the_powers_in_the_window() -> Outcome {
 
 #[test]
 fn normalising_sets_the_loudness_and_keeps_everything_else() -> Outcome {
-    let analysis = Analysis::new(0.1, 0.02, 0.03, 0.05, 0.1, 0.1, FLOOR)?;
+    let analysis = Analysis::new(AnalysisParts {
+        window: 0.1,
+        hop: 0.02,
+        floor: FLOOR,
+        ..Default::default()
+    })?;
     let original = stereo_tone(-23.0, 11)?.cut(0.5, 10.5)?.with_analysis(analysis);
     let louder = original.normalised(-14.0)?;
     assert!(within_all(&louder.loudness()?.values, -14.0, 0.05));
@@ -715,7 +756,13 @@ proptest! {
 }
 
 fn click_events(at: &[(f64, f64)], min_gap: f64, relative_height: f64) -> Result<Vec<Event>, Error> {
-    let analysis = Analysis::new(DEFAULT_WINDOW, 0.01, 0.03, min_gap, relative_height, 0.1, FLOOR)?;
+    let analysis = Analysis::new(AnalysisParts {
+        window: DEFAULT_WINDOW,
+        min_gap,
+        relative_height,
+        floor: FLOOR,
+        ..Default::default()
+    })?;
     sound(vec![clicks(at, RATE, 3.5)], RATE)?
         .with_analysis(analysis)
         .onsets()
@@ -752,7 +799,13 @@ fn of_two_identical_peaks_within_the_gap_the_earlier_wins() -> Outcome {
 #[test]
 fn the_minimum_rise_sets_which_clicks_are_onsets() -> Outcome {
     let with = |amplitude: f64, min_rise: f64| -> Result<Vec<Event>, Error> {
-        let analysis = Analysis::new(DEFAULT_WINDOW, 0.01, 0.03, 0.05, 0.0, min_rise, FLOOR)?;
+        let analysis = Analysis::new(AnalysisParts {
+            window: DEFAULT_WINDOW,
+            relative_height: 0.0,
+            min_rise,
+            floor: FLOOR,
+            ..Default::default()
+        })?;
         sound(vec![clicks(&[(1.0, amplitude)], RATE, 2.0)], RATE)?
             .with_analysis(analysis)
             .onsets()

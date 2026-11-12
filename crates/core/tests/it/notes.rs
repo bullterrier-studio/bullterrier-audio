@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use bullterrier_audio::formats::{Bundle, Event};
-use bullterrier_audio::{Error, Infer, Notes, Sound, Tensor};
+use bullterrier_audio::{Error, Infer, Notes, NotesParts, Sound, Tensor};
 
 use crate::common::{Outcome, first_difference};
 
@@ -150,18 +150,12 @@ fn spans(events: &[Event]) -> Result<Vec<Span>, Box<dyn std::error::Error>> {
 
 /// The parameters with the cleanup off: what the notes are before merging and dropping.
 fn bare() -> Result<Notes, Error> {
-    let d = Notes::default();
-    Notes::new(
-        d.onset_threshold(),
-        d.frame_threshold(),
-        d.min_note(),
-        d.energy_tolerance(),
-        0.0,
-        d.reattack(),
-        0.0,
-        0.0,
-        d.partial_overlap(),
-    )
+    Notes::new(NotesParts {
+        merge_gap: 0.0,
+        ghost_share: 0.0,
+        partial_share: 0.0,
+        ..Default::default()
+    })
 }
 
 /// The notes of 3 s of silence, answered by `score` under `params`.
@@ -438,19 +432,11 @@ mod cleanup {
             Ok(run(score, params)?.iter().map(|&(midi, ..)| midi).collect())
         };
         assert_eq!(pitches(&with_a_ghost(0.9, 0.35), Notes::default())?, [60, 64, 67]);
-        let d = Notes::default();
         let share = |ghost_share| {
-            Notes::new(
-                0.5,
-                0.3,
-                d.min_note(),
-                d.energy_tolerance(),
-                1.0,
-                0.5,
+            Notes::new(NotesParts {
                 ghost_share,
-                0.8,
-                0.5,
-            )
+                ..Default::default()
+            })
         };
         assert_eq!(pitches(&with_a_ghost(0.9, 0.35), share(0.3)?)?, [60, 64, 67, 70]);
         assert_eq!(
@@ -467,18 +453,12 @@ mod cleanup {
     /// round(8.1) = 8.
     #[test]
     fn the_loud_reference_of_the_ghost_rule_is_the_value_at_round_n_minus_1_times_0_9() -> Outcome {
-        let d = Notes::default();
-        let all_against_the_reference = Notes::new(
-            d.onset_threshold(),
-            d.frame_threshold(),
-            d.min_note(),
-            d.energy_tolerance(),
-            0.0,
-            d.reattack(),
-            1.0,
-            0.0,
-            d.partial_overlap(),
-        )?;
+        let all_against_the_reference = Notes::new(NotesParts {
+            merge_gap: 0.0,
+            ghost_share: 1.0,
+            partial_share: 0.0,
+            ..Default::default()
+        })?;
         for (count, kept) in [(1, 1), (2, 1), (8, 2), (10, 2)] {
             // notes of rising strength, three semitones apart so that none is a neighbour or an overtone of another
             let mut score = Score::new(258);
@@ -553,7 +533,17 @@ mod parameters {
                 d.partial_overlap(),
             ];
             v[index] = value;
-            Notes::new(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8])
+            Notes::new(NotesParts {
+                onset_threshold: v[0],
+                frame_threshold: v[1],
+                min_note: v[2],
+                energy_tolerance: v[3],
+                merge_gap: v[4],
+                reattack: v[5],
+                ghost_share: v[6],
+                partial_share: v[7],
+                partial_overlap: v[8],
+            })
         };
         let mid_onset = Score::new(258).played(60, 10, 40, 0.6).onset(60, 25, 0.8);
         let dipped = Score::new(258)
@@ -576,7 +566,14 @@ mod parameters {
             let base = if index == 3 { bare()? } else { d };
             let changed = if index == 3 {
                 let b = bare()?;
-                Notes::new(0.5, 0.3, b.min_note(), value, 0.0, 0.5, 0.0, 0.0, 0.5)?
+                Notes::new(NotesParts {
+                    min_note: b.min_note(),
+                    energy_tolerance: value,
+                    merge_gap: 0.0,
+                    ghost_share: 0.0,
+                    partial_share: 0.0,
+                    ..Default::default()
+                })?
             } else {
                 with(index, value)?
             };
@@ -647,7 +644,17 @@ mod parameters {
             for &value in *values {
                 let mut v = base;
                 v[index] = value;
-                let made = Notes::new(v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+                let made = Notes::new(NotesParts {
+                    onset_threshold: v[0],
+                    frame_threshold: v[1],
+                    min_note: v[2],
+                    energy_tolerance: v[3],
+                    merge_gap: v[4],
+                    reattack: v[5],
+                    ghost_share: v[6],
+                    partial_share: v[7],
+                    partial_overlap: v[8],
+                });
                 assert!(
                     matches!(&made, Err(Error::Invalid(m)) if m.contains("Notes") && m.contains(names[index]) && m.contains(&value.to_string())),
                     "{} = {value}: {made:?}",
@@ -660,14 +667,50 @@ mod parameters {
     #[test]
     fn the_range_edges_are_accepted() {
         let d = Notes::default();
-        assert!(Notes::new(0.0, 1.0, 0.0, 0.01, 0.0, 1.0, 0.0, 1.0, 0.0).is_ok());
-        assert!(Notes::new(1.0, 0.0, 2.0, 1.0, 10.0, 0.0, 1.0, 0.0, 1.0).is_ok());
+        assert!(
+            Notes::new(NotesParts {
+                onset_threshold: 0.0,
+                frame_threshold: 1.0,
+                min_note: 0.0,
+                energy_tolerance: 0.01,
+                merge_gap: 0.0,
+                reattack: 1.0,
+                ghost_share: 0.0,
+                partial_share: 1.0,
+                partial_overlap: 0.0
+            })
+            .is_ok()
+        );
+        assert!(
+            Notes::new(NotesParts {
+                onset_threshold: 1.0,
+                frame_threshold: 0.0,
+                min_note: 2.0,
+                energy_tolerance: 1.0,
+                merge_gap: 10.0,
+                reattack: 0.0,
+                ghost_share: 1.0,
+                partial_share: 0.0,
+                partial_overlap: 1.0
+            })
+            .is_ok()
+        );
         assert!(d.ghost_share() > 0.0);
     }
 
     #[test]
     fn every_edit_keeps_the_note_parameters() -> Outcome {
-        let custom = Notes::new(0.6, 0.35, 0.2, 0.1, 0.5, 0.4, 0.3, 0.7, 0.6)?;
+        let custom = Notes::new(NotesParts {
+            onset_threshold: 0.6,
+            frame_threshold: 0.35,
+            min_note: 0.2,
+            energy_tolerance: 0.1,
+            merge_gap: 0.5,
+            reattack: 0.4,
+            ghost_share: 0.3,
+            partial_share: 0.7,
+            partial_overlap: 0.6,
+        })?;
         let tone: Vec<f32> = (0..44_100_u32)
             .map(|i| {
                 0.1 * (std::f32::consts::TAU * 440.0 * f32::from(u16::try_from(i % 44_100).unwrap_or(0)) / 44_100.0)

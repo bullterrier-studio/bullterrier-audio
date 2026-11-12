@@ -13,7 +13,7 @@
 
 use std::sync::LazyLock;
 
-use bullterrier_audio::{Error, Section, Sound, Structure};
+use bullterrier_audio::{Error, Section, Sound, Structure, StructureParts};
 use proptest::prelude::*;
 
 use crate::common::{Outcome, clicks, tone_bursts};
@@ -188,23 +188,14 @@ fn structure(
     phrase_bars: Option<u32>,
     novelty_floor: f64,
 ) -> Structure {
-    Structure::new(
-        70.0,
-        180.0,
-        0.03,
-        0.2,
-        0.1,
+    Structure::new(StructureParts {
         min_section_bars,
         novelty_share,
         label_spread,
         phrase_bars,
         novelty_floor,
-        100.0,
-        5000.0,
-        4,
-        0.8,
-        10.0,
-    )
+        ..Default::default()
+    })
     .unwrap_or_else(|e| unreachable!("{e}"))
 }
 
@@ -327,9 +318,12 @@ fn forty_distinct_materials_get_forty_distinct_names_past_z() -> Outcome {
         56, 10, 32, 43, 25, 48, 19, 15, 55, 6, 52,
     ];
     let parts: Vec<(usize, Vec<Tone>)> = CODES.iter().map(|&code| (2, tones(code))).collect();
-    let wanted = Structure::new(
-        70.0, 180.0, 0.03, 0.0, 0.1, 2, 0.05, 3.0, None, 1.0, 100.0, 5000.0, 4, 0.8, 10.0,
-    )?;
+    let wanted = Structure::new(StructureParts {
+        slower_margin: 0.0,
+        min_section_bars: 2,
+        novelty_share: 0.05,
+        ..Default::default()
+    })?;
     let sound = arrangement(180.0, 0.0, 0.0, &parts)?.with_structure(wanted);
     let sections = sound.sections()?;
     assert_eq!(sections.len(), 40, "{:?}", starts(&sections));
@@ -460,52 +454,39 @@ fn a_structure_is_checked_once_at_construction() {
         ("novelty_floor NaN", 4, 0.3, 3.0, None, f64::NAN, "novelty_floor"),
     ];
     for (id, bars, share, spread, phrase, floor, refusal) in rows {
-        let result = Structure::new(
-            70.0, 180.0, 0.03, 0.2, 0.1, bars, share, spread, phrase, floor, 100.0, 5000.0, 4, 0.8, 10.0,
-        );
+        let result = Structure::new(StructureParts {
+            min_section_bars: bars,
+            novelty_share: share,
+            label_spread: spread,
+            phrase_bars: phrase,
+            novelty_floor: floor,
+            ..Default::default()
+        });
         assert!(
             matches!(&result, Err(Error::Invalid(text)) if text.contains("Structure") && text.contains(refusal)),
             "{id}: {result:?}"
         );
     }
     assert!(
-        Structure::new(
-            70.0,
-            180.0,
-            0.03,
-            0.2,
-            0.1,
-            1,
-            0.0,
-            0.0,
-            Some(1),
-            0.01,
-            100.0,
-            5000.0,
-            4,
-            0.8,
-            10.0
-        )
+        Structure::new(StructureParts {
+            min_section_bars: 1,
+            novelty_share: 0.0,
+            label_spread: 0.0,
+            phrase_bars: Some(1),
+            novelty_floor: 0.01,
+            ..Default::default()
+        })
         .is_ok()
     );
     assert!(
-        Structure::new(
-            70.0,
-            180.0,
-            0.03,
-            0.2,
-            0.1,
-            99,
-            1.0,
-            40.0,
-            Some(99),
-            40.0,
-            100.0,
-            5000.0,
-            4,
-            0.8,
-            10.0
-        )
+        Structure::new(StructureParts {
+            min_section_bars: 99,
+            novelty_share: 1.0,
+            label_spread: 40.0,
+            phrase_bars: Some(99),
+            novelty_floor: 40.0,
+            ..Default::default()
+        })
         .is_ok()
     );
 }

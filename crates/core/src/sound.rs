@@ -1102,7 +1102,7 @@ mod tests {
     use std::cell::Cell;
 
     use super::*;
-    use crate::Tensor;
+    use crate::{HitsParts, Tensor};
 
     /// Answers every run with 100 frames of activations: a kick of 0.9 at frame 50.
     struct Spike;
@@ -1126,7 +1126,10 @@ mod tests {
         assert_eq!(sound.picked(Hit::Kick, sound.hits_params(), open)?.len(), 1);
         assert_eq!(opened.get(), 1);
 
-        let strict = sound.with_hits(Hits::new(0.99, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.02)?);
+        let strict = sound.with_hits(Hits::new(HitsParts {
+            kick_threshold: 0.99,
+            ..Default::default()
+        })?);
         assert_eq!(strict.picked(Hit::Kick, strict.hits_params(), open)?, []);
         assert_eq!(opened.get(), 1, "the thresholds do not change the activations");
 

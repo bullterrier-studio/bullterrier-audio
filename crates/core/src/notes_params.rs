@@ -4,6 +4,49 @@ use crate::Error;
 use crate::analysis::within;
 use crate::notes::{HOP, RATE};
 
+/// The values of a [`Notes`], with a public field for each.
+///
+/// Passed to [`Notes::new`], which checks every value; `NotesParts::default()` holds the defaults of the table of
+/// [`Notes`]. Fields left out of a struct literal keep their default: `NotesParts { onset_threshold: …, ..NotesParts::default() }`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NotesParts {
+    /// See the table of [`Notes`].
+    pub onset_threshold: f64,
+    /// See the table of [`Notes`].
+    pub frame_threshold: f64,
+    /// See the table of [`Notes`].
+    pub min_note: f64,
+    /// See the table of [`Notes`].
+    pub energy_tolerance: f64,
+    /// See the table of [`Notes`].
+    pub merge_gap: f64,
+    /// See the table of [`Notes`].
+    pub reattack: f64,
+    /// See the table of [`Notes`].
+    pub ghost_share: f64,
+    /// See the table of [`Notes`].
+    pub partial_share: f64,
+    /// See the table of [`Notes`].
+    pub partial_overlap: f64,
+}
+
+impl Default for NotesParts {
+    fn default() -> Self {
+        let frames_11 = 11.0 * HOP_F / f64::from(RATE);
+        NotesParts {
+            onset_threshold: 0.5,
+            frame_threshold: 0.3,
+            min_note: frames_11,
+            energy_tolerance: frames_11,
+            merge_gap: 1.0,
+            reattack: 0.5,
+            ghost_share: 0.65,
+            partial_share: 0.8,
+            partial_overlap: 0.5,
+        }
+    }
+}
+
 /// How the notes of a sound are found in what Basic Pitch answers and cleaned up. Every value is checked once, in
 /// [`Notes::new`]; a `Notes` that exists is valid, and its fields are read through methods. The default holds every
 /// default below.
@@ -51,34 +94,9 @@ use crate::notes::{HOP, RATE};
 ///
 /// Not done: correcting an octave that the model reports for a pitch whose fundamental is weak (it needs the audio
 /// band of each pitch, which the posteriors do not hold); pitch bends (a note's pitch is its MIDI number).
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Notes {
-    onset_threshold: f64,
-    frame_threshold: f64,
-    min_note: f64,
-    energy_tolerance: f64,
-    merge_gap: f64,
-    reattack: f64,
-    ghost_share: f64,
-    partial_share: f64,
-    partial_overlap: f64,
-}
-
-impl Default for Notes {
-    fn default() -> Self {
-        let frames_11 = 11.0 * HOP_F / f64::from(RATE);
-        Self {
-            onset_threshold: 0.5,
-            frame_threshold: 0.3,
-            min_note: frames_11,
-            energy_tolerance: frames_11,
-            merge_gap: 1.0,
-            reattack: 0.5,
-            ghost_share: 0.65,
-            partial_share: 0.8,
-            partial_overlap: 0.5,
-        }
-    }
+    parts: NotesParts,
 }
 
 #[allow(clippy::cast_precision_loss)] // 256
@@ -91,28 +109,8 @@ impl Notes {
     ///
     /// [`Error::Invalid`] naming `Notes`, the field, its range and the value when a value lies outside its range or is
     /// NaN.
-    #[allow(clippy::too_many_arguments)] // one argument per documented field, as `Structure::new`
-    pub fn new(
-        onset_threshold: f64,
-        frame_threshold: f64,
-        min_note: f64,
-        energy_tolerance: f64,
-        merge_gap: f64,
-        reattack: f64,
-        ghost_share: f64,
-        partial_share: f64,
-        partial_overlap: f64,
-    ) -> Result<Self, Error> {
-        within("Notes", "onset_threshold", onset_threshold, 0.0..=1.0, "a fraction")?;
-        within("Notes", "frame_threshold", frame_threshold, 0.0..=1.0, "a fraction")?;
-        within("Notes", "min_note", min_note, 0.0..=2.0, "seconds")?;
-        within("Notes", "energy_tolerance", energy_tolerance, 0.01..=1.0, "seconds")?;
-        within("Notes", "merge_gap", merge_gap, 0.0..=10.0, "seconds")?;
-        within("Notes", "reattack", reattack, 0.0..=1.0, "a fraction")?;
-        within("Notes", "ghost_share", ghost_share, 0.0..=1.0, "a fraction")?;
-        within("Notes", "partial_share", partial_share, 0.0..=1.0, "a fraction")?;
-        within("Notes", "partial_overlap", partial_overlap, 0.0..=1.0, "a fraction")?;
-        Ok(Self {
+    pub fn new(parts: NotesParts) -> Result<Self, Error> {
+        let NotesParts {
             onset_threshold,
             frame_threshold,
             min_note,
@@ -122,60 +120,70 @@ impl Notes {
             ghost_share,
             partial_share,
             partial_overlap,
-        })
+        } = parts;
+        within("Notes", "onset_threshold", onset_threshold, 0.0..=1.0, "a fraction")?;
+        within("Notes", "frame_threshold", frame_threshold, 0.0..=1.0, "a fraction")?;
+        within("Notes", "min_note", min_note, 0.0..=2.0, "seconds")?;
+        within("Notes", "energy_tolerance", energy_tolerance, 0.01..=1.0, "seconds")?;
+        within("Notes", "merge_gap", merge_gap, 0.0..=10.0, "seconds")?;
+        within("Notes", "reattack", reattack, 0.0..=1.0, "a fraction")?;
+        within("Notes", "ghost_share", ghost_share, 0.0..=1.0, "a fraction")?;
+        within("Notes", "partial_share", partial_share, 0.0..=1.0, "a fraction")?;
+        within("Notes", "partial_overlap", partial_overlap, 0.0..=1.0, "a fraction")?;
+        Ok(Self { parts })
     }
 
     /// The least height of an onset peak for a note to start.
     #[must_use]
     pub fn onset_threshold(&self) -> f64 {
-        self.onset_threshold
+        self.parts.onset_threshold
     }
 
     /// The note posterior a pitch must reach to sound.
     #[must_use]
     pub fn frame_threshold(&self) -> f64 {
-        self.frame_threshold
+        self.parts.frame_threshold
     }
 
     /// Seconds a note must be longer than to be kept.
     #[must_use]
     pub fn min_note(&self) -> f64 {
-        self.min_note
+        self.parts.min_note
     }
 
     /// Seconds the note posterior may stay under `frame_threshold` without ending the note.
     #[must_use]
     pub fn energy_tolerance(&self) -> f64 {
-        self.energy_tolerance
+        self.parts.energy_tolerance
     }
 
     /// Seconds within which two notes of one pitch are merged.
     #[must_use]
     pub fn merge_gap(&self) -> f64 {
-        self.merge_gap
+        self.parts.merge_gap
     }
 
     /// The onset posterior that keeps two near notes of one pitch apart.
     #[must_use]
     pub fn reattack(&self) -> f64 {
-        self.reattack
+        self.parts.reattack
     }
 
     /// The share of the reference strength (see the table of `Notes`) under which a note is dropped.
     #[must_use]
     pub fn ghost_share(&self) -> f64 {
-        self.ghost_share
+        self.parts.ghost_share
     }
 
     /// The share of the lower note's strength under which a note an overtone above it is dropped.
     #[must_use]
     pub fn partial_share(&self) -> f64 {
-        self.partial_share
+        self.parts.partial_share
     }
 
     /// The share of the upper note's length that must lie within the lower note for that rule.
     #[must_use]
     pub fn partial_overlap(&self) -> f64 {
-        self.partial_overlap
+        self.parts.partial_overlap
     }
 }

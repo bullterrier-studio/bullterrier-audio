@@ -3,6 +3,66 @@
 use crate::Error;
 use crate::analysis::within;
 
+/// The values of a [`Structure`], with a public field for each.
+///
+/// Passed to [`Structure::new`], which checks every value; `StructureParts::default()` holds the defaults of the table of
+/// [`Structure`]. Fields left out of a struct literal keep their default: `StructureParts { tempo_min: …, ..StructureParts::default() }`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StructureParts {
+    /// See the table of [`Structure`].
+    pub tempo_min: f64,
+    /// See the table of [`Structure`].
+    pub tempo_max: f64,
+    /// See the table of [`Structure`].
+    pub tolerance: f64,
+    /// See the table of [`Structure`].
+    pub slower_margin: f64,
+    /// See the table of [`Structure`].
+    pub meter_margin: f64,
+    /// See the table of [`Structure`].
+    pub min_section_bars: u32,
+    /// See the table of [`Structure`].
+    pub novelty_share: f64,
+    /// See the table of [`Structure`].
+    pub label_spread: f64,
+    /// See the table of [`Structure`].
+    pub phrase_bars: Option<u32>,
+    /// See the table of [`Structure`].
+    pub novelty_floor: f64,
+    /// See the table of [`Structure`].
+    pub chroma_low: f64,
+    /// See the table of [`Structure`].
+    pub chroma_high: f64,
+    /// See the table of [`Structure`].
+    pub drop_bars: u32,
+    /// See the table of [`Structure`].
+    pub drop_share: f64,
+    /// See the table of [`Structure`].
+    pub drop_min_span: f64,
+}
+
+impl Default for StructureParts {
+    fn default() -> Self {
+        StructureParts {
+            tempo_min: 70.0,
+            tempo_max: 180.0,
+            tolerance: 0.03,
+            slower_margin: 0.2,
+            meter_margin: 0.1,
+            min_section_bars: 4,
+            novelty_share: 0.3,
+            label_spread: 3.0,
+            phrase_bars: None,
+            novelty_floor: 1.0,
+            chroma_low: 100.0,
+            chroma_high: 5000.0,
+            drop_bars: 4,
+            drop_share: 0.8,
+            drop_min_span: 10.0,
+        }
+    }
+}
+
 /// How the musical structure of a sound is measured. Every value is checked once, in [`Structure::new`]; a
 /// `Structure` that exists is valid, and its fields are read through methods. The default holds every default below.
 ///
@@ -72,45 +132,9 @@ use crate::analysis::within;
 /// above, one fading in over 8 bars is none at any share, and bass and kick entering pass at 0.99. `drop_min_span`: a song whose span is not above this has no drop (so with 0, a span of exactly 0 has none), however sharp the step.
 /// Evidence: a bass line doubled in amplitude rises 6 dB (a drop at share 0.51 without a least span, none with 10), a
 /// kick on a sounding bass line by 0.6 dB, and bass entering rises by over 60 dB; 10 dB is the rise heard as twice as loud.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Structure {
-    tempo_min: f64,
-    tempo_max: f64,
-    tolerance: f64,
-    slower_margin: f64,
-    meter_margin: f64,
-    min_section_bars: u32,
-    novelty_share: f64,
-    label_spread: f64,
-    phrase_bars: Option<u32>,
-    novelty_floor: f64,
-    chroma_low: f64,
-    chroma_high: f64,
-    drop_bars: u32,
-    drop_share: f64,
-    drop_min_span: f64,
-}
-
-impl Default for Structure {
-    fn default() -> Self {
-        Self {
-            tempo_min: 70.0,
-            tempo_max: 180.0,
-            tolerance: 0.03,
-            slower_margin: 0.2,
-            meter_margin: 0.1,
-            min_section_bars: 4,
-            novelty_share: 0.3,
-            label_spread: 3.0,
-            phrase_bars: None,
-            novelty_floor: 1.0,
-            chroma_low: 100.0,
-            chroma_high: 5000.0,
-            drop_bars: 4,
-            drop_share: 0.8,
-            drop_min_span: 10.0,
-        }
-    }
+    parts: StructureParts,
 }
 
 impl Structure {
@@ -120,24 +144,24 @@ impl Structure {
     ///
     /// [`Error::Invalid`] naming `Structure`, the field, its range and the value when a value lies outside its range
     /// or is NaN, or naming `tempo_min` and `tempo_max` (`chroma_low` and `chroma_high`) when the first is not below the second.
-    #[allow(clippy::too_many_arguments)] // one argument per documented field, as `Analysis::new`
-    pub fn new(
-        tempo_min: f64,
-        tempo_max: f64,
-        tolerance: f64,
-        slower_margin: f64,
-        meter_margin: f64,
-        min_section_bars: u32,
-        novelty_share: f64,
-        label_spread: f64,
-        phrase_bars: Option<u32>,
-        novelty_floor: f64,
-        chroma_low: f64,
-        chroma_high: f64,
-        drop_bars: u32,
-        drop_share: f64,
-        drop_min_span: f64,
-    ) -> Result<Self, Error> {
+    pub fn new(parts: StructureParts) -> Result<Self, Error> {
+        let StructureParts {
+            tempo_min,
+            tempo_max,
+            tolerance,
+            slower_margin,
+            meter_margin,
+            min_section_bars,
+            novelty_share,
+            label_spread,
+            phrase_bars,
+            novelty_floor,
+            chroma_low,
+            chroma_high,
+            drop_bars,
+            drop_share,
+            drop_min_span,
+        } = parts;
         within("Structure", "tempo_min", tempo_min, 30.0..=300.0, "beats per minute")?;
         within("Structure", "tempo_max", tempo_max, 30.0..=300.0, "beats per minute")?;
         within("Structure", "tolerance", tolerance, 0.001..=0.1, "seconds")?;
@@ -179,120 +203,104 @@ impl Structure {
                 "Structure chroma_low must be below chroma_high, got chroma_low {chroma_low} and chroma_high {chroma_high}"
             )));
         }
-        Ok(Self {
-            tempo_min,
-            tempo_max,
-            tolerance,
-            slower_margin,
-            meter_margin,
-            min_section_bars,
-            novelty_share,
-            label_spread,
-            phrase_bars,
-            novelty_floor,
-            chroma_low,
-            chroma_high,
-            drop_bars,
-            drop_share,
-            drop_min_span,
-        })
+        Ok(Self { parts })
     }
 
     /// The slowest tempo in beats per minute that a grid reports.
     #[must_use]
     pub fn tempo_min(&self) -> f64 {
-        self.tempo_min
+        self.parts.tempo_min
     }
 
     /// The fastest tempo in beats per minute that a grid reports.
     #[must_use]
     pub fn tempo_max(&self) -> f64 {
-        self.tempo_max
+        self.parts.tempo_max
     }
 
     /// Seconds an onset may lie from a beat and still count as on it, before the hop widens it (see
     /// [`Structure::effective_tolerance`]).
     #[must_use]
     pub fn tolerance(&self) -> f64 {
-        self.tolerance
+        self.parts.tolerance
     }
 
     /// The share by which a slower tempo's F-measure may trail the best and still win.
     #[must_use]
     pub fn slower_margin(&self) -> f64 {
-        self.slower_margin
+        self.parts.slower_margin
     }
 
     /// The amount by which meter 3 must outscore meter 4 to win.
     #[must_use]
     pub fn meter_margin(&self) -> f64 {
-        self.meter_margin
+        self.parts.meter_margin
     }
 
     /// The fewest bars in a section.
     #[must_use]
     pub fn min_section_bars(&self) -> u32 {
-        self.min_section_bars
+        self.parts.min_section_bars
     }
 
     /// The share of the sound's largest novelty that a bar boundary must reach to be a cut.
     #[must_use]
     pub fn novelty_share(&self) -> f64 {
-        self.novelty_share
+        self.parts.novelty_share
     }
 
     /// Decibels by which no band may differ between two sections that share a label.
     #[must_use]
     pub fn label_spread(&self) -> f64 {
-        self.label_spread
+        self.parts.label_spread
     }
 
     /// The bars of the phrase grid cuts snap to; `None` leaves cuts on the bars they were found at.
     #[must_use]
     pub fn phrase_bars(&self) -> Option<u32> {
-        self.phrase_bars
+        self.parts.phrase_bars
     }
 
     /// Decibels a band must change to count as changed, and the least spread its variation is divided by.
     #[must_use]
     pub fn novelty_floor(&self) -> f64 {
-        self.novelty_floor
+        self.parts.novelty_floor
     }
 
     /// The lowest frequency in hertz that counts as pitch.
     #[must_use]
     pub fn chroma_low(&self) -> f64 {
-        self.chroma_low
+        self.parts.chroma_low
     }
 
     /// The highest frequency in hertz that counts as pitch.
     #[must_use]
     pub fn chroma_high(&self) -> f64 {
-        self.chroma_high
+        self.parts.chroma_high
     }
 
     /// The bars that must be quiet before a drop and loud after it.
     #[must_use]
     pub fn drop_bars(&self) -> u32 {
-        self.drop_bars
+        self.parts.drop_bars
     }
 
     /// The share of the song's level span that the bars after a drop must reach and the bars before it stay under
     /// the complement of.
     #[must_use]
     pub fn drop_share(&self) -> f64 {
-        self.drop_share
+        self.parts.drop_share
     }
 
     /// Decibels of span in the song's Sub and Bass levels below which it has no drops.
     #[must_use]
     pub fn drop_min_span(&self) -> f64 {
-        self.drop_min_span
+        self.parts.drop_min_span
     }
 
     /// The tolerance in use under a `hop` of the analysis: `max(tolerance, 1.5 * hop)`.
     #[must_use]
     pub fn effective_tolerance(&self, hop: f64) -> f64 {
-        self.tolerance.max(1.5 * hop)
+        self.parts.tolerance.max(1.5 * hop)
     }
 }
