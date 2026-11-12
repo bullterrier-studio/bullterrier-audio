@@ -10,13 +10,13 @@ permissions:
   contents: read
 
 jobs:
-  # The Rust tests that need the ONNX Runtime library and the Basic Pitch model (`#[ignore]`d in `check`). `bt-audio install`
-  # downloads both on the first run (verified against the pinned SHA-256); the cache keeps them under the
-  # catalogue's and the runtime's source, which pin the files.
+  # The Rust tests that need the ONNX Runtime library and the models (`#[ignore]`d in `check`; the ensemble test needs the
+  # four fine-tuned ones, 1.26 GB). `bt-audio install --ensemble` downloads them on the first run (verified against the pinned SHA-256); the
+  # cache keeps them under the catalogue's and the runtime's source, which pin the files.
   models:
     name: Tests with the installed models
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,7 +35,7 @@ jobs:
         run: uv sync --locked
       # Installed first, by the command a user runs: the tests run in parallel and several need the runtime and the model
       # present before they start (a test that downloads would race the others).
-      - name: Install the ONNX Runtime and the models (bt-audio install)
-        run: uv run --locked bt-audio install --yes
+      - name: Install the ONNX Runtime and the models (bt-audio install --ensemble)
+        run: uv run --locked bt-audio install --yes --ensemble
       - name: Rust and Python tests that need the models
         run: uv run --locked poe rust-test-models
