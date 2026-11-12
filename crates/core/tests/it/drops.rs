@@ -15,7 +15,8 @@ use bullterrier_audio::{Error, Sound, Structure};
 
 use crate::common::Outcome;
 use crate::common::arrangement::{
-    BAR, Bass, BassFadeIn, HalfTimeKick, Hats, Kick, Pad, Part, RATE, Riser, arrangement, full, top,
+    BAR, BEAT, Bass, BassFadeIn, HalfTimeKick, Hats, Kick, OffbeatHats, Pad, Part, Pulse, RATE, Riser, arrangement,
+    full, top,
 };
 use crate::common::{clicks, sine};
 
@@ -42,6 +43,17 @@ fn with_gap(bars: usize, from: usize, to: usize) -> Vec<Part> {
         (to, bars, Hats(0.2)),
         (to, bars, Pad(0.05)),
     ]
+}
+
+/// 24 bars: off-beat hats, and from bar 8 (beat 32) a bass burst on every beat. `lead` whole beats of the same hats
+/// are put in front, so the first accent falls on beat `lead + 1` of the first bar (or nowhere, `accent` off).
+fn burst_song(lead: usize, accent: bool) -> Sound {
+    let song = arrangement(24, &[(0, 24, OffbeatHats(0.3)), (8, 24, Pulse(0.5, accent))]);
+    let samples = &song.samples()[0];
+    let ahead = (lead as f64 * BEAT * f64::from(RATE)).round() as usize;
+    let mut shifted = samples[..ahead].to_vec();
+    shifted.extend_from_slice(samples);
+    Sound::from_samples(vec![shifted], RATE).unwrap_or_else(|e| unreachable!("{e}"))
 }
 
 /// The positives and the decoys. The id states the rule.
@@ -78,6 +90,21 @@ fn cases() -> Vec<Case> {
                 top(24),
                 vec![(0, 24, Kick), (8, 16, BassFadeIn(0.4)), (16, 24, Bass(0.4))],
             ],
+            &[],
+        ),
+        case(
+            "n2b_bass_fading_in_over_2_bars_under_a_kick_is_no_drop",
+            24,
+            &[
+                top(24),
+                vec![(0, 24, Kick), (8, 10, BassFadeIn(0.4)), (10, 24, Bass(0.4))],
+            ],
+            &[],
+        ),
+        case(
+            "n9_a_6_decibel_step_in_a_faint_bass_is_no_drop",
+            24,
+            &[top(24), vec![(0, 24, Bass(0.02)), (8, 24, Bass(0.02))]],
             &[],
         ),
         case(
@@ -205,9 +232,10 @@ fn each_drop_parameter_changes_what_is_found() -> Outcome {
     let rows = [
         ("p1", structure(4, 0.8, 120.0), 0), // the span of the song is under the least a drop needs
         ("p1", structure(16, 0.8, 10.0), 0), // 8 quiet bars are fewer than 16
-        ("n2", structure(4, 0.51, 10.0), 1), // a fade-in reaches half the span in its first bar
+        ("n2b", structure(4, 0.6, 10.0), 1), // a 2-bar fade-in reaches 0.6 of the span at once
         ("n6b", structure(2, 0.8, 10.0), 1), // a 3-bar silence is a stretch without bass for 2 bars
-        ("n8", structure(4, 0.8, 0.0), 1),   // leaked hats are a step of their own with no least span
+        ("n9", structure(4, 0.51, 10.0), 0), // the same step, 6 dB, is under the least span
+        ("n9", structure(4, 0.51, 0.0), 1),  // a doubled faint bass is a step of its own with no least span
     ];
     for (prefix, structure, expected) in rows {
         let case = by(prefix);
@@ -277,4 +305,42 @@ fn a_structure_is_checked_once_at_construction() {
     }
     assert!(build(1, 0.51, 0.0).is_ok());
     assert!(build(1000, 1.0, 120.0).is_ok());
+}
+
+#[test]
+fn a_drop_is_found_whatever_beat_the_grid_calls_the_downbeat() -> Outcome {
+    // the transition lies at beat 32 of the hats: 15 s, plus the beats put in front
+    for (id, lead, accent) in [
+        ("accent_on_beat_1", 0, true),
+        ("accent_on_beat_2", 1, true),
+        ("accent_on_beat_3", 2, true),
+        ("accent_on_beat_4", 3, true),
+        ("no_accent", 0, false),
+        ("no_accent_shifted", 2, false),
+    ] {
+        let found = burst_song(lead, accent).drops()?;
+        let truth = 32.0 * BEAT + lead as f64 * BEAT;
+        assert!(
+            found.len() == 1 && (found[0].t - truth).abs() <= BAR,
+            "{id}: found {:?}, expected {truth}",
+            found.iter().map(|d| d.t).collect::<Vec<_>>()
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_slow_rise_is_one_drop_not_one_per_beat() -> Outcome {
+    // a 4-bar fade-in at the lowest share: the beats around the step must not each count; one event, one drop
+    let ramp = arrangement(
+        24,
+        &[
+            top(24),
+            vec![(0, 24, Kick), (8, 12, BassFadeIn(0.4)), (12, 24, Bass(0.4))],
+        ]
+        .concat(),
+    )
+    .with_structure(structure(4, 0.51, 10.0));
+    assert_eq!(ramp.drops()?.len(), 1);
+    Ok(())
 }

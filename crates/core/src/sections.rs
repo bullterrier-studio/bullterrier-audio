@@ -27,18 +27,22 @@ pub(crate) type Levels = [f64; 6];
 
 /// The edges of the bars of the sound's grid (see [`bar_edges`]) and the level of each band in each bar.
 pub(crate) fn bar_levels(sound: &Sound) -> Result<(Vec<f64>, Vec<Levels>), Error> {
-    let grid = sound.grid()?;
-    let edges = bar_edges(&grid, sound.duration());
+    let edges = bar_edges(&sound.grid()?, sound.duration());
+    let bars = levels_between(sound, &edges)?;
+    Ok((edges, bars))
+}
+
+/// The level of each band between each two successive `edges` (seconds).
+pub(crate) fn levels_between(sound: &Sound, edges: &[f64]) -> Result<Vec<Levels>, Error> {
     let hop = sound.analysis().hop();
     let series = Band::ALL
         .iter()
         .map(|&band| sound.energy(band).map(|s| s.values))
         .collect::<Result<Vec<_>, _>>()?;
-    let bars = edges
+    Ok(edges
         .windows(2)
-        .map(|bar| mean_levels(&series, bar[0] / hop, bar[1] / hop))
-        .collect();
-    Ok((edges, bars))
+        .map(|span| mean_levels(&series, span[0] / hop, span[1] / hop))
+        .collect())
 }
 
 pub(crate) fn sections(sound: &Sound) -> Result<Vec<Section>, Error> {

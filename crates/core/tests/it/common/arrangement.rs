@@ -23,6 +23,10 @@ pub(crate) const TAU: f64 = std::f64::consts::TAU;
 pub(crate) enum Layer {
     /// Hi-hat clicks on every eighth note, of this amplitude.
     Hats(f64),
+    /// Hi-hat clicks between the beats only.
+    OffbeatHats(f64),
+    /// A 55 Hz burst of 0.25 s under a Hann envelope on every beat; with `accent` the bar's first is twice as loud.
+    Pulse(f64, bool),
     /// A sustained chord in the mids.
     Pad(f64),
     /// A sustained A minor chord in the mids.
@@ -38,7 +42,7 @@ pub(crate) enum Layer {
     /// Noise high-passed once, its gain rising linearly from 0 to the amplitude over the bars.
     Riser(f64),
 }
-pub(crate) use Layer::{Bass, BassFadeIn, HalfTimeKick, Hats, Kick, MinorPad, Pad, Riser};
+pub(crate) use Layer::{Bass, BassFadeIn, HalfTimeKick, Hats, Kick, MinorPad, OffbeatHats, Pad, Pulse, Riser};
 
 pub(crate) fn bar_time(bar: usize) -> f64 {
     bar as f64 * BAR
@@ -83,6 +87,27 @@ pub(crate) fn arrangement(bars: usize, layers: &[(usize, usize, Layer)]) -> Soun
                 RATE,
                 seconds,
             ),
+            OffbeatHats(amp) => clicks(
+                &every(BEAT, from, to)
+                    .into_iter()
+                    .map(|t| (t + BEAT / 2.0, amp))
+                    .collect::<Vec<_>>(),
+                RATE,
+                seconds,
+            ),
+            Pulse(amp, accent) => {
+                let mut out = vec![0.0_f32; len];
+                let burst = (0.25 * f64::from(RATE)) as usize;
+                for (k, t) in every(BEAT, from, to).into_iter().enumerate() {
+                    let gain = if accent && k % 4 != 0 { 0.5 } else { 1.0 };
+                    let start = (t * f64::from(RATE)).round() as usize;
+                    for i in 0..burst {
+                        let hann = 0.5 - 0.5 * (TAU * (i as f64 + 0.5) / burst as f64).cos();
+                        out[start + i] = (amp * gain * hann * (TAU * 55.0 * i as f64 / f64::from(RATE)).sin()) as f32;
+                    }
+                }
+                out
+            }
             Kick => {
                 let mut kick = tone_bursts(&every(BEAT, from, to), 60.0, 0.12, 0.7, RATE, seconds);
                 for (k, s) in kick

@@ -490,14 +490,15 @@ impl Sound {
         self.memo.0.sections.get_or_init(|| sections::sections(self)).clone()
     }
 
-    /// The drops of the sound: bars at which bass and kick enter after a stretch without them, as events at the bar
-    /// start, in order, without label, duration or pitch.
+    /// The drops of the sound: bars at which bass and kick enter after a stretch without them, as events at the beat
+    /// where they start, in order, without label, duration or pitch.
     ///
-    /// The level of a bar is the mean of the Sub and Bass [`Sound::energy`] over it (bars as in [`Sound::sections`]).
-    /// A bar `i` is a drop when each of the `drop_bars` bars before it is at most `1 - drop_share` of the way up the
-    /// song's own span of levels (10th to 90th percentile) and each of the `drop_bars` bars from it is at least
-    /// `drop_share` of the way up; a song whose span is under `drop_min_span` has none. The strength is the rise over
-    /// the span, from the loudest bar before to the quietest bar after, at most 1. See [`Structure`].
+    /// The level of a beat of [`Sound::grid`] is the mean of the Sub and Bass [`Sound::energy`] over it; beats, not
+    /// bars, because the downbeat of a grid is a guess where nothing accents it, and a bar line off the music blends
+    /// the two sides of a drop. A beat `i` is a drop when each of the `drop_bars * meter` beats before it is at most
+    /// `1 - drop_share` of the way up the song's own span of levels (10th to 90th percentile) and each of the same
+    /// number from it is at least `drop_share` of the way up (so one step is one drop); a song whose span is under `drop_min_span` has none. The strength is the rise over
+    /// the span, from the loudest beat before to the quietest beat after, at most 1. See [`Structure`].
     ///
     /// A false drop does more harm than a missing one, so it is strict: a bass that fades in, a noise riser, a kick
     /// entering over a sounding bass, a short silence that returns to the same level, a drop down and a loud section

@@ -63,15 +63,15 @@ use crate::analysis::within;
 /// pitch class of a bin is wrong; above about 5 kHz the energy is overtones and noise, not the pitch of notes. Lowering
 /// `chroma_low` lengthens the key's analysis window (it is derived from it, see [`Sound::key`](crate::Sound::key)).
 ///
-/// The last three steer [`Sound::drops`](crate::Sound::drops), on the per-bar level of Sub and Bass. `drop_bars`: how
-/// many bars before the drop must be quiet and after it loud. Evidence: a gap of 3 silent bars in a bass line must not
+/// The last three steer [`Sound::drops`](crate::Sound::drops), on the per-beat level of Sub and Bass (beats, not
+/// bars, so a grid whose downbeat is a guess does not matter). `drop_bars`: how many bars (of `meter` beats) before
+/// the drop must be quiet and after it loud. Evidence: a gap of 3 silent bars in a bass line must not
 /// read as a stretch without bass, which `drop_bars` of 4 settles and 2 does not. `drop_share`: the song's levels span
 /// from its 10th to its 90th percentile; the bars before lie in the lowest `1 - drop_share` of that span, the bars after
-/// in the highest (above half, so no bar is both). Evidence: the first bar of a bass fading in over 8 bars sits at 0.62 of the span (the level is in
-/// decibels, so a linear gain jumps up at once), bass and kick entering sit at 0.99, so any share between about 0.65
-/// and 0.98 separates them. `drop_min_span`: a song whose span is not above this has no drop (so with 0, a span of exactly 0 has none), however sharp the step.
-/// Evidence: the Sub and Bass level of hi-hats leaking into the bands rose by 1.6 dB, a kick on a sounding bass line by
-/// 0.6 dB, and bass entering rises by over 60 dB; 10 dB is the rise heard as twice as loud.
+/// in the highest (above half, so no bar is both). Evidence: a bass fading in over 2 bars is a drop at 0.6 of the span and none at 0.7 or
+/// above, one fading in over 8 bars is none at any share, and bass and kick entering pass at 0.99. `drop_min_span`: a song whose span is not above this has no drop (so with 0, a span of exactly 0 has none), however sharp the step.
+/// Evidence: a bass line doubled in amplitude rises 6 dB (a drop at share 0.51 without a least span, none with 10), a
+/// kick on a sounding bass line by 0.6 dB, and bass entering rises by over 60 dB; 10 dB is the rise heard as twice as loud.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Structure {
     tempo_min: f64,
