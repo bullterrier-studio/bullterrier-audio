@@ -41,7 +41,7 @@ pub struct Model {
 ///   in the order [`OrtInfer::output_names`](super::OrtInfer::output_names) gives: `StatefulPartitionedCall:2` the onset
 ///   posteriorgram `(1, 172, 88)`, `StatefulPartitionedCall:1` the note (frame) posteriorgram `(1, 172, 88)`,
 ///   `StatefulPartitionedCall:0` the contour `(1, 172, 264)`. 88 pitches from MIDI 21; 172 frames of 256 samples.
-/// - `htdemucs-6s`: Demucs v4 `HTDemucs` with six sources, exported to ONNX by StemSplit (the STFT and inverse STFT are in
+/// - `htdemucs-6s`: Demucs v4 `HTDemucs` with six sources, exported to ONNX by `StemSplit` (the STFT and inverse STFT are in
 ///   the graph). Code MIT; the weights are released for science only according to their author (facebookresearch/demucs
 ///   issue 327); the export is MIT. 258 159 781 bytes, SHA-256 re-derived by streaming the file. Verified with ONNX Runtime
 ///   1.23.2 on the CPU: one input `mix`, f32 `(1, 2, 343980)` (7.8 s of stereo at 44 100 Hz, normalised as Demucs does);
