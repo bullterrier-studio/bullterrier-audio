@@ -656,6 +656,7 @@ mod stem {
 }
 
 /// Part 2: the installed `htdemucs-6s` model on a synthesised mix.
+#[cfg(feature = "onnx")]
 mod real_model {
     use super::*;
     use realfft::RealFftPlanner;
