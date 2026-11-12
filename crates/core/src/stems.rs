@@ -296,9 +296,9 @@ pub(crate) fn separate_ensemble<M: Infer>(
                 for (t, &theirs) in ft_row.iter().enumerate() {
                     let ours = total[at(own)][t];
                     total[at(own)][t] = if own == Stem::Other {
-                        0.5 * (ours + (theirs - total[at(Stem::Guitar)][t] - total[at(Stem::Piano)][t]))
+                        f32::midpoint(ours, theirs - total[at(Stem::Guitar)][t] - total[at(Stem::Piano)][t])
                     } else {
-                        0.5 * (ours + theirs)
+                        f32::midpoint(ours, theirs)
                     };
                 }
             }
