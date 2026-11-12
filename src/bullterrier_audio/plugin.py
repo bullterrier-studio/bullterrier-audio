@@ -14,7 +14,9 @@ The name is the one `Sound.measure(name)` and `bta.measures()` use, and the key 
 returns a `Series`, and `None` for one that returns events; a `"fraction"` series needs a `scaling` (in general words)
 and lies in 0..1. The description is the docstring's first paragraph unless `description` is given. The return
 annotation is required: `Series`, or `list[Event]` / `Sequence[Event]`. A built-in's name cannot be taken; registering
-the same function again (a reloaded module) replaces it, another function under a taken name is refused.
+the same function again (a reloaded module) replaces it, another function under a taken name is refused. A function
+defined inside another (a closure) is the same function only as the same object: a second closure from one factory is
+refused under the first one's name.
 
 To ship measures as a package, name the module in an entry point; it is imported the first time the registry is asked
 (never at `import bullterrier_audio`):
@@ -29,6 +31,7 @@ An exception a measure raises reaches the caller of `Sound.measure` or `Sound.bu
 
 import collections.abc
 import inspect
+import sys
 import threading
 import typing
 from collections.abc import Callable, Iterator, Sequence
@@ -57,21 +60,27 @@ UNITS = tuple(units())
 
 _lock = threading.RLock()
 _done = False
+_registered_modules: list[str] = []  # the module of each function registered, in order
 
 
 def _load() -> None:
     """Import the modules of the entry points of `GROUP`, sorted by name, once. One that fails to import leaves nothing
-    registered and raises an `InvalidError` naming it; the next call tries again."""
+    registered, and the modules that registered measures during it are forgotten so that the next call imports them
+    again; it raises an `InvalidError` naming the entry point."""
     global _done  # noqa: PLW0603  (the one flag: the group is read once)
     with _lock:
         if _done:
             return
         for entry in sorted(metadata.entry_points(group=GROUP), key=lambda entry: entry.name):
             before = registry_snapshot()
+            registered = len(_registered_modules)
             try:
                 entry.load()
             except Exception as error:
                 registry_restore(before)
+                for module in _registered_modules[registered:]:
+                    sys.modules.pop(module, None)
+                del _registered_modules[registered:]
                 raise InvalidError(f"measure plugin '{entry.name}' ({entry.value}) failed to load: {error}") from error
         _done = True
 
@@ -88,6 +97,14 @@ def isolated() -> Iterator[None]:
         yield
     finally:
         registry_restore(saved)
+
+
+def _identity(function: Callable[..., object]) -> str:
+    """Which function this is: its module and qualified name (a module loaded again replaces itself), and for a closure
+    the object too, as two closures of one factory share module and name. The registry keeps the function, so its id
+    cannot be reused while it is registered."""
+    identity = f"{function.__module__}.{function.__qualname__}"
+    return f"{identity}@{id(function):x}" if "<locals>" in identity else identity
 
 
 def _returns_events(function: Callable[..., object]) -> bool:
@@ -115,7 +132,14 @@ def measure(
     """
 
     def register(function: Callable[[Sound], Series | Sequence[Event]]) -> Callable[[Sound], Series | Sequence[Event]]:
-        if _returns_events(function) != (unit is None):
+        try:
+            returns_events = _returns_events(function)
+            identity = _identity(function)
+        except (TypeError, AttributeError, NameError) as error:
+            raise InvalidError(
+                f"measure '{name}': cannot read the return annotation of {function!r}: {error}"
+            ) from error
+        if returns_events != (unit is None):
             raise InvalidError(
                 f"measure '{name}': unit {unit!r} does not fit the return annotation "
                 "(a Series needs a unit, Sequence[Event] none)"
@@ -124,11 +148,12 @@ def measure(
         register_measure(
             function,
             name,
-            f"{function.__module__}.{function.__qualname__}",
+            identity,
             " ".join(text.split()),
             unit,
             scaling,
         )
+        _registered_modules.append(function.__module__)
         return function
 
     return register

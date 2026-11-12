@@ -2,6 +2,7 @@
 plugin's failures, and the entry-point group (a real temporary distribution in a subprocess: `importlib.metadata`
 reads the installed distributions, the external boundary)."""
 
+import functools
 import json
 import os
 import subprocess
@@ -116,18 +117,70 @@ def undocumented_twin():
     return other
 
 
-def versions(value: float):
+MODULE_LEVEL = '''
+import bullterrier_audio as bta
+
+@bta.measure("pumping", unit="decibels")
+def pumping(sound: bta.Sound) -> bta.Series:
+    """One version."""
+    return bta.Series(0.0, 1.0, [VALUE], "decibels")
+'''
+
+
+def test_a_module_level_function_defined_again_replaces_itself(short):
+    # what a reloaded module does: the same module and function name, a new function object
+    for value in (1.0, 2.0):
+        exec(MODULE_LEVEL.replace("VALUE", str(value)), {"__name__": "reloaded_plugin"})  # noqa: S102  (test source)
+    assert short.measure("pumping").values.tolist() == [2.0]
+
+
+def make_closure():
     def pumping(sound: bta.Sound) -> bta.Series:
-        """One version."""
-        return bta.Series(0.0, 1.0, [value], "decibels")
+        """A closure."""
+        return dips(sound)
 
     return pumping
 
 
-def test_the_same_function_registered_again_replaces_itself(short):
-    bta.measure("pumping", unit="decibels")(versions(1.0))
-    bta.measure("pumping", unit="decibels")(versions(2.0))
-    assert short.measure("pumping").values.tolist() == [2.0]
+def test_the_same_closure_registered_again_is_accepted(short):
+    closure = make_closure()
+    bta.measure("pumping", unit="decibels")(closure)
+    bta.measure("pumping", unit="decibels")(closure)
+    assert short.measure("pumping").values.tolist() == [-3.0, -9.0, -3.0]
+
+
+def test_a_second_closure_from_the_same_factory_cannot_take_the_name_of_the_first():
+    bta.measure("pumping", unit="decibels")(make_closure())
+    with pytest.raises(bta.InvalidError, match="pumping"):
+        bta.measure("pumping", unit="decibels")(make_closure())
+
+
+class WithoutQualname:
+    """A callable object that names no function."""
+
+    __annotations__ = {"return": bta.Series}
+
+    def __call__(self, sound: bta.Sound) -> bta.Series:
+        return dips(sound)
+
+
+def unresolvable(sound: bta.Sound) -> "NoSuchType":  # type: ignore[name-defined]  # noqa: F821  (the input under test)
+    """Annotated with a name that does not exist."""
+    return dips(sound)
+
+
+UNREADABLE = {
+    "functools.partial": functools.partial(dips),
+    "an unresolvable string annotation": unresolvable,
+    "an object without a qualname": WithoutQualname(),
+}
+
+
+@pytest.mark.parametrize("function", UNREADABLE.values(), ids=UNREADABLE.keys())
+def test_a_function_that_cannot_be_read_is_refused_naming_the_measure(function):
+    with pytest.raises(bta.InvalidError, match="pumping"):
+        bta.measure("pumping", unit="decibels")(function)
+    assert "pumping" not in bta.measures()
 
 
 def test_measures_lists_the_built_ins_and_the_plugins_sorted():
@@ -267,7 +320,7 @@ def test_a_failed_plugin_does_not_leave_its_exception_for_the_next_error(short):
 PLUGIN_MODULE = """\
 import bullterrier_audio as bta
 
-@bta.measure("pumping", unit="decibels")
+@bta.measure("bta_test_pumping", unit="decibels")
 def pumping(sound: bta.Sound) -> bta.Series:
     '''How far the loudness dips.'''
     return bta.Series(0.0, 1.0, [-3.0], "decibels")
@@ -321,9 +374,9 @@ def test_a_plugin_of_the_entry_point_group_is_loaded_on_the_first_query_and_not_
         import bullterrier_audio as bta
         assert "pumpkin_mod" not in sys.modules, "imported at import time"
         names = bta.measures()
-        assert "pumpkin_mod" in sys.modules and "pumping" in names, names
+        assert "pumpkin_mod" in sys.modules and "bta_test_pumping" in names, names
         song = bta.Sound.from_samples(__import__("numpy").zeros((1, 44100), dtype="float32"), 44100)
-        assert song.measure("pumping").values.tolist() == [-3.0]
+        assert song.measure("bta_test_pumping").values.tolist() == [-3.0]
         """,
     )
 
@@ -334,7 +387,7 @@ def test_a_plugin_in_another_group_is_not_loaded(tmp_path):
         tmp_path,
         """
         import bullterrier_audio as bta
-        assert 'pumping' not in bta.measures() and 'pumpkin_mod' not in sys.modules
+        assert 'bta_test_pumping' not in bta.measures() and 'pumpkin_mod' not in sys.modules
         """,
     )
 
@@ -357,7 +410,47 @@ def test_a_plugin_that_fails_to_import_is_named_and_leaves_nothing_registered(tm
             raise AssertionError("no error")
         open({str(fixed)!r}, "w").close()   # the plugin is repaired; the next query loads it afresh
         names = bta.measures()   # a leftover of the first attempt would clash with the second function
-        assert "halfway" in names and "pumping" in names, names
+        assert "halfway" in names and "bta_test_pumping" in names, names
+        """,
+        FIXED=str(fixed),
+    )
+
+
+HELPER_MODULE = """\
+import bullterrier_audio as bta
+
+@bta.measure("bta_test_helped", unit="decibels")
+def helped(sound: bta.Sound) -> bta.Series:
+    '''Registered by a module the failing plugin imports.'''
+    return bta.Series(0.0, 1.0, [1.0], "decibels")
+"""
+
+IMPORTS_HELPER_THEN_FAILS = """\
+import os
+import retry_helper
+
+if not os.path.exists(os.environ["FIXED"]):
+    raise RuntimeError("cannot import")
+"""
+
+
+def test_a_helper_module_of_a_failed_plugin_registers_again_when_the_plugin_is_fixed(tmp_path):
+    install(tmp_path, "retry", IMPORTS_HELPER_THEN_FAILS)
+    (tmp_path / "retry_helper.py").write_text(HELPER_MODULE, encoding="utf-8")
+    fixed = tmp_path / "fixed"
+    run(
+        tmp_path,
+        f"""
+        import bullterrier_audio as bta
+        try:
+            bta.measures()
+        except bta.BullterrierAudioError:
+            pass
+        else:
+            raise AssertionError("no error")
+        open({str(fixed)!r}, "w").close()
+        names = bta.measures()
+        assert "bta_test_helped" in names, names
         """,
         FIXED=str(fixed),
     )
