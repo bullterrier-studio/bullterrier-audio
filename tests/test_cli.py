@@ -1,3 +1,4 @@
+import io
 import json
 import re
 import tomllib
@@ -83,3 +84,68 @@ def test_analyse_without_an_output_is_a_usage_error(capsys):
         main(["analyse", "song.wav"])
     assert stop.value.code == 2
     assert "-o" in capsys.readouterr().err
+
+
+# --- models: install, models, doctor ------------------------------------------------------------------------------
+
+
+def test_models_lists_what_the_package_knows_and_that_it_is_not_installed(tmp_path, capsys):
+    assert main(["models", "--cache", str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert f"Models, kept in {tmp_path}" in out
+    assert re.search(r"basic-pitch: notes model, \d+ MB, Apache-2\.0, not installed", out)
+    assert re.search(r"url: https://\S+\n\s+sha256: [0-9a-f]{64}", out)
+
+
+def test_models_calls_a_file_that_is_not_the_model_damaged(tmp_path, capsys):
+    (tmp_path / "basic-pitch.onnx").write_bytes(b"not the model")
+    assert main(["models", "--cache", str(tmp_path)]) == 0
+    assert "damaged: " in capsys.readouterr().out
+
+
+def test_doctor_on_an_empty_cache_names_the_problem_and_the_fix_and_exits_1(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("BT_AUDIO_ONNX_LIB", raising=False)
+    assert main(["doctor", "--cache", str(tmp_path)]) == 1
+    captured = capsys.readouterr()
+    assert f"cache folder: {tmp_path}" in captured.out
+    assert "ONNX Runtime: not available" in captured.out
+    assert captured.err.startswith("error: ")
+    assert captured.err.strip().endswith("run `bt-audio install`")
+
+
+@pytest.mark.parametrize("answer", ["n\n", "\n", ""], ids=["no", "default", "end of input"])
+def test_install_that_is_declined_downloads_nothing_and_exits_1(tmp_path, capsys, monkeypatch, answer):
+    monkeypatch.delenv("BT_AUDIO_ONNX_LIB", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO(answer))
+    cache = tmp_path / "cache"
+    assert main(["install", "--cache", str(cache)]) == 1
+    captured = capsys.readouterr()
+    assert re.search(r"download ONNX Runtime \S+ \(\d+ MB\) and basic-pitch \(\d+ MB\) into .*\? \[y/N\]", captured.out)
+    assert "nothing downloaded" in captured.err
+    assert not cache.exists()
+
+
+@pytest.mark.parametrize("command", ["install", "models", "doctor"])
+def test_a_model_command_without_its_cache_folder_is_a_usage_error(command, capsys):
+    with pytest.raises(SystemExit) as stop:
+        main([command, "--cache"])
+    assert stop.value.code == 2
+    assert "--cache" in capsys.readouterr().err
+
+
+def test_only_install_takes_runtime_only(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["models", "--runtime-only"])
+    assert stop.value.code == 2
+    assert "--runtime-only" in capsys.readouterr().err
+
+
+@pytest.mark.models
+def test_the_installed_runtime_and_model_pass_the_doctor_and_install_has_nothing_to_do(capsys):
+    assert main(["doctor"]) == 0
+    out = capsys.readouterr().out
+    assert "ONNX Runtime: works: " in out
+    assert re.search(r"basic-pitch: .*, installed", out)
+    assert out.strip().splitlines()[-1].startswith("ok:")
+    assert main(["install"]) == 0
+    assert capsys.readouterr().out == "already installed\n"
