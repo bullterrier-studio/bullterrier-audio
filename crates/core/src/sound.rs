@@ -425,7 +425,8 @@ impl Sound {
         &self.hits
     }
 
-    /// This sound measured under `hits` instead; nothing measured so far is carried over.
+    /// This sound measured under `hits` instead. Nothing memoized depends on [`Hits`] (the stems, the transcriber's
+    /// activations), so the result shares the memo of this sound: changing a threshold runs no model again.
     #[must_use]
     pub fn with_hits(&self, hits: Hits) -> Self {
         Self {
@@ -438,7 +439,7 @@ impl Sound {
             hits,
             separation: self.separation,
             stem: self.stem,
-            memo: Memo::default(),
+            memo: self.memo.clone(),
         }
     }
 
@@ -489,13 +490,19 @@ impl Sound {
     /// cannot be used); otherwise as [`Sound::stems_with`].
     #[cfg(feature = "onnx")]
     pub fn stems(&self) -> Result<Stems, Error> {
+        self.stems_memo().cloned()
+    }
+
+    /// The memo of [`Sound::stems`], filled on first use: a borrow, for what reads one stem and must not copy six.
+    #[cfg(feature = "onnx")]
+    fn stems_memo(&self) -> Result<&Stems, Error> {
         if let Some(stems) = self.memo.0.stems.get() {
-            return Ok(stems.clone());
+            return Ok(stems);
         }
         // validate the sound before the model is loaded: loading takes seconds and gigabytes
         stems::check_length(self, self.separation().ensemble())?;
         let stems = stems::installed(self)?;
-        Ok(self.memo.0.stems.get_or_init(|| stems).clone())
+        Ok(self.memo.0.stems.get_or_init(|| stems))
     }
 
     /// The stems of the sound, separated with `model` (the 6-source `HTDemucs`: `Sound::stems` passes the installed
@@ -604,36 +611,50 @@ impl Sound {
 
     /// The hits of one drum class in the sound, found by the installed ADTOF model; see [`Sound::hits_with`] for what
     /// is promised. A sound that is the drums stem ([`Sound::stem`]) is used as it is; any other sound is separated first
-    /// ([`Sound::stems`], cached) and its drums stem is used. The model runs once per drums sound: asking for the kick,
-    /// then the snare, then the hat runs it once. Needs the `onnx` feature, the ONNX Runtime library and the model
-    /// (`bt-audio install`; the separator too for a sound that is not the drums).
+    /// ([`Sound::stems`], cached) and its drums stem is used. The model runs once per drums sound, however the
+    /// thresholds are changed ([`Sound::with_hits`]): asking for the kick, then the snare, then the hat runs it once.
+    /// Needs the `onnx` feature, the ONNX Runtime library and the model (`bt-audio install`; the separator too for a
+    /// sound that is not the drums).
     ///
     /// # Errors
     ///
     /// [`Error::ModelUnavailable`] naming `bt-audio install` when the library or a model is not installed (or cannot be
-    /// used); otherwise as [`Sound::hits_with`] and, for a sound that is not the drums, [`Sound::stems`].
+    /// used); for a sound that is not the drums, [`Error::Invalid`] naming `duration` when it is over the limit of
+    /// separation (440 s, 250 s for the ensemble: the limit that applies, since separating comes first); for the drums
+    /// stem as it is, as [`Sound::hits_with`].
     #[cfg(feature = "onnx")]
     pub fn hits(&self, hit: Hit) -> Result<Vec<Event>, Error> {
-        let separated;
         let drums = if self.stem == Some(Stem::Drums) {
             self
         } else {
-            separated = self.stems()?.get(Stem::Drums).clone();
-            &separated
+            self.stems_memo()?.get(Stem::Drums)
         };
-        let activations = if let Some(activations) = drums.memo.0.activations.get() {
-            activations
-        } else {
-            hits::check_length(drums)?;
+        drums.picked(hit, &self.hits, || {
             let model = crate::models::models()
                 .iter()
                 .find(|model| model.name == "adtof-frame-rnn")
                 .ok_or_else(|| unreachable!("the catalogue holds the transcriber"))?;
-            let model = crate::models::OrtInfer::open(model, &crate::models::Options::from_env(), 1)?;
-            let found = hits::activations(drums, &model)?;
-            drums.memo.0.activations.get_or_init(|| found)
+            crate::models::OrtInfer::open(model, &crate::models::Options::from_env(), 1)
+        })
+    }
+
+    /// The hits of `hit` in this sound as the drums under `params`; `open` makes the model, called only when the
+    /// activations are not memoized yet.
+    #[cfg(feature = "onnx")]
+    fn picked<M: Infer>(
+        &self,
+        hit: Hit,
+        params: &Hits,
+        open: impl FnOnce() -> Result<M, Error>,
+    ) -> Result<Vec<Event>, Error> {
+        let activations = if let Some(activations) = self.memo.0.activations.get() {
+            activations
+        } else {
+            hits::check_length(self)?;
+            let found = hits::activations(self, &open()?)?;
+            self.memo.0.activations.get_or_init(|| found)
         };
-        Ok(hits::events(activations, hit, &self.hits))
+        Ok(hits::events(activations, hit, params))
     }
 
     /// The hits of one drum class in the sound, found with `model` (ADTOF's `Frame_RNN`: `Sound::hits` passes the
@@ -648,7 +669,7 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// [`Error::Invalid`] naming `duration` when the sound is over 650 s (the memory of a run, about 5 MB per second);
+    /// [`Error::Invalid`] naming `duration` when the sound is over 650 s (the memory of a run, about 5 MB per second; [`Sound::hits`] on a sound that is not the drums meets the shorter limit of separation first);
     /// naming `rate` when the sound cannot be resampled to 44.1 kHz; when `model` does not answer as ADTOF does (one
     /// output of shape 1 by ceil(samples / 441) by 5) or fails.
     pub fn hits_with(&self, model: &impl Infer, hit: Hit) -> Result<Vec<Event>, Error> {
@@ -1076,4 +1097,45 @@ impl Sound {
 #[allow(clippy::cast_precision_loss)] // frame counts stay far below 2^24 in a fade
 fn ramp(step: usize, steps: usize) -> f32 {
     step as f32 / steps as f32
+}
+
+/// Unit tests: the memo is not reachable through the public API without the installed models, so the seam is
+/// `Sound::picked`, which `Sound::hits` calls with the installed model.
+#[cfg(all(test, feature = "onnx"))]
+mod tests {
+    use std::cell::Cell;
+
+    use super::*;
+    use crate::Tensor;
+
+    /// Answers every run with 100 frames of activations: a kick of 0.9 at frame 50.
+    struct Spike;
+
+    impl Infer for Spike {
+        fn infer(&self, _: &Tensor) -> Result<Vec<Tensor>, Error> {
+            let mut values = vec![0.0; 100 * 5];
+            values[50 * 5] = 0.9;
+            Ok(vec![Tensor::new(vec![1, 100, 5], values)?])
+        }
+    }
+
+    #[test]
+    fn changing_the_thresholds_keeps_the_activations_and_another_edit_does_not() -> Result<(), Error> {
+        let opened = Cell::new(0);
+        let open = || {
+            opened.set(opened.get() + 1);
+            Ok(Spike)
+        };
+        let sound = Sound::from_samples(vec![vec![0.0; 44_100]], 44_100)?;
+        assert_eq!(sound.picked(Hit::Kick, sound.hits_params(), open)?.len(), 1);
+        assert_eq!(opened.get(), 1);
+
+        let strict = sound.with_hits(Hits::new(0.99, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.02)?);
+        assert_eq!(strict.picked(Hit::Kick, strict.hits_params(), open)?, []);
+        assert_eq!(opened.get(), 1, "the thresholds do not change the activations");
+
+        sound.fade(0.1, 0.1)?.picked(Hit::Kick, sound.hits_params(), open)?;
+        assert_eq!(opened.get(), 2, "another sound is another run");
+        Ok(())
+    }
 }
