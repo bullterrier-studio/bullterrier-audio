@@ -41,7 +41,7 @@ struct Measured {
     brightness: OnceLock<Series>,
     loudness: OnceLock<Series>,
     onsets: OnceLock<Vec<Event>>,
-    grid: OnceLock<Result<Grid, Error>>,
+    grid: OnceLock<Result<(Grid, f64), Error>>,
     sections: OnceLock<Result<Vec<Section>, Error>>,
     key: OnceLock<Result<Key, Error>>,
     drops: OnceLock<Result<Vec<Event>, Error>>,
@@ -448,6 +448,11 @@ impl Sound {
     /// tone), shows no period between 0.27 and 1.2 s, or has fewer than two beats. Otherwise as [`Sound::onsets`] and
     /// [`Sound::energy`].
     pub fn grid(&self) -> Result<Grid, Error> {
+        self.grid_and_confidence().map(|(grid, _)| grid)
+    }
+
+    /// The grid and its confidence, which the grid carries as an `Option` for the older file version.
+    pub(crate) fn grid_and_confidence(&self) -> Result<(Grid, f64), Error> {
         self.memo.0.grid.get_or_init(|| grid::grid(self)).clone()
     }
 

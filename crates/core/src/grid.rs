@@ -95,7 +95,8 @@ impl Fit {
     }
 }
 
-pub(crate) fn grid(sound: &Sound) -> Result<Grid, Error> {
+/// The grid with its confidence, which the grid also carries as `Some`.
+pub(crate) fn grid(sound: &Sound) -> Result<(Grid, f64), Error> {
     let structure = sound.structure();
     let hop = sound.analysis().hop();
     let tolerance = structure.effective_tolerance(hop);
@@ -166,12 +167,13 @@ pub(crate) fn grid(sound: &Sound) -> Result<Grid, Error> {
         })
         .collect();
     let (meter, first_downbeat, confidence) = meter(&accents, structure.meter_margin());
-    Ok(Grid {
+    let grid = Grid {
         beats,
         meter: NonZeroUsize::MIN.saturating_add(meter - 1),
         first_downbeat,
         confidence: Some(confidence),
-    })
+    };
+    Ok((grid, confidence))
 }
 
 /// The highest low-band level within one hop of `t`.

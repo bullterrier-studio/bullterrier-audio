@@ -10,7 +10,7 @@ fn clock(seconds: f64) -> String {
 }
 
 pub(crate) fn summary(sound: &Sound) -> Result<String, Error> {
-    let grid = sound.grid()?;
+    let (grid, confidence) = sound.grid_and_confidence()?;
     let key = sound.key()?;
     let loudness = sound.loudness()?;
     let (quietest, loudest) = loudness
@@ -38,9 +38,7 @@ pub(crate) fn summary(sound: &Sound) -> Result<String, Error> {
     line(format!("format: {} Hz, {} channels", sound.rate(), sound.channels()));
     line(format!(
         "tempo: {bpm:.1} bpm, {} beats per bar, confidence {:.2}",
-        grid.meter,
-        grid.confidence
-            .unwrap_or_else(|| unreachable!("grid() sets a confidence"))
+        grid.meter, confidence
     ));
     line(format!(
         "key: {}, confidence {:.2} (margin {:.2})",
