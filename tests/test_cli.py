@@ -1,3 +1,4 @@
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -59,3 +60,26 @@ def test_info_on_a_missing_file_names_it_on_stderr_and_exits_1(tmp_path, capsys)
     assert captured.err.startswith("error: ")
     assert "missing.wav" in captured.err
     assert captured.out == ""
+
+
+def test_analyse_writes_the_bundle_and_exits_0(arrangement, tmp_path, capsys):
+    song = tmp_path / "song.wav"
+    arrangement.write(song)
+    target = tmp_path / "song.bundle.json"
+    assert main(["analyse", str(song), "-o", str(target)]) == 0
+    document = json.loads(target.read_text(encoding="utf-8"))
+    assert (document["format"], document["version"]) == ("bullterrier-control/bundle", 2)
+    assert capsys.readouterr().err == ""
+
+
+def test_analyse_on_a_missing_file_names_it_on_stderr_and_exits_1(tmp_path, capsys):
+    assert main(["analyse", str(tmp_path / "missing.wav"), "-o", str(tmp_path / "out.json")]) == 1
+    assert "missing.wav" in capsys.readouterr().err
+    assert not (tmp_path / "out.json").exists()
+
+
+def test_analyse_without_an_output_is_a_usage_error(capsys):
+    with pytest.raises(SystemExit) as stop:
+        main(["analyse", "song.wav"])
+    assert stop.value.code == 2
+    assert "-o" in capsys.readouterr().err

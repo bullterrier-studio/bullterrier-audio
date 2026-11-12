@@ -16,7 +16,7 @@ use bullterrier_audio::Error;
 #[pymodule]
 mod _core {
     #[pymodule_export]
-    use super::{Analysis, Band, Event, Origin, Series, Sound, load};
+    use super::{Analysis, Band, Bundle, Event, Grid, Key, Mode, Origin, Section, Series, Sound, Structure, load};
 }
 
 /// Where a sound came from: `source`, the file it was loaded from (`None` for a sound made from samples), and `offset`,
@@ -136,6 +136,126 @@ struct Analysis {
     relative_height: f64,
     min_rise: f64,
     floor: f64,
+}
+
+/// The musical clock: `beats`, the time of every beat in seconds; `meter`, beats per bar; `first_downbeat`, the index into
+/// `beats` of the first downbeat; `confidence`, 0..1 or `None`; `downbeats`, the times of the downbeats.
+#[pyclass(frozen, module = "bullterrier_audio")]
+struct Grid(bullterrier_audio::formats::Grid);
+
+#[pymethods]
+impl Grid {
+    /// The time of every beat in seconds, as a new float64 array.
+    #[getter]
+    fn beats<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.0.beats)
+    }
+
+    /// Beats per bar.
+    #[getter]
+    fn meter(&self) -> usize {
+        self.0.meter.get()
+    }
+
+    /// Index into `beats` of the first downbeat.
+    #[getter]
+    fn first_downbeat(&self) -> usize {
+        self.0.first_downbeat
+    }
+
+    /// How sure the producer is of the grid, 0..1, or `None`.
+    #[getter]
+    fn confidence(&self) -> Option<f64> {
+        self.0.confidence
+    }
+
+    /// The times of the downbeats in seconds, as a new float64 array.
+    #[getter]
+    fn downbeats<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.0.downbeats())
+    }
+
+    /// Tempo in beats per minute over the interval from beat `interval` to the next, or `None` when there is none.
+    #[pyo3(signature = (interval=0))]
+    fn tempo(&self, interval: usize) -> Option<f64> {
+        self.0.tempo(interval)
+    }
+}
+
+/// A stretch of bars that sounds alike inside: `start` and `end` in seconds, a `label` shared by sections that sound
+/// alike, and the `confidence` (0..1) of its start.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Section {
+    start: f64,
+    end: f64,
+    label: String,
+    confidence: f64,
+}
+
+/// The mode of a key.
+#[pyclass(
+    eq,
+    eq_int,
+    frozen,
+    hash,
+    from_py_object,
+    rename_all = "SCREAMING_SNAKE_CASE",
+    module = "bullterrier_audio"
+)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum Mode {
+    Major,
+    Minor,
+}
+
+/// A key: `tonic` ("C", "C#", ... "B"), `mode`, `confidence` (the best correlation) and `margin` over the runner-up.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Key {
+    tonic: &'static str,
+    mode: Mode,
+    confidence: f64,
+    margin: f64,
+}
+
+/// Everything measured of one sound, as control's bundle: `to_json()` is its text, `write(path)` writes it.
+#[pyclass(frozen, module = "bullterrier_audio")]
+struct Bundle(bullterrier_audio::formats::Bundle);
+
+#[pymethods]
+impl Bundle {
+    /// The bundle as JSON text.
+    fn to_json(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| self.0.to_json())
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// Write the bundle to `path` as UTF-8 JSON. A file that cannot be written is a `WriteError`.
+    #[allow(clippy::needless_pass_by_value)] // pyo3 extracts a `PathBuf`, not a `&Path`
+    fn write(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
+        let written = py.detach(|| self.0.write(&path));
+        written.map_err(|error| error::raised(py, &error))
+    }
+}
+
+/// How the structure of a sound is measured (grid, sections, key, drops): the fields of the Rust core's `Structure`,
+/// with their units and ranges. Read it from `Sound.structure`; change it with `Sound.with_structure`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Structure {
+    tempo_min: f64,
+    tempo_max: f64,
+    tolerance: f64,
+    slower_margin: f64,
+    meter_margin: f64,
+    min_section_bars: u32,
+    novelty_share: f64,
+    label_spread: f64,
+    phrase_bars: Option<u32>,
+    novelty_floor: f64,
+    chroma_low: f64,
+    chroma_high: f64,
+    drop_bars: u32,
+    drop_share: f64,
+    drop_min_span: f64,
 }
 
 /// A sound: one or more channels of float32 samples at one sample rate. It never changes; an edit returns a new one.
@@ -264,6 +384,144 @@ impl Sound {
         );
         analysis
             .map(|analysis| Self(self.0.with_analysis(analysis)))
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The structure the grid, sections, key and drops of this sound read.
+    #[getter]
+    fn structure(&self) -> Structure {
+        let s = self.0.structure();
+        Structure {
+            tempo_min: s.tempo_min(),
+            tempo_max: s.tempo_max(),
+            tolerance: s.tolerance(),
+            slower_margin: s.slower_margin(),
+            meter_margin: s.meter_margin(),
+            min_section_bars: s.min_section_bars(),
+            novelty_share: s.novelty_share(),
+            label_spread: s.label_spread(),
+            phrase_bars: s.phrase_bars(),
+            novelty_floor: s.novelty_floor(),
+            chroma_low: s.chroma_low(),
+            chroma_high: s.chroma_high(),
+            drop_bars: s.drop_bars(),
+            drop_share: s.drop_share(),
+            drop_min_span: s.drop_min_span(),
+        }
+    }
+
+    /// This sound measured under the structure with the given fields changed; a field left out (or `None`) keeps its
+    /// value. A value outside its range or NaN is an `InvalidError` naming the field.
+    #[pyo3(signature = (*, tempo_min=None, tempo_max=None, tolerance=None, slower_margin=None, meter_margin=None,
+        min_section_bars=None, novelty_share=None, label_spread=None, phrase_bars=None, novelty_floor=None,
+        chroma_low=None, chroma_high=None, drop_bars=None, drop_share=None, drop_min_span=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn with_structure(
+        &self,
+        py: Python<'_>,
+        tempo_min: Option<f64>,
+        tempo_max: Option<f64>,
+        tolerance: Option<f64>,
+        slower_margin: Option<f64>,
+        meter_margin: Option<f64>,
+        min_section_bars: Option<u32>,
+        novelty_share: Option<f64>,
+        label_spread: Option<f64>,
+        phrase_bars: Option<u32>,
+        novelty_floor: Option<f64>,
+        chroma_low: Option<f64>,
+        chroma_high: Option<f64>,
+        drop_bars: Option<u32>,
+        drop_share: Option<f64>,
+        drop_min_span: Option<f64>,
+    ) -> PyResult<Self> {
+        let s = self.0.structure();
+        let structure = bullterrier_audio::Structure::new(
+            tempo_min.unwrap_or(s.tempo_min()),
+            tempo_max.unwrap_or(s.tempo_max()),
+            tolerance.unwrap_or(s.tolerance()),
+            slower_margin.unwrap_or(s.slower_margin()),
+            meter_margin.unwrap_or(s.meter_margin()),
+            min_section_bars.unwrap_or(s.min_section_bars()),
+            novelty_share.unwrap_or(s.novelty_share()),
+            label_spread.unwrap_or(s.label_spread()),
+            phrase_bars.or(s.phrase_bars()),
+            novelty_floor.unwrap_or(s.novelty_floor()),
+            chroma_low.unwrap_or(s.chroma_low()),
+            chroma_high.unwrap_or(s.chroma_high()),
+            drop_bars.unwrap_or(s.drop_bars()),
+            drop_share.unwrap_or(s.drop_share()),
+            drop_min_span.unwrap_or(s.drop_min_span()),
+        );
+        structure
+            .map(|structure| Self(self.0.with_structure(structure)))
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The beats and bars: tempo, meter and first downbeat. A sound with no tempo (fewer than 4 onsets, no period
+    /// between 0.27 and 1.2 s) is an `InvalidError`.
+    fn grid(&self, py: Python<'_>) -> PyResult<Grid> {
+        py.detach(|| self.0.grid())
+            .map(Grid)
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The sections, in order; they tile the sound. As `grid` for a sound with no tempo.
+    fn sections(&self, py: Python<'_>) -> PyResult<Vec<Section>> {
+        py.detach(|| self.0.sections())
+            .map(|sections| {
+                sections
+                    .into_iter()
+                    .map(|s| Section {
+                        start: s.start,
+                        end: s.end,
+                        label: s.label,
+                        confidence: s.confidence,
+                    })
+                    .collect()
+            })
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The `index`th of `sections()` as a sound of its own, with its origin. An index out of range is an
+    /// `InvalidError`.
+    fn section(&self, py: Python<'_>, index: usize) -> PyResult<Self> {
+        wrap(py, py.detach(|| self.0.section(index)))
+    }
+
+    /// The key: the tonic and mode whose profile best matches the pitch classes of the sound. A sound with no pitched
+    /// energy is an `InvalidError`.
+    fn key(&self, py: Python<'_>) -> PyResult<Key> {
+        py.detach(|| self.0.key())
+            .map(|key| Key {
+                tonic: key.tonic.name(),
+                mode: match key.mode {
+                    bullterrier_audio::Mode::Major => Mode::Major,
+                    bullterrier_audio::Mode::Minor => Mode::Minor,
+                },
+                confidence: key.confidence,
+                margin: key.margin,
+            })
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The drops, as events at the bar where bass and kick enter, in order. As `grid` for a sound with no tempo.
+    fn drops(&self, py: Python<'_>) -> PyResult<Vec<Event>> {
+        py.detach(|| self.0.drops())
+            .map(|events| events.into_iter().map(Event::from).collect())
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// Every measure of the sound as one bundle. A sound under 3 s, or with no tempo or key, is an `InvalidError`.
+    fn bundle(&self, py: Python<'_>) -> PyResult<Bundle> {
+        py.detach(|| self.0.bundle())
+            .map(Bundle)
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The measures of the sound as text, one fact per line. Errors as `bundle`.
+    fn summary(&self, py: Python<'_>) -> PyResult<String> {
+        py.detach(|| self.0.summary())
             .map_err(|error| error::raised(py, &error))
     }
 

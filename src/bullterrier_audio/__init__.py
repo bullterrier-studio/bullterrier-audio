@@ -6,7 +6,21 @@ measurement should drive. The public names are listed in `__all__`.
 
 from importlib import metadata
 
-from ._native._core import Analysis, Band, Event, Origin, Series, Sound, load
+from ._native._core import (
+    Analysis,
+    Band,
+    Bundle,
+    Event,
+    Grid,
+    Key,
+    Mode,
+    Origin,
+    Section,
+    Series,
+    Sound,
+    Structure,
+    load,
+)
 from .errors import BullterrierAudioError, DecodeError, InvalidError, WriteError
 
 __version__ = metadata.version("bullterrier-audio")
@@ -15,12 +29,18 @@ __all__ = [
     "Analysis",
     "Band",
     "BullterrierAudioError",
+    "Bundle",
     "DecodeError",
     "Event",
+    "Grid",
     "InvalidError",
+    "Key",
+    "Mode",
     "Origin",
+    "Section",
     "Series",
     "Sound",
+    "Structure",
     "WriteError",
     "__version__",
     "load",

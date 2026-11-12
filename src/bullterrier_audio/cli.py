@@ -1,7 +1,7 @@
 """Command line: `bt-audio`.
 
-A thin layer over the library; no logic of its own. `info FILE` prints what a sound file holds; `--version` and `--help`
-answer, and any other input is a usage error.
+A thin layer over the library; no logic of its own. `info FILE` prints what a sound file holds; `analyse FILE -o BUNDLE`
+writes every measure as a control bundle; `--version` and `--help` answer, and any other input is a usage error.
 """
 
 import argparse
@@ -14,7 +14,8 @@ from .errors import BullterrierAudioError
 _EXIT_CODES = """\
 exit codes:
   0    success
-  1    the library refused: a file that is missing or cannot be read as sound (the message is on stderr)
+  1    the library refused: a file that is missing, unreadable or without a measurable tempo; a bundle
+       that cannot be written (the message is on stderr)
   2    wrong usage: an unknown command or option (argparse explains)
 
 Errors go to stderr, results to stdout.
@@ -36,12 +37,18 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="command", metavar="COMMAND")
     info = commands.add_parser("info", help="print a sound file's rate, channels and duration")
     info.add_argument("file", help="the audio file (wav, flac, mp3, ogg, m4a)")
+    analyse = commands.add_parser("analyse", help="measure a sound file and write the bundle (control's JSON)")
+    analyse.add_argument("file", help="the audio file (wav, flac, mp3, ogg, m4a)")
+    analyse.add_argument("-o", "--output", required=True, help="the bundle file to write")
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return 0
     try:
         sound = load(args.file)
+        if args.command == "analyse":
+            sound.bundle().write(args.output)
+            return 0
     except BullterrierAudioError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

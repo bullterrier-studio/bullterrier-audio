@@ -66,3 +66,44 @@ def uv_run_env() -> dict[str, str]:
 # property tests are deterministic (the same cases on every run, so a failure reproduces) and never time out
 settings.register_profile("project", derandomize=True, deadline=None)
 settings.load_profile("project")
+
+
+RATE = 44100
+BEAT = 60 / 128
+BAR = 4 * BEAT
+
+
+@pytest.fixture(scope="module")
+def arrangement():
+    """A 24-bar (45 s) mono arrangement at 128 BPM, built once per module and known by construction: hi-hats on the
+    eighths and a pad throughout, bass and kick only in bars 8 to 16. Sections A B A start at bars 0, 8, 16; the one
+    drop is at bar 8. Imports lazily: only the tests that ask for it pay for it."""
+    import numpy as np
+
+    from bullterrier_audio import Sound
+
+    bars = 24
+    t = np.arange(round(bars * BAR * RATE)) / RATE
+    out = np.zeros_like(t)
+
+    def span(first: int, last: int) -> slice:
+        return slice(round(first * BAR * RATE), round(last * BAR * RATE))
+
+    def tone(hz: float) -> np.ndarray:
+        return np.sin(2 * np.pi * hz * t)
+
+    out += 0.05 * (tone(440.0) + tone(554.4) + tone(659.3))
+    for k in range(bars * 8):  # a 5 ms Hann-shaped 2 kHz click on every eighth note
+        start = round(k * BEAT / 2 * RATE)
+        n = round(0.005 * RATE)
+        envelope = 0.5 - 0.5 * np.cos(2 * np.pi * (np.arange(n) + 0.5) / n)
+        out[start : start + n] += 0.2 * envelope * np.sin(2 * np.pi * 2000.0 * np.arange(n) / RATE)
+    out[span(8, 16)] += 0.4 * (tone(55.0) + 0.5 * tone(41.0))[span(8, 16)]
+    for k in range(8 * 4, 16 * 4):  # a 60 Hz kick of 0.12 s on every beat
+        start = round(k * BEAT * RATE)
+        n = round(0.12 * RATE)
+        ramp = np.minimum(np.minimum(np.arange(n), n - 1 - np.arange(n)) / round(0.002 * RATE), 1.0)
+        out[start : start + n] += (
+            (0.7 + (0.3 if k % 4 == 0 else 0.0)) * ramp * np.sin(2 * np.pi * 60.0 * np.arange(n) / RATE)
+        )
+    return Sound.from_samples(out[None].astype(np.float32), RATE)
