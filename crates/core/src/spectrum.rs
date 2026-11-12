@@ -4,7 +4,8 @@
 //! is centred at 0. There is one frame for every `i` whose centre sample, `round(i * hop * 44100)`, lies inside
 //! the signal. Each bin holds the power `2 |X|^2 / (N sum(w^2))` (`N` the FFT length, `w` the Hann window): by
 //! Parseval, the powers of the bins of a band add up to the mean square of the signal in that band, so a sine of
-//! amplitude `A` inside a band has band power `A^2 / 2` however it sits against the bins.
+//! amplitude `A` inside a band has band power `A^2 / 2` up to the Hann leakage across the band's edges (bounds in
+//! [`Analysis`]); the shortest window keeps a bin centre in every band.
 
 use std::f64::consts::TAU;
 

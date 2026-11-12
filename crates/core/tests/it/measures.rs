@@ -76,7 +76,9 @@ fn a_sine_reads_its_level_in_its_band_and_far_less_in_the_others() -> Outcome {
                     .iter()
                     .map(|v| (v - scaled(level(amplitude))).abs())
                     .fold(0.0, f64::max);
-                assert!(worst < 0.01, "{band:?}: off by {worst}");
+                // Parseval makes the band power exact; observed worst 1.2e-8 (f32 rounding), so 1e-7 is 8x that, and a
+                // 0.01 dB error would read 1.25e-4
+                assert!(worst < 1e-7, "{band:?}: off by {worst}");
             } else {
                 let loudest = values.iter().copied().fold(0.0, f64::max);
                 assert!(
@@ -98,7 +100,8 @@ fn a_tone_between_bins_reads_its_level_after_resampling() -> Outcome {
             .iter()
             .map(|v| (v - scaled(level(0.5))).abs())
             .fold(0.0, f64::max);
-        assert!(worst < 0.01, "{rate} Hz: off by {worst}");
+        // observed worst 1.8e-7 (the resampler adds f32 rounding); a 0.1 dB error would read 1.25e-3
+        assert!(worst < 1e-6, "{rate} Hz: off by {worst}");
     }
     Ok(())
 }
@@ -157,7 +160,7 @@ fn the_floor_moves_the_scale_and_is_stated() -> Outcome {
         .with_analysis(floor)
         .energy(Band::Mid)?;
     let expected = (level(0.5) + 60.0) / 60.0;
-    assert!((middle(&series.values, DEFAULT_WINDOW)[0] - expected).abs() < 0.01);
+    assert!((middle(&series.values, DEFAULT_WINDOW)[0] - expected).abs() < 1e-6);
     let scaling = series.scaling.unwrap_or_default();
     assert!(scaling.contains("-60 dB") && scaling.contains("dBFS"), "{scaling}");
     Ok(())
@@ -284,6 +287,27 @@ fn a_sound_too_short_to_resample_is_refused_by_its_measure() -> Outcome {
 }
 
 #[test]
+fn a_sine_inside_any_band_reads_within_five_db_of_its_level_at_the_shortest_window() -> Outcome {
+    // 1 / 40 Hz, the width of the narrowest band (Sub), is the shortest window; the sweep puts 40 sines at the centres
+    // of 40 equal slices of each band. Observed worst deviation in dB: Sub 4.93 (at its edge, where the Hann main lobe
+    // spills into Bass), Bass 2.69, LowMid 4.28, Mid 0.86, High 0.28, Air 0.00.
+    let window = 0.025;
+    for band in Band::ALL {
+        let (lo, hi) = band.edges();
+        for slice in 0..40 {
+            let hz = lo + (hi - lo) * (f64::from(slice) + 0.5) / 40.0;
+            let values = tone_sound(hz, 0.5, window)?.energy(band)?.values;
+            let read = middle(&values, window)
+                .iter()
+                .map(|v| v * -FLOOR + FLOOR)
+                .fold(f64::INFINITY, f64::min);
+            assert!((read - level(0.5)).abs() < 5.0, "{band:?} at {hz} Hz reads {read} dBFS");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn analysis_refuses_values_outside_their_range() -> Outcome {
     let good = [0.0464, 0.01, 0.03, 0.05, 0.1, 0.1, -80.0];
     assert!(Analysis::new(good[0], good[1], good[2], good[3], good[4], good[5], good[6]).is_ok());
@@ -296,17 +320,17 @@ fn analysis_refuses_values_outside_their_range() -> Outcome {
         "min_rise",
         "floor",
     ];
-    let bad = [
-        [0.0, 2.0],
-        [0.0, 2.0],
-        [0.0, 1.0],
-        [0.0, 2.0],
-        [-0.1, 1.1],
-        [-0.1, 101.0],
-        [0.0, -200.0],
+    let bad: [&[f64]; 7] = [
+        &[0.0, 0.024, 2.0],
+        &[0.0, 2.0],
+        &[0.0, 1.0],
+        &[0.0, 2.0],
+        &[-0.1, 1.1],
+        &[-0.1, 101.0],
+        &[0.0, -200.0],
     ];
     for (index, field) in fields.iter().enumerate() {
-        for value in bad[index].into_iter().chain([f64::NAN, f64::INFINITY]) {
+        for value in bad[index].iter().copied().chain([f64::NAN, f64::INFINITY]) {
             let mut values = good;
             values[index] = value;
             let refused = Analysis::new(

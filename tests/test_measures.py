@@ -24,12 +24,14 @@ def clicks(times: list[float], seconds: float) -> Sound:
 
 
 def test_the_band_energy_of_a_sine_reads_its_level_on_the_floor_scale():
-    sound = sine(129.19921875, 2.0, 0.5)  # bin centre of a 2048-sample window at 44100 Hz
+    fft_length = round(0.0464 * RATE)  # the default window, as FFT samples (2046)
+    sound = sine(6 * RATE / fft_length, 2.0, 0.5)  # the centre of bin 6: Parseval makes the band power exact
     floor = sound.analysis.floor
     series = sound.energy(Band.BASS)
     oracle = (20 * math.log10(0.5) - floor) / -floor
     middle = series.values[len(series.values) // 4 : -len(series.values) // 4]
-    assert middle == pytest.approx(oracle, abs=0.02)
+    # observed worst deviation 9.7e-9 (float32 samples); 1e-7 is 10x that, and a 0.01 dB error would read 1.25e-4
+    assert middle == pytest.approx(oracle, abs=1e-7)
 
 
 def test_a_band_without_the_sine_reads_zero():
@@ -120,6 +122,7 @@ def test_with_analysis_twice_keeps_both_changes():
     [
         pytest.param({"hop": 0.0}, "hop", id="hop-below-range"),
         pytest.param({"window": math.nan}, "window", id="nan-window"),
+        pytest.param({"window": 0.01}, "window", id="window-too-short-for-the-lowest-band"),
         pytest.param({"floor": 0.0}, "floor", id="floor-above-range"),
     ],
 )
