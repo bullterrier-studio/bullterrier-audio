@@ -15,10 +15,14 @@ publish = false
 
 [workspace.dependencies]
 bullterrier-audio = { path = "crates/core" }
+# writing: hound for wav; flacenc is pure Rust (Apache-2.0), default features off (no threads, no serde)
+flacenc = { version = "0.5", default-features = false }
 hound = "3.5"
 proptest = "1.12"
 # abi3-py312: one wheel per platform serves every Python from 3.12 (the oldest the package supports)
 pyo3 = { version = "0.30", features = ["abi3-py312"] }
+# sample-rate conversion: only the sinc resampler (`Async`), not the FFT one
+rubato = { version = "5.0", default-features = false }
 # decoding: the containers and codecs a user's files come in; id3 tags are skipped, not read, so mp3 files with them open
 symphonia = { version = "0.6", default-features = false, features = ["wav", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac", "pcm", "id3v1", "id3v2"] }
 tempfile = "3.27"

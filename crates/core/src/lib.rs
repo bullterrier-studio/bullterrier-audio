@@ -8,8 +8,10 @@
 
 mod decode;
 mod error;
+mod resample;
 mod scaling;
 mod sound;
+mod write;
 
 pub use error::Error;
 pub use scaling::scale;

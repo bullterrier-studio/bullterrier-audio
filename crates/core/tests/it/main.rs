@@ -5,5 +5,6 @@
 mod common;
 
 mod architecture;
+mod edits;
 mod scale;
 mod sound;
