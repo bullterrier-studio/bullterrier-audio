@@ -94,7 +94,10 @@ fn fixtures_decode_to_the_sine_they_were_made_from() -> Outcome {
         assert_eq!(sound.rate(), 44100, "{name}");
         assert_eq!(sound.channels(), 1, "{name}");
         let frames = sound.samples()[0].len();
-        assert!(frames.abs_diff(44100) <= 2048, "{name}: {frames} frames");
+        // flac, mp3 and ogg declare their delay and padding and are trimmed to the exact length; the m4a reader does
+        // not trim (symphonia's isomp4 is not gapless), so it keeps up to one codec frame of padding
+        let tolerance = if name == "sine.m4a" { 2048 } else { 0 };
+        assert!(frames.abs_diff(44100) <= tolerance, "{name}: {frames} frames");
         let middle = &sound.samples()[0][frames / 4..frames * 3 / 4];
         let db = 20.0 * (rms(middle) / (0.5 / 2.0_f64.sqrt())).log10();
         assert!(db.abs() < 0.5, "{name}: rms is {db} dB off");
@@ -171,21 +174,17 @@ fn a_file_that_cannot_be_decoded_is_refused_with_its_path() -> Outcome {
 }
 
 #[test]
-fn a_truncated_file_is_refused_or_shortened_never_padded() -> Outcome {
+fn a_truncated_file_is_refused() -> Outcome {
     let dir = TempDir::new()?;
     let valid = fs::read(fixture("sine.flac"))?;
     let path = dir.path().join("truncated.flac");
     fs::write(&path, &valid[..valid.len() / 2])?;
 
-    let outcome = Sound::load(&path);
+    let error = Sound::load(&path).err();
 
     assert!(
-        match &outcome {
-            Err(Error::Decode { .. }) => true,
-            Ok(sound) => sound.samples()[0].len() < 44100,
-            Err(_) => false,
-        },
-        "{outcome:?}"
+        matches!(&error, Some(Error::Decode { reason, .. }) if reason.contains("end of file")),
+        "{error:?}"
     );
     Ok(())
 }

@@ -75,17 +75,20 @@ proptest! {
     }
 
     #[test]
-    fn a_cut_moves_the_origin_by_its_start(
-        first in 0.0_f64..0.4,
-        second in 0.0_f64..0.4,
+    fn a_cut_puts_the_origin_where_its_first_sample_lies(
+        first in 0_usize..3200,
+        second in 0_usize..800,
+        off_grid in 0.0_f64..1.0,
     ) {
+        // a start between two samples rounds to one of them; the origin follows the sample, not the asked time
+        let rate = 8000.0;
         let whole = sound(vec![counting(8000)], 8000)?;
 
-        let once = whole.cut(first, first + 0.5)?;
-        let twice = once.cut(second, second + 0.1)?;
+        let once = whole.cut((first as f64 + off_grid * 0.49) / rate, (first + 4000) as f64 / rate)?;
+        let twice = once.cut(second as f64 / rate, (second + 800) as f64 / rate)?;
 
-        prop_assert!((once.origin().offset - first).abs() < 1e-12);
-        prop_assert!((twice.origin().offset - (first + second)).abs() < 1e-12);
+        prop_assert!((once.origin().offset - first as f64 / rate).abs() < 1e-12);
+        prop_assert!((twice.origin().offset - (first + second) as f64 / rate).abs() < 1e-12);
     }
 
     #[test]
@@ -297,6 +300,8 @@ fn the_edits_refuse_what_they_cannot_do() -> Outcome {
         ("fade: negative out", whole.fade(0.1, -0.1), "out"),
         ("fade: infinite out", whole.fade(0.1, inf), "out"),
         ("fade: longer than the sound", whole.fade(0.6, 0.5), "0.6"),
+        ("fade: huge in, would wrap the sum", whole.fade(1e300, 0.5), "in_"),
+        ("fade: both huge", whole.fade(1e300, 1e300), "in_"),
         ("resample: rate 0", whole.resampled(0), "rate"),
     ];
     for (rule, outcome, names) in rows {
@@ -319,7 +324,7 @@ fn a_write_is_refused_by_extension_range_and_disk() -> Outcome {
         ("an extension that is not supported", 0.5, at("out.mp3"), "mp3"),
         ("no extension", 0.5, at("out"), "none"),
         ("flac above 1", 2.5, at("out.flac"), "2.5"),
-        ("flac at exactly 1", 1.0, at("out.flac"), "1"),
+        ("flac at exactly 1", 1.0, at("out.flac"), "peak of 1"),
         ("flac below -1", -1.5, at("out.flac"), "1.5"),
         (
             "flac just under 1, which rounds up to 1",

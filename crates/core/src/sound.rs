@@ -29,7 +29,7 @@ pub struct Sound {
 
 impl Sound {
     /// Reads the audio file at `path` (wav, flac, mp3, ogg vorbis, m4a aac) at the file's own rate, with the
-    /// encoder's delay and padding trimmed where the file declares them.
+    /// encoder's delay and padding trimmed where the file declares them (not for m4a: up to one codec frame of padding stays).
     ///
     /// ```no_run
     /// let sound = bullterrier_audio::Sound::load("song.flac")?;
@@ -127,12 +127,13 @@ impl Sound {
     /// The part of this sound from `start` to `end` seconds.
     ///
     /// Promises: both ends are rounded to the nearest sample (`round(t * rate)`), so cuts at `a..b` and `b..c`
-    /// tile `a..c` exactly. The origin keeps its source; its offset grows by `start`.
+    /// tile `a..c` exactly. The origin keeps its source; its offset grows by the time of its first sample, `round(start * rate) / rate`.
     ///
     /// # Errors
     ///
     /// [`Error::Invalid`] naming the argument and its value when `start` or `end` is NaN, infinite or negative,
     /// `end` lies past the end of the sound, or both ends round to the same sample or `start` to a later one.
+    #[allow(clippy::cast_precision_loss)] // a frame index is far below 2^52
     pub fn cut(&self, start: f64, end: f64) -> Result<Self, Error> {
         let from = self.frames_at("start", start)?;
         let to = self.frames_at("end", end)?;
@@ -152,7 +153,7 @@ impl Sound {
             rate: self.rate,
             origin: Origin {
                 source: self.origin.source.clone(),
-                offset: self.origin.offset + start,
+                offset: self.origin.offset + from as f64 / f64::from(self.rate),
             },
         })
     }
@@ -172,7 +173,7 @@ impl Sound {
         let fade_in = self.frames_at("in_", in_)?;
         let fade_out = self.frames_at("out", out)?;
         let frames = self.samples[0].len();
-        if fade_in + fade_out > frames {
+        if fade_in > frames || fade_out > frames - fade_in {
             return Err(Error::Invalid(format!(
                 "in_ and out must fit in the sound ({} s), got {in_} and {out}",
                 self.duration()
