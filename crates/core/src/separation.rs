@@ -23,8 +23,9 @@ use crate::Error;
 /// machine and library versions. Demucs draws them from Python's global random state, so its own are not repeatable.
 ///
 /// `ensemble` runs the recipe of `Sound::stems_with_ensemble` with the four `htdemucs-ft-*` models, which are installed
-/// only when asked for (`models::install_ensemble`); it takes roughly five times as long as one model, and its memory
-/// is that of one model at a time. `cache` keeps the stems on disk (`Sound::stems_cached`) under a key that holds every
+/// only when asked for (`models::install_ensemble`); it takes five times as long as one model (15 s of sound: 87 s, against 17 s for
+/// one model with its session opened), and its memory is that of one model at a time (peak 2.7 GB resident for 15 s; one
+/// model alone, 60 s: 2.2 GB, 54 s). `cache` keeps the stems on disk (`Sound::stems_cached`) under a key that holds every
 /// other value here; it is not part of the key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Separation {

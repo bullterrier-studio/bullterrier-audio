@@ -92,6 +92,11 @@ impl Infer for StandIn {
     }
 }
 
+/// Whether two results are the same stems, sample for sample: a failing `assert_eq!` would print every sample.
+fn same(a: &Stems, b: &Stems) -> bool {
+    a == b
+}
+
 /// A stereo signal of `frames` that is never exactly its mean at its first sample.
 fn mix(frames: usize) -> Vec<Vec<f32>> {
     let tau = std::f64::consts::TAU;
@@ -592,12 +597,12 @@ mod ensemble {
         let log = Log::default();
         let result = sound(mix(100), RATE)?.stems_with_ensemble(
             || Ok(six_member(&log)),
-            |stem| match stem {
-                Stem::Bass => Err(Error::ModelUnavailable("the bass model is not installed".into())),
-                _ => {
-                    opened(&log, format!("open {}", stem.name()));
-                    Ok(ft_member(stem, &log))
+            |stem| {
+                if stem == Stem::Bass {
+                    return Err(Error::ModelUnavailable("the bass model is not installed".into()));
                 }
+                opened(&log, format!("open {}", stem.name()));
+                Ok(ft_member(stem, &log))
             },
         );
         assert!(
@@ -616,7 +621,7 @@ mod ensemble {
     fn a_constant_sound_is_silent_and_opens_no_model() -> Outcome {
         let log = Log::default();
         let stems = run(&[vec![0.25; 500], vec![0.25; 500]], 1, &log)?;
-        assert!(lines(&log).is_empty());
+        assert_eq!(lines(&log), Vec::<String>::new());
         assert!(
             stems
                 .iter()
@@ -768,7 +773,7 @@ mod cache {
         }
         let (second, calls) = run(&sound, dir.path(), &[SIX])?;
         assert_eq!(calls, 0, "a hit does not run the model");
-        assert!(second == first, "the stems read back are those computed");
+        assert!(same(&second, &first), "the stems read back are those computed");
         assert_eq!(keys(dir.path()), [key], "a hit adds nothing");
         Ok(())
     }
@@ -853,7 +858,7 @@ mod cache {
         run(&base()?, dir.path(), &[SIX])?;
         let (again, calls) = run(&off, dir.path(), &[SIX])?;
         assert_eq!(calls, 1);
-        assert!(again == stems);
+        assert!(same(&again, &stems));
         Ok(())
     }
 
@@ -884,10 +889,10 @@ mod cache {
             damage(&key)?;
             let (mended, calls) = run(&sound, dir.path(), &[SIX])?;
             assert_eq!(calls, 1, "{rule}: the damage was taken for a hit");
-            assert!(mended == first, "{rule}: the recomputed stems differ");
+            assert!(same(&mended, &first), "{rule}: the recomputed stems differ");
             let (hit, calls) = run(&sound, dir.path(), &[SIX])?;
             assert_eq!(calls, 0, "{rule}: the folder was not mended");
-            assert!(hit == first, "{rule}");
+            assert!(same(&hit, &first), "{rule}");
             assert_eq!(
                 fs::read(key.join("notes.txt"))?,
                 b"mine",
@@ -895,6 +900,25 @@ mod cache {
             );
             assert_eq!(keys(dir.path()), [key], "{rule}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_damaged_stem_is_replaced_not_written_through() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let sound = base()?;
+        run(&sound, dir.path(), &[SIX])?;
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        // the damaged file is also known by another name (a hard link): writing into it in place would change both,
+        // and a reader that has it open would see the change
+        let elsewhere = dir.path().join("elsewhere.wav");
+        fs::write(&elsewhere, b"damaged")?;
+        fs::remove_file(key.join("bass.wav"))?;
+        fs::hard_link(&elsewhere, key.join("bass.wav"))?;
+        let (_, calls) = run(&sound, dir.path(), &[SIX])?;
+        assert_eq!(calls, 1);
+        assert_eq!(fs::read(&elsewhere)?, b"damaged");
+        assert_eq!(run(&sound, dir.path(), &[SIX])?.1, 0);
         Ok(())
     }
 
@@ -911,7 +935,7 @@ mod cache {
         write_wav(&key.join(".tmp-dead-writer.wav"), 2, RATE, 100)?;
         let (again, calls) = run(&sound, dir.path(), &[SIX])?;
         assert_eq!(calls, 1);
-        assert!(again == first);
+        assert!(same(&again, &first));
         Ok(())
     }
 
@@ -933,7 +957,7 @@ mod cache {
         });
         assert_eq!(results.len(), 2);
         let [a, b] = <[_; 2]>::try_from(results).map_err(|_| "two results")?;
-        assert!(a?.0 == b?.0);
+        assert!(same(&a?.0, &b?.0));
         let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
         assert_eq!(names(&key), STEM_FILES, "no temporary file stays");
         let (_, calls) = run(&sound, dir.path(), &[SIX])?;
@@ -1202,35 +1226,72 @@ mod real_model {
     use super::*;
     use realfft::RealFftPlanner;
 
-    /// 15 s: a drum click every 0.5 s (a 2 kHz burst), a 55 Hz bass tone, a lead of 440 Hz with its harmonics.
-    fn song() -> Vec<Vec<f32>> {
-        let frames = 15 * RATE as usize;
+    /// A session takes about 2 GB: the real-model tests of this module run one at a time, not on the test threads
+    /// at once.
+    static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+    fn one_at_a_time() -> std::sync::MutexGuard<'static, ()> {
+        ONE_AT_A_TIME.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// A mix and the parts it is made of, per channel.
+    struct Song {
+        mix: Vec<Vec<f32>>,
+        drums: Vec<Vec<f32>>,
+        bass: Vec<Vec<f32>>,
+    }
+
+    /// `seconds` of: a drum click every 0.5 s (a 2 kHz burst), a 55 Hz bass tone, a lead of 440 Hz with its harmonics.
+    fn song(seconds: usize) -> Song {
+        let frames = seconds * RATE as usize;
         let clicks = crate::common::clicks(
-            &(0..30).map(|k| (f64::from(k) * 0.5, 0.8)).collect::<Vec<_>>(),
+            &(0..2 * seconds).map(|k| (k as f64 * 0.5, 0.8)).collect::<Vec<_>>(),
             RATE,
-            15.0,
+            seconds as f64,
         );
         let tau = std::f64::consts::TAU;
-        let channel = |pan: f64| -> Vec<f32> {
-            (0..frames)
-                .map(|i| {
-                    let t = i as f64 / f64::from(RATE);
-                    let bass = 0.3 * (tau * 55.0 * t).sin();
-                    let lead: f64 = (1..=4)
-                        .map(|h| (tau * 440.0 * f64::from(h) * t).sin() / f64::from(h))
-                        .sum();
-                    (f64::from(clicks[i]) * pan + bass + 0.1 * lead * (2.0 - pan)) as f32
-                })
+        let at = |i: usize| i as f64 / f64::from(RATE);
+        let bass = |i: usize| 0.3 * (tau * 55.0 * at(i)).sin();
+        let lead = |i: usize, pan: f64| {
+            let sum: f64 = (1..=4)
+                .map(|h| (tau * 440.0 * f64::from(h) * at(i)).sin() / f64::from(h))
+                .sum();
+            0.1 * sum * (2.0 - pan)
+        };
+        let per_channel = |part: &dyn Fn(usize, f64) -> f64| -> Vec<Vec<f32>> {
+            [1.0, 0.9]
+                .iter()
+                .map(|&pan| (0..frames).map(|i| part(i, pan) as f32).collect())
                 .collect()
         };
-        vec![channel(1.0), channel(0.9)]
+        Song {
+            mix: per_channel(&|i, pan| f64::from(clicks[i]) * pan + bass(i) + lead(i, pan)),
+            drums: per_channel(&|i, pan| f64::from(clicks[i]) * pan),
+            bass: per_channel(&|i, _| bass(i)),
+        }
+    }
+
+    /// The signal-to-distortion ratio in dB of `estimate` against `reference`: the energy of the reference over that of
+    /// their difference, over both channels.
+    fn sdr(reference: &[Vec<f32>], estimate: &[Vec<f32>]) -> f64 {
+        let (mut signal, mut error) = (0.0_f64, 0.0_f64);
+        for (r, e) in reference.iter().flatten().zip(estimate.iter().flatten()) {
+            signal += f64::from(*r).powi(2);
+            error += f64::from(r - e).powi(2);
+        }
+        10.0 * (signal / error).log10()
     }
 
     #[test]
     #[ignore = "needs the installed model: poe rust-test-models"]
     fn the_installed_model_separates_a_synthesised_mix() -> Outcome {
-        let samples = song();
-        let stems = sound(samples.clone(), RATE)?.stems()?;
+        let _one = one_at_a_time();
+        let reference = song(15);
+        let samples = reference.mix.clone();
+        // no cache: the model must run
+        let stems = sound(samples.clone(), RATE)?
+            .with_separation(Separation::new(1, false, 0, false)?)
+            .stems()?;
         // the model's sources only approximately add up to the mix: measure how closely, as the share of the mix's
         // energy that the difference holds
         let (mut difference, mut energy) = (0.0_f64, 0.0_f64);
@@ -1241,6 +1302,11 @@ mod real_model {
                 energy += f64::from(x).powi(2);
             }
         }
+        println!(
+            "single: SDR bass {:.1} dB, drums {:.1} dB",
+            sdr(&reference.bass, stems.get(Stem::Bass).samples()),
+            sdr(&reference.drums, stems.get(Stem::Drums).samples()),
+        );
         println!(
             "the stems' sum differs from the mix by {:.2} % of its energy",
             100.0 * difference / energy
@@ -1284,6 +1350,99 @@ mod real_model {
             100.0 * on / total
         );
         assert!(on / total > 0.3, "the drums stem is not at the clicks: {}", on / total);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "needs the installed model and the ensemble models, 1.26 GB (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them): poe rust-test-models"]
+    fn the_ensemble_adds_up_and_is_measured() -> Outcome {
+        let _one = one_at_a_time();
+        let song = song(15);
+        let start = std::time::Instant::now();
+        let ensemble = sound(song.mix.clone(), RATE)?
+            .with_separation(Separation::new(1, true, 0, false)?)
+            .stems()?;
+        println!(
+            "ensemble: {:.1} s for 15 s; SDR bass {:.1} dB, drums {:.1} dB",
+            start.elapsed().as_secs_f64(),
+            sdr(&song.bass, ensemble.get(Stem::Bass).samples()),
+            sdr(&song.drums, ensemble.get(Stem::Drums).samples()),
+        );
+        let (mut difference, mut energy) = (0.0_f64, 0.0_f64);
+        for (c, channel) in song.mix.iter().enumerate() {
+            for (i, &x) in channel.iter().enumerate() {
+                let sum: f64 = ensemble.iter().map(|(_, s)| f64::from(s.samples()[c][i])).sum();
+                difference += (sum - f64::from(x)).powi(2);
+                energy += f64::from(x).powi(2);
+            }
+        }
+        println!(
+            "ensemble: the stems' sum differs from the mix by {:.2} % of its energy",
+            100.0 * difference / energy
+        );
+        assert!(
+            difference / energy < 0.1,
+            "the ensemble must add up to the mix: {}",
+            difference / energy
+        );
+        for (stem, part) in ensemble.iter() {
+            assert_eq!(
+                (part.rate(), part.channels(), part.samples()[0].len()),
+                (RATE, 2, song.mix[0].len()),
+                "{stem:?}"
+            );
+        }
+        assert!(
+            sdr(&song.bass, ensemble.get(Stem::Bass).samples()) > 0.0,
+            "the bass stem is not the bass"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "needs the installed model: poe rust-test-models"]
+    fn a_minute_is_separated_and_timed() -> Outcome {
+        let _one = one_at_a_time();
+        let song = song(60);
+        let start = std::time::Instant::now();
+        let stems = sound(song.mix.clone(), RATE)?
+            .with_separation(Separation::new(1, false, 0, false)?)
+            .stems()?;
+        println!(
+            "60 s of audio, one shift, one model: {:.1} s",
+            start.elapsed().as_secs_f64()
+        );
+        assert_eq!(stems.get(Stem::Bass).samples()[0].len(), song.mix[0].len());
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "needs the installed model: poe rust-test-models"]
+    fn the_second_separation_of_an_equal_sound_is_read_from_the_cache() -> Outcome {
+        let _one = one_at_a_time();
+        let cache = bullterrier_audio::models::cache_dir()?.join("stems");
+        let before: Vec<_> = std::fs::read_dir(&cache)
+            .map_or_else(|_| Vec::new(), |d| d.filter_map(|e| e.ok().map(|e| e.path())).collect());
+        // a sound no other test makes: a 3 s bass tone and a click, so the key is new
+        let samples = vec![song(3).mix[0].iter().map(|x| x * 0.97).collect::<Vec<f32>>()];
+        let make = || -> Result<Sound, Error> {
+            Ok(sound(samples.clone(), RATE)?.with_separation(Separation::new(0, false, 0, true)?))
+        };
+        let (start, first) = (std::time::Instant::now(), make()?.stems()?);
+        let computed = start.elapsed().as_secs_f64();
+        let (start, second) = (std::time::Instant::now(), make()?.stems()?);
+        let read = start.elapsed().as_secs_f64();
+        println!("computed in {computed:.2} s, read back in {read:.2} s");
+        assert!(same(&second, &first));
+        let created: Vec<_> = std::fs::read_dir(&cache)?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| !before.contains(p))
+            .collect();
+        assert_eq!(created.len(), 1, "one folder was made: {created:?}");
+        for folder in created {
+            std::fs::remove_dir_all(folder)?;
+        }
+        assert!(read < computed / 2.0, "{read} {computed}");
         Ok(())
     }
 }
