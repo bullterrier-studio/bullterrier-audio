@@ -20,7 +20,8 @@ mod _core {
     use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_load, onnx_runtime_status};
     #[pymodule_export]
     use super::{
-        Analysis, Band, Bundle, Event, Grid, Key, Mode, Notes, Origin, Section, Series, Sound, Structure, load,
+        Analysis, Band, Bundle, Event, Grid, Key, Mode, Notes, Origin, Section, Separation, Series, Sound, Stem, Stems,
+        Structure, load,
     };
 }
 
@@ -278,6 +279,142 @@ struct Notes {
     partial_overlap: f64,
 }
 
+/// An instrument the model separates out, in the model's output order.
+#[pyclass(
+    eq,
+    eq_int,
+    frozen,
+    hash,
+    from_py_object,
+    rename_all = "SCREAMING_SNAKE_CASE",
+    module = "bullterrier_audio"
+)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum Stem {
+    Drums,
+    Bass,
+    Other,
+    Vocals,
+    Guitar,
+    Piano,
+}
+
+impl From<Stem> for bullterrier_audio::Stem {
+    fn from(stem: Stem) -> Self {
+        match stem {
+            Stem::Drums => Self::Drums,
+            Stem::Bass => Self::Bass,
+            Stem::Other => Self::Other,
+            Stem::Vocals => Self::Vocals,
+            Stem::Guitar => Self::Guitar,
+            Stem::Piano => Self::Piano,
+        }
+    }
+}
+
+impl From<bullterrier_audio::Stem> for Stem {
+    fn from(stem: bullterrier_audio::Stem) -> Self {
+        match stem {
+            bullterrier_audio::Stem::Drums => Self::Drums,
+            bullterrier_audio::Stem::Bass => Self::Bass,
+            bullterrier_audio::Stem::Other => Self::Other,
+            bullterrier_audio::Stem::Vocals => Self::Vocals,
+            bullterrier_audio::Stem::Guitar => Self::Guitar,
+            bullterrier_audio::Stem::Piano => Self::Piano,
+        }
+    }
+}
+
+/// The six stems of a sound, each a `Sound` at 44.1 kHz in two channels: `stems[Stem.BASS]`, `len(stems)` is 6, and
+/// iterating gives the `Stem`s in the model's order (`items()` gives the pairs). They add up to the sound, apart
+/// from the model's own error.
+#[pyclass(frozen, module = "bullterrier_audio")]
+struct Stems(bullterrier_audio::Stems);
+
+#[pymethods]
+impl Stem {
+    /// The lowercase name: `drums`, `bass`, `other`, `vocals`, `guitar`, `piano`.
+    #[getter]
+    #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
+    fn name(&self) -> &'static str {
+        bullterrier_audio::Stem::from(*self).name()
+    }
+}
+
+#[pymethods]
+impl Stems {
+    /// The sound of `stem`.
+    fn get(&self, stem: Stem) -> Sound {
+        Sound(self.0.get(stem.into()).clone())
+    }
+
+    fn __getitem__(&self, stem: Stem) -> Sound {
+        self.get(stem)
+    }
+
+    #[allow(clippy::unused_self)] // a mapping of every stem has six entries
+    fn __len__(&self) -> usize {
+        bullterrier_audio::Stem::ALL.len()
+    }
+
+    #[allow(clippy::unused_self)] // the keys are the same six for every `Stems`
+    fn __iter__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, pyo3::types::PyIterator>> {
+        pyo3::types::PyList::new(py, bullterrier_audio::Stem::ALL.map(Stem::from))?.try_iter()
+    }
+
+    /// Every stem with its sound, in the model's order.
+    fn items(&self) -> Vec<(Stem, Sound)> {
+        self.0
+            .iter()
+            .map(|(stem, sound)| (stem.into(), Sound(sound.clone())))
+            .collect()
+    }
+
+    /// The sum of every stem not named: "all but the vocals". Naming a stem twice, or all six, is an `InvalidError`.
+    #[pyo3(signature = (*stems))]
+    #[allow(clippy::needless_pass_by_value)] // pyo3 extracts a `Vec`
+    fn without(&self, py: Python<'_>, stems: Vec<Stem>) -> PyResult<Sound> {
+        let removed: Vec<bullterrier_audio::Stem> = stems.into_iter().map(Into::into).collect();
+        wrap(py, py.detach(|| self.0.without(&removed)))
+    }
+
+    /// For each of `sections`, the share of each stem in the section's energy, as `(Stem, share)` pairs in the
+    /// model's order; the shares of a section add up to 1 (all 0 for a silent one). A span with no sample inside
+    /// the stems is an `InvalidError`.
+    #[allow(clippy::needless_pass_by_value)] // pyo3 extracts a `Vec`
+    fn parts(&self, py: Python<'_>, sections: Vec<PyRef<'_, Section>>) -> PyResult<Vec<Vec<(Stem, f64)>>> {
+        let sections: Vec<bullterrier_audio::Section> = sections
+            .iter()
+            .map(|s| bullterrier_audio::Section {
+                start: s.start,
+                end: s.end,
+                label: s.label.clone(),
+                confidence: s.confidence,
+            })
+            .collect();
+        py.detach(|| self.0.parts(&sections))
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|row| row.into_iter().map(|(stem, share)| (stem.into(), share)).collect())
+                    .collect()
+            })
+            .map_err(|error| error::raised(py, &error))
+    }
+}
+
+/// How a sound is separated into stems (units and ranges in the Rust core's `Separation`): `shifts` (count),
+/// `ensemble` (use the four fine-tuned models too), `seed` (draws the shifts), `cache` (keep the stems on disk) and
+/// `threads` (count; changes the time, not the stems). Read it from `Sound.separation`; change it with
+/// `Sound.with_separation`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Separation {
+    shifts: u32,
+    ensemble: bool,
+    seed: u64,
+    cache: bool,
+    threads: u32,
+}
+
 /// A sound: one or more channels of float32 samples at one sample rate. It never changes; an edit returns a new one.
 #[pyclass(frozen, module = "bullterrier_audio")]
 struct Sound(bullterrier_audio::Sound);
@@ -482,6 +619,60 @@ impl Sound {
         structure
             .map(|structure| Self(self.0.with_structure(structure)))
             .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The separation parameters `stems` reads.
+    #[getter]
+    fn separation(&self) -> Separation {
+        let s = self.0.separation();
+        Separation {
+            shifts: s.shifts(),
+            ensemble: s.ensemble(),
+            seed: s.seed(),
+            cache: s.cache(),
+            threads: s.threads(),
+        }
+    }
+
+    /// This sound separated under the separation with the given fields changed; a field left out (or `None`) keeps
+    /// its value (`cache=False` is a value). A value outside its range is an `InvalidError` naming the field.
+    #[pyo3(signature = (*, shifts=None, ensemble=None, seed=None, cache=None, threads=None))]
+    fn with_separation(
+        &self,
+        py: Python<'_>,
+        shifts: Option<u32>,
+        ensemble: Option<bool>,
+        seed: Option<u64>,
+        cache: Option<bool>,
+        threads: Option<u32>,
+    ) -> PyResult<Self> {
+        let s = self.0.separation();
+        bullterrier_audio::Separation::new(
+            shifts.unwrap_or(s.shifts()),
+            ensemble.unwrap_or(s.ensemble()),
+            seed.unwrap_or(s.seed()),
+            cache.unwrap_or(s.cache()),
+            threads.unwrap_or(s.threads()),
+        )
+        .map(|separation| Self(self.0.with_separation(separation)))
+        .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The six stems of the sound, separated by the Demucs model (`htdemucs-6s`; the four fine-tuned ones too with
+    /// `ensemble`). It needs the ONNX Runtime library and the model: without them a `ModelUnavailableError` says to
+    /// run `bt-audio install` (`bt-audio install --ensemble` for the fine-tuned ones). It takes minutes for a song;
+    /// with `cache` on, the stems are kept on disk and read back for the same sound and parameters. A sound over
+    /// about 17 minutes is an `InvalidError`.
+    fn stems(&self, py: Python<'_>) -> PyResult<Stems> {
+        py.detach(|| self.0.stems())
+            .map(Stems)
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The stem this sound is, when `stems` made it; `None` for any other sound.
+    #[getter]
+    fn stem(&self) -> Option<Stem> {
+        self.0.stem().map(Stem::from)
     }
 
     /// The beats and bars: tempo, meter and first downbeat. A sound with no tempo (fewer than 4 onsets, no period

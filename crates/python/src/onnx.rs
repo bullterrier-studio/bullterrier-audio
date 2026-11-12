@@ -6,16 +6,17 @@ use pyo3::prelude::*;
 
 use bullterrier_audio::Error;
 use bullterrier_audio::models::{
-    Options, RUNTIME_VERSION, Status, ensemble_models, install_model, install_runtime, load_runtime, model_status,
-    models as catalogue, runtime_status, runtimes,
+    Model, Options, RUNTIME_VERSION, Status, ensemble_models, install_ensemble, install_model, install_runtime,
+    load_runtime, model_status, models as catalogue, runtime_status, runtimes,
 };
 
 use crate::error;
 
-/// A piece the models need, with what is on this computer for it: `kind` is `notes` for a model and `runtime` for the
+/// A piece the models need, with what is on this computer for it: `kind` is `notes` or `separator` for a model and `runtime` for the
 /// ONNX Runtime library (its `url`, `sha256` and `size` are those of the archive it comes in, it has no `licence`
 /// here). `status` is `installed`, `not installed` or `damaged: <why>`; `path` is the file it is or would be kept as.
 /// `provided` is true for a runtime library the user names (`BT_AUDIO_ONNX_LIB`): it is theirs, `install` leaves it alone.
+/// `optional` is true for the ensemble's models, which only `install(ensemble=True)` fetches.
 #[pyclass(frozen, get_all, module = "bullterrier_audio")]
 pub(crate) struct ModelInfo {
     name: String,
@@ -27,6 +28,7 @@ pub(crate) struct ModelInfo {
     status: String,
     path: PathBuf,
     provided: bool,
+    optional: bool,
 }
 
 impl ModelInfo {
@@ -40,11 +42,9 @@ impl ModelInfo {
     }
 }
 
-/// The models `install`, `models` and `doctor` deal with: all but the ensemble's, which are installed only when asked for.
-fn standard_models() -> impl Iterator<Item = &'static bullterrier_audio::models::Model> {
-    catalogue()
-        .iter()
-        .filter(|model| ensemble_models().iter().all(|ensemble| ensemble.name != model.name))
+/// Whether `model` is one of the ensemble's: installed only when asked for.
+fn is_optional(model: &Model) -> bool {
+    ensemble_models().iter().any(|ensemble| ensemble.name == model.name)
 }
 
 fn options(cache: Option<PathBuf>) -> Options {
@@ -52,12 +52,13 @@ fn options(cache: Option<PathBuf>) -> Options {
     cache.map_or(options.clone(), |folder| options.with_cache(folder))
 }
 
-/// The models the package knows, with their status in `cache` (default: the platform's cache folder).
+/// The models the package knows (those `optional` are the ensemble's), with their status in `cache` (default: the platform's cache folder).
 #[pyfunction]
 #[pyo3(signature = (cache=None))]
 pub(crate) fn models(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<Vec<ModelInfo>> {
     let options = options(cache);
-    standard_models()
+    catalogue()
+        .iter()
         .map(|model| {
             let info = ModelInfo {
                 name: model.name.to_owned(),
@@ -69,6 +70,7 @@ pub(crate) fn models(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<Vec<Mod
                 status: String::new(),
                 path: PathBuf::new(),
                 provided: false,
+                optional: is_optional(model),
             };
             Ok(info.with_status(model_status(model, &options)?))
         })
@@ -96,6 +98,7 @@ pub(crate) fn onnx_runtime_status(py: Python<'_>, cache: Option<PathBuf>) -> PyR
         status: String::new(),
         path: PathBuf::new(),
         provided: options.library().is_some(),
+        optional: false,
     };
     Ok(info.with_status(status))
 }
@@ -110,12 +113,18 @@ pub(crate) fn onnx_runtime_load(py: Python<'_>, cache: Option<PathBuf>) -> PyRes
         .map_err(|error| error::raised(py, &error))
 }
 
-/// Downloads the ONNX Runtime library (`runtime`) and the models (`models`) that are missing into `cache` and returns
-/// the files kept. This is the explicit download: it happens whatever `BT_AUDIO_ALLOW_DOWNLOAD` says, so ask the user
+/// Downloads the ONNX Runtime library (`runtime`), the models that are not optional (`models`) and the ensemble's
+/// (`ensemble`) that are missing into `cache` and returns the files kept. This is the explicit download: it happens whatever `BT_AUDIO_ALLOW_DOWNLOAD` says, so ask the user
 /// first, and pass exactly what they agreed to (`runtime=False` when the library is `provided`).
 #[pyfunction]
-#[pyo3(signature = (cache=None, runtime=true, models=true))]
-pub(crate) fn install(py: Python<'_>, cache: Option<PathBuf>, runtime: bool, models: bool) -> PyResult<Vec<PathBuf>> {
+#[pyo3(signature = (cache=None, runtime=true, models=true, ensemble=false))]
+pub(crate) fn install(
+    py: Python<'_>,
+    cache: Option<PathBuf>,
+    runtime: bool,
+    models: bool,
+    ensemble: bool,
+) -> PyResult<Vec<PathBuf>> {
     let options = options(cache).allow_download(true);
     py.detach(|| {
         let mut kept = Vec::new();
@@ -123,9 +132,12 @@ pub(crate) fn install(py: Python<'_>, cache: Option<PathBuf>, runtime: bool, mod
             kept.push(install_runtime(&options)?);
         }
         if models {
-            for model in standard_models() {
+            for model in catalogue().iter().filter(|model| !is_optional(model)) {
                 kept.push(install_model(model, &options)?);
             }
+        }
+        if ensemble {
+            kept.extend(install_ensemble(&options)?);
         }
         Ok(kept)
     })
