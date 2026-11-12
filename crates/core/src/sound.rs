@@ -955,9 +955,8 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// The error of the first measure that fails, in name order, unchanged: [`Error::Invalid`] naming `duration` for a sound
-    /// under 3 s, and
-    /// otherwise as [`Sound::grid`], [`Sound::key`] and [`Sound::energy`]. [`Error::Invalid`] listing the broken
+    /// The error of the first measure that fails, in name order (`brightness` before `drops`, `energy.*`, `key`, ...),
+    /// unchanged: [`Error::Invalid`] naming `duration` for a sound under 3 s, and otherwise as [`Sound::grid`], [`Sound::key`] and [`Sound::energy`]. [`Error::Invalid`] listing the broken
     /// rules if the bundle breaks one of the format (a bug).
     pub fn bundle(&self) -> Result<Bundle, Error> {
         self.bundle_with(Registry::builtin())
@@ -968,7 +967,7 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// As [`Sound::measure_with`] for the first measure that fails, and [`Error::Invalid`] listing the broken rules
+    /// As [`Sound::measure_with`] for the first measure that fails, in name order (the registry's sorted order), and [`Error::Invalid`] listing the broken rules
     /// when a result breaks the bundle format, for example events outside the sound or a NaN.
     pub fn bundle_with(&self, registry: &Registry) -> Result<Bundle, Error> {
         bundle::bundle(self, registry)
@@ -993,7 +992,9 @@ impl Sound {
     ///
     /// [`Error::Invalid`] naming `name` and listing the available names when there is none; the measure's own error
     /// unchanged; [`Error::Invalid`] naming the measure when it returned a series for a measure declared to give
-    /// events (or the reverse), a unit other than the declared one, or a fraction series without a scaling.
+    /// events (or the reverse), a unit other than the declared one, or a fraction series without a scaling. Those are
+    /// the only checks on the result: the format's other rules (rate, start, NaN, event range) are enforced when it is
+    /// bundled ([`Sound::bundle_with`]), not here.
     pub fn measure_with(&self, registry: &Registry, name: &str) -> Result<Measurement, Error> {
         let measure = registry.get(name)?;
         let result = measure.measure(self)?;
@@ -1035,7 +1036,8 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// As [`Sound::bundle`].
+    /// The error of the first fact that fails, in the order of the layout: tempo, key, loudness, drops (not the name
+    /// order of [`Sound::bundle`]); otherwise as [`Sound::bundle`].
     pub fn summary(&self) -> Result<String, Error> {
         summary::summary(self)
     }

@@ -53,6 +53,13 @@ def test_every_built_in_is_registered():
     assert set(BUILT_IN) <= set(ALL)
 
 
+def test_the_arrangement_gives_the_contract_something_to_check(arrangement):
+    """Guard: the checks above must not pass vacuously on empty output."""
+    assert len(arrangement.measure("onsets")) > 0
+    assert len(arrangement.measure("sections")) > 0
+    assert len(arrangement.measure("loudness").values) > 0
+
+
 @pytest.mark.parametrize("name", ALL)
 def test_a_measure_keeps_the_contract(name, arrangement):
     check(arrangement.measure(name), arrangement.duration)

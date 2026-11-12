@@ -390,6 +390,43 @@ fn a_plugin_series_goes_under_series_and_a_plugin_events_under_events() -> Outco
     Ok(())
 }
 
+/// A plugin whose measurement always fails with its own name in the message.
+struct Failing(&'static str);
+
+impl Measure for Failing {
+    fn name(&self) -> &str {
+        self.0
+    }
+    fn identity(&self) -> &str {
+        self.0
+    }
+    fn description(&self) -> &'static str {
+        "Always fails."
+    }
+    fn unit(&self) -> Option<Unit> {
+        None
+    }
+    fn scaling(&self) -> Option<&str> {
+        None
+    }
+    fn measure(&self, _: &Sound) -> Result<Measurement, Error> {
+        Err(Error::Invalid(format!("{} failed", self.0)))
+    }
+}
+
+#[test]
+fn the_bundle_returns_the_error_of_the_first_failing_measure_in_name_order() -> Outcome {
+    let mut registry = Registry::new();
+    // registered in the opposite order to the names
+    registry.register(Arc::new(Failing("zeta")))?;
+    registry.register(Arc::new(Failing("alpha")))?;
+    let Err(error) = SONG.bundle_with(&registry) else {
+        return Err("both measures fail, so the bundle must fail".into());
+    };
+    assert_eq!(message(&error), "alpha failed");
+    Ok(())
+}
+
 #[test]
 fn a_registry_with_only_a_plugin_bundles_only_that() -> Outcome {
     let bundle = SONG.bundle_with(&registry_with(pumping())?)?;
