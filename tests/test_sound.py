@@ -15,7 +15,8 @@ def nearest(x: float) -> int:
 
 def tone(channels: int = 1, frames: int = 100, rate: int = 100) -> Sound:
     """A sound whose samples differ per channel and frame (all within (0, 1)), so a mixed-up edit shows."""
-    samples = np.arange(1, channels * frames + 1, dtype=np.float32).reshape(channels, frames) / (channels * frames + 1)
+    count = channels * frames
+    samples = (np.arange(1, count + 1) / (count + 1)).astype(np.float32).reshape(channels, frames)
     return Sound.from_samples(samples, rate)
 
 
