@@ -53,6 +53,14 @@ fn grid(beats: &[f64], meter: usize, first_downbeat: usize) -> Grid {
         beats: beats.to_vec(),
         meter: NonZeroUsize::MIN.saturating_add(meter - 1),
         first_downbeat,
+        confidence: None,
+    }
+}
+
+fn confident(confidence: f64) -> Grid {
+    Grid {
+        confidence: Some(confidence),
+        ..grid(&[0.5, 1.0], 4, 0)
     }
 }
 
@@ -358,7 +366,41 @@ fn refusals() -> Vec<(&'static str, Bundle, &'static str, bool)> {
             "grid.first_downbeat:",
             true,
         ),
+        (
+            "confidence above 1",
+            with_grid(confident(1.5)),
+            "grid.confidence: must be in 0..1",
+            false,
+        ),
+        (
+            "confidence below 0",
+            with_grid(confident(-0.1)),
+            "grid.confidence: must be in 0..1",
+            false,
+        ),
+        (
+            "confidence not finite",
+            with_grid(confident(f64::NAN)),
+            "grid.confidence: must be a finite",
+            false,
+        ),
     ]
+}
+
+#[test]
+fn the_lowest_version_that_carries_the_data_is_written() -> Outcome {
+    let version = |bundle: &Bundle| -> Result<Value, Box<dyn std::error::Error>> {
+        Ok(serde_json::from_str::<Value>(&bundle.to_json()?)?["version"].clone())
+    };
+    assert_eq!(version(&Bundle::default())?, json!(1));
+    assert_eq!(version(&with_grid(grid(&[0.5, 1.0], 4, 0)))?, json!(1));
+    for confidence in [0.0, 0.4, 1.0] {
+        let bundle = with_grid(confident(confidence));
+        assert_eq!(version(&bundle)?, json!(2), "confidence {confidence}");
+        let written: Value = serde_json::from_str(&bundle.to_json()?)?;
+        assert_eq!(written["grid"]["confidence"], json!(confidence));
+    }
+    Ok(())
 }
 
 #[test]

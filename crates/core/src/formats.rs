@@ -1,4 +1,4 @@
-//! What audio measured, as time-aligned data in bullterrier-control's bundle format (version 1): [`Series`], [`Event`] and
+//! What audio measured, as time-aligned data in bullterrier-control's bundle format (version 1, or 2 with a grid confidence): [`Series`], [`Event`] and
 //! [`Grid`] in one [`Bundle`]. Times are seconds. The types are plain data; [`Bundle::to_json`] and [`Bundle::write`] are
 //! the one place the format's rules are enforced, so a bundle that is written is one control reads.
 
@@ -77,6 +77,10 @@ pub struct Grid {
     pub meter: NonZeroUsize,
     /// Index into `beats` of the first downbeat; below `meter` and below the number of beats.
     pub first_downbeat: usize,
+    /// How sure the producer is of the grid, 0..1. Left out of the file when `None`; a bundle that sets it is written
+    /// as version 2 (a bundle without it as version 1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<f64>,
 }
 
 impl Grid {
@@ -139,9 +143,15 @@ impl Bundle {
         if problems.total > 0 {
             return Err(problems.into_error());
         }
+        // a producer writes the lowest version that carries its data
+        let version = if self.grid.as_ref().is_some_and(|grid| grid.confidence.is_some()) {
+            2
+        } else {
+            1
+        };
         serde_json::to_string(&Document {
             format: "bullterrier-control/bundle",
-            version: 1,
+            version,
             bundle: self,
         })
         .map_err(|error| Error::Invalid(error.to_string()))
@@ -267,6 +277,9 @@ impl Grid {
             self.first_downbeat >= self.meter.get() || self.first_downbeat >= self.beats.len(),
             || "grid.first_downbeat: must be below the meter and below the number of beats".to_owned(),
         );
+        if let Some(confidence) = self.confidence {
+            problems.number("grid.confidence", confidence, (0.0..=1.0).contains(&confidence), "must be in 0..1");
+        }
     }
 }
 
