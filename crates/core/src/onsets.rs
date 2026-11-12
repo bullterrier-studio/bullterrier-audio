@@ -4,11 +4,6 @@ use crate::analysis::Analysis;
 use crate::formats::Event;
 use crate::spectrum::{Band, Spectrogram};
 
-/// The mean rise in dB below which a frame is no onset. Evidence: the flux of a steady 440 Hz tone, whose
-/// leakage ripples with the phase, stays below 0.002 dB; a 5 ms click reads 2.2 dB. Without it a steady sound's
-/// ripple would be normalised to strength 1.
-const MIN_FLUX_DB: f64 = 0.1;
-
 /// The onsets of `spectrogram` under `analysis`, sorted by time.
 ///
 /// Levels are `10 log10(P / 0.5)` dBFS per bin, `floor` and below counting as `floor`, over the bins from 20 Hz to
@@ -16,7 +11,7 @@ const MIN_FLUX_DB: f64 = 0.1;
 /// `L = max(1, round(lag / hop))` frames. Only the frames whose window lies wholly inside the sound count (the
 /// first and last `ceil(window / 2 / hop)` frames see zero padding, whose edge is no onset): the first counted
 /// frame stands in before itself. A peak is a frame with a
-/// flux above `MIN_FLUX_DB` that no earlier frame within `M = round(min_gap / hop)` frames reaches and no later one within `M`
+/// flux above `min_rise` that no earlier frame within `M = round(min_gap / hop)` frames reaches and no later one within `M`
 /// exceeds; it counts when its flux is at least `relative_height` of the largest peak flux, which is its strength 1.
 #[allow(
     clippy::cast_precision_loss,
@@ -60,7 +55,7 @@ pub(crate) fn onsets(spectrogram: &Spectrogram, analysis: &Analysis) -> Vec<Even
         .filter(|&t| {
             let earlier = &flux[t.saturating_sub(gap)..t];
             let later = &flux[t + 1..(t + 1 + gap).min(flux.len())];
-            flux[t] > MIN_FLUX_DB && earlier.iter().all(|&f| f < flux[t]) && later.iter().all(|&f| f <= flux[t])
+            flux[t] > analysis.min_rise() && earlier.iter().all(|&f| f < flux[t]) && later.iter().all(|&f| f <= flux[t])
         })
         .collect();
     let largest = peaks.iter().map(|&t| flux[t]).fold(0.0, f64::max);

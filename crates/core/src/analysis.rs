@@ -16,6 +16,7 @@ use crate::Error;
 /// | `lag` | seconds | 0.001 to 0.5 | 0.03 |
 /// | `min_gap` | seconds | 0.001 to 1 | 0.05 |
 /// | `relative_height` | fraction | 0 to 1 | 0.1 |
+/// | `min_rise` | decibels | 0 to 100 | 0.1 |
 /// | `floor` | decibels | -120 to -20 | -80 |
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Analysis {
@@ -24,6 +25,7 @@ pub struct Analysis {
     lag: f64,
     min_gap: f64,
     relative_height: f64,
+    min_rise: f64,
     floor: f64,
 }
 
@@ -35,6 +37,7 @@ impl Default for Analysis {
             lag: 0.03,
             min_gap: 0.05,
             relative_height: 0.1,
+            min_rise: 0.1,
             floor: -80.0,
         }
     }
@@ -47,12 +50,21 @@ impl Analysis {
     ///
     /// [`Error::Invalid`] naming `Analysis`, the field, its range and the value when a value lies outside its range
     /// or is NaN.
-    pub fn new(window: f64, hop: f64, lag: f64, min_gap: f64, relative_height: f64, floor: f64) -> Result<Self, Error> {
+    pub fn new(
+        window: f64,
+        hop: f64,
+        lag: f64,
+        min_gap: f64,
+        relative_height: f64,
+        min_rise: f64,
+        floor: f64,
+    ) -> Result<Self, Error> {
         within("window", window, 0.01..=1.0, "seconds")?;
         within("hop", hop, 0.001..=1.0, "seconds")?;
         within("lag", lag, 0.001..=0.5, "seconds")?;
         within("min_gap", min_gap, 0.001..=1.0, "seconds")?;
         within("relative_height", relative_height, 0.0..=1.0, "a fraction")?;
+        within("min_rise", min_rise, 0.0..=100.0, "decibels")?;
         within("floor", floor, -120.0..=-20.0, "decibels")?;
         Ok(Self {
             window,
@@ -60,6 +72,7 @@ impl Analysis {
             lag,
             min_gap,
             relative_height,
+            min_rise,
             floor,
         })
     }
@@ -93,6 +106,14 @@ impl Analysis {
     #[must_use]
     pub fn relative_height(&self) -> f64 {
         self.relative_height
+    }
+
+    /// The smallest mean rise in dB across the spectrum that counts as an onset; below it a frame is leakage ripple
+    /// of a steady sound. Evidence for the default: a steady 440 Hz tone ripples by under 0.002 dB, a 5 ms click
+    /// rises by 2.2 dB.
+    #[must_use]
+    pub fn min_rise(&self) -> f64 {
+        self.min_rise
     }
 
     /// The level in dBFS that reads 0 on a band energy scale; quieter levels also read 0.
