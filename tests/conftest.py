@@ -151,6 +151,48 @@ def song_mix():
 
 
 @pytest.fixture(scope="session")
+def drum_song():
+    """15 s of stereo at 44.1 kHz of a drum part over a bass tone and a pad, with the hit times known by construction at
+    120 BPM: kicks on beats 1 and 3, snares on beats 2 and 4, a hat on every eighth. Returns `(samples (2, frames),
+    truth)`, where truth maps "kick", "snare", "hat" to the hit times in seconds."""
+    import numpy as np
+
+    rng = np.random.default_rng(7)
+    t = np.arange(15 * RATE) / RATE
+    mono = np.zeros_like(t)
+
+    def place(start: float, voice) -> None:
+        a = round(start * RATE)
+        mono[a : a + len(voice)] += voice[: len(mono) - a]
+
+    def decay(length: float):
+        u = np.arange(round(length * RATE)) / RATE
+        return u, np.exp(-5 * u / length)
+
+    u, env = decay(0.2)
+    kick = env * np.sin(2 * np.pi * np.cumsum(50 + 100 * np.maximum(0, 1 - u / 0.05)) / RATE)
+    u, env = decay(0.15)
+    snare = env * (0.7 * rng.uniform(-1, 1, len(u)) + 0.5 * np.sin(2 * np.pi * 200 * u))
+    u, env = decay(0.03)
+    hat = env * np.diff(rng.uniform(-1, 1, len(u) + 1)) / 2  # differenced noise: bright
+    truth: dict[str, list[float]] = {"kick": [], "snare": [], "hat": []}
+    for k in range(28):  # eighths, 0.25 s apart, from 0.5 s
+        start = 0.5 + 0.25 * k
+        place(start, 0.5 * hat)
+        truth["hat"].append(start)
+        if k % 4 == 0:
+            place(start, 0.9 * kick)
+            truth["kick"].append(start)
+        if k % 4 == 2:
+            place(start, 0.8 * snare)
+            truth["snare"].append(start)
+    bass = 0.15 * np.sin(2 * np.pi * 55.0 * t)
+    pad = 0.05 * sum(np.sin(2 * np.pi * f * t) for f in (220.0, 277.2, 329.6))
+    mix = mono + bass + pad
+    return np.stack([mix, 0.95 * mix]).astype(np.float32), truth
+
+
+@pytest.fixture(scope="session")
 def click_energy():
     """`click_energy(samples)`: the energy of `samples` (channels, frames) in the first 10 ms of each click."""
 

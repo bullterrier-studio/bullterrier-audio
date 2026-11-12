@@ -95,6 +95,7 @@ def test_models_lists_what_the_package_knows_and_that_it_is_not_installed(tmp_pa
     assert f"Models, kept in {tmp_path}" in out
     assert re.search(r"basic-pitch: notes model, \d+ MB, Apache-2\.0, not installed\n", out)
     assert re.search(r"htdemucs-6s: separator model, \d+ MB, .*, not installed\n", out)
+    assert re.search(r"adtof-frame-rnn: transcriber model, 3 MB, CC BY-NC-SA 4\.0.*, not installed\n", out)
     for name in ("drums", "bass", "other", "vocals"):
         assert re.search(
             rf"htdemucs-ft-{name}: separator model, \d+ MB, .*, not installed "
@@ -120,6 +121,7 @@ def test_doctor_on_an_empty_cache_names_the_problem_and_the_fix_and_exits_1(tmp_
     assert captured.err.strip().endswith("run `bt-audio install`")
     assert "basic-pitch" in captured.err
     assert "htdemucs-6s" in captured.err
+    assert "adtof-frame-rnn" in captured.err
     assert "htdemucs-ft" not in captured.err  # optional: not a problem
     assert "optional: bt-audio install --ensemble" in captured.out
 

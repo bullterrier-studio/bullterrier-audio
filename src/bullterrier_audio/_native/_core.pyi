@@ -15,6 +15,8 @@ __all__ = [
     "Bundle",
     "Event",
     "Grid",
+    "Hit",
+    "Hits",
     "Key",
     "Mode",
     "ModelInfo",
@@ -180,6 +182,33 @@ class Stem:
     def name(self) -> str: ...
 
 @final
+class Hit:
+    KICK: ClassVar[Hit]
+    SNARE: ClassVar[Hit]
+    HAT: ClassVar[Hit]
+    @property
+    def name(self) -> str: ...
+
+@final
+class Hits:
+    @property
+    def kick_threshold(self) -> float: ...
+    @property
+    def snare_threshold(self) -> float: ...
+    @property
+    def hat_threshold(self) -> float: ...
+    @property
+    def pre_average(self) -> float: ...
+    @property
+    def post_average(self) -> float: ...
+    @property
+    def pre_max(self) -> float: ...
+    @property
+    def post_max(self) -> float: ...
+    @property
+    def combine(self) -> float: ...
+
+@final
 class Stems:
     def get(self, stem: Stem) -> Sound: ...
     def __getitem__(self, key: Stem, /) -> Sound: ...
@@ -321,6 +350,21 @@ class Sound:
         partial_overlap: float | None = None,
     ) -> Sound: ...
     def notes(self) -> list[Event]: ...
+    @property
+    def hits_params(self) -> Hits: ...
+    def with_hits(
+        self,
+        *,
+        kick_threshold: float | None = None,
+        snare_threshold: float | None = None,
+        hat_threshold: float | None = None,
+        pre_average: float | None = None,
+        post_average: float | None = None,
+        pre_max: float | None = None,
+        post_max: float | None = None,
+        combine: float | None = None,
+    ) -> Sound: ...
+    def hits(self, hit: Hit) -> list[Event]: ...
     @property
     def separation(self) -> Separation: ...
     def with_separation(

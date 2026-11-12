@@ -9,6 +9,8 @@ from hypothesis import strategies as st
 from bullterrier_audio import (
     BullterrierAudioError,
     DecodeError,
+    Hit,
+    Hits,
     InvalidError,
     ModelUnavailableError,
     Notes,
@@ -229,6 +231,93 @@ def test_a_bad_note_parameter_is_refused_naming_the_field(change, field):
     with pytest.raises(InvalidError, match=field) as raised:
         tone().with_notes(**change)
     assert isinstance(raised.value, ValueError)
+
+
+# --- hits ----------------------------------------------------------------------------------------------------------
+
+HIT_FIELDS = {
+    "kick_threshold": 0.5, "snare_threshold": 0.6, "hat_threshold": 0.4, "pre_average": 0.2, "post_average": 0.02,
+    "pre_max": 0.03, "post_max": 0.02, "combine": 0.05,
+}  # fmt: skip
+
+
+def test_the_hit_classes_are_kick_snare_and_hat_named_as_their_labels():
+    assert [hit.name for hit in (Hit.KICK, Hit.SNARE, Hit.HAT)] == ["kick", "snare", "hat"]
+
+
+@pytest.mark.parametrize("hit", [Hit.KICK, Hit.SNARE, Hit.HAT])
+def test_hits_without_the_library_or_the_models_say_to_install_them(no_models, hit):
+    with pytest.raises(ModelUnavailableError, match="bt-audio install") as raised:
+        tone(frames=22050, rate=22050).hits(hit)
+    assert isinstance(raised.value, NotImplementedError)
+    assert isinstance(raised.value, BullterrierAudioError)
+    assert not no_models.exists()  # nothing was downloaded or created
+
+
+def test_hits_of_something_that_is_not_a_hit_class_is_a_type_error():
+    with pytest.raises(TypeError):
+        tone().hits("kick")  # type: ignore[arg-type]
+
+
+def test_with_hits_changes_every_field_and_keeps_the_original():
+    sound = tone()
+    changed = sound.with_hits(**HIT_FIELDS)
+    assert isinstance(changed.hits_params, Hits)
+    assert {name: getattr(changed.hits_params, name) for name in HIT_FIELDS} == HIT_FIELDS
+    assert sound.hits_params.kick_threshold != HIT_FIELDS["kick_threshold"]
+
+
+@pytest.mark.parametrize("field", HIT_FIELDS)
+def test_with_hits_keeps_the_fields_left_out(field):
+    base = tone().with_hits(**HIT_FIELDS)
+    other = {name: value for name, value in HIT_FIELDS.items() if name != field}
+    kept = base.with_hits(**{field: None}).hits_params
+    assert getattr(kept, field) == HIT_FIELDS[field]
+    assert {name: getattr(kept, name) for name in other} == other
+
+
+@pytest.mark.parametrize(
+    ("change", "field"),
+    [
+        pytest.param({"kick_threshold": 1.5}, "kick_threshold", id="fraction above 1"),
+        pytest.param({"snare_threshold": 0.0}, "snare_threshold", id="fraction below its floor"),
+        pytest.param({"hat_threshold": float("nan")}, "hat_threshold", id="nan"),
+        pytest.param({"pre_average": 2.0}, "pre_average", id="seconds above range"),
+        pytest.param({"post_max": -0.01}, "post_max", id="negative seconds"),
+        pytest.param({"combine": 0.0}, "combine", id="combine below one frame"),
+    ],
+)
+def test_a_bad_hit_parameter_is_refused_naming_the_field(change, field):
+    with pytest.raises(InvalidError, match=field) as raised:
+        tone().with_hits(**change)
+    assert isinstance(raised.value, ValueError)
+
+
+@pytest.mark.models
+def test_the_hits_of_a_drum_song_are_labelled_sorted_and_find_the_kicks(drum_song, kept_stems_cache):
+    samples, truth = drum_song
+    kicks = Sound.from_samples(samples, 44100).hits(Hit.KICK)
+    assert kicks
+    assert {event.label for event in kicks} == {"kick"}
+    assert [event.t for event in kicks] == sorted(event.t for event in kicks)
+    assert all(0.0 <= event.strength <= 1.0 for event in kicks)
+    found = [event.t for event in kicks]
+    recalled = sum(any(abs(t - f) <= 0.05 for f in found) for t in truth["kick"])
+    assert recalled / len(truth["kick"]) >= 0.8
+
+
+@pytest.mark.models
+@pytest.mark.parametrize(("hit", "label"), [(Hit.SNARE, "snare"), (Hit.HAT, "hat")])
+def test_a_drum_song_has_snares_and_hats(drum_song, hit, label, kept_stems_cache):
+    events = Sound.from_samples(drum_song[0], 44100).hits(hit)
+    assert events
+    assert {event.label for event in events} == {label}
+
+
+@pytest.mark.models
+def test_a_higher_threshold_finds_fewer_kicks(drum_song, kept_stems_cache):
+    sound = Sound.from_samples(drum_song[0], 44100)
+    assert len(sound.with_hits(kick_threshold=0.99).hits(Hit.KICK)) < len(sound.hits(Hit.KICK))
 
 
 # --- stems: the separation parameters and the sounds that need the model ---------------------------------------------

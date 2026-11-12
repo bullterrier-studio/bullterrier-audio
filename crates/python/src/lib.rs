@@ -20,8 +20,8 @@ mod _core {
     use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_load, onnx_runtime_status};
     #[pymodule_export]
     use super::{
-        Analysis, Band, Bundle, Event, Grid, Key, Mode, Notes, Origin, Section, Separation, Series, Sound, Stem, Stems,
-        Structure, load,
+        Analysis, Band, Bundle, Event, Grid, Hit, Hits, Key, Mode, Notes, Origin, Section, Separation, Series, Sound,
+        Stem, Stems, Structure, load,
     };
 }
 
@@ -277,6 +277,57 @@ struct Notes {
     ghost_share: f64,
     partial_share: f64,
     partial_overlap: f64,
+}
+
+/// How the hits of a drum class are picked (units and ranges in the Rust core's `Hits`). Read it from
+/// `Sound.hits_params`; change it with `Sound.with_hits`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Hits {
+    kick_threshold: f64,
+    snare_threshold: f64,
+    hat_threshold: f64,
+    pre_average: f64,
+    post_average: f64,
+    pre_max: f64,
+    post_max: f64,
+    combine: f64,
+}
+
+/// A class of drum hit.
+#[pyclass(
+    eq,
+    eq_int,
+    frozen,
+    hash,
+    from_py_object,
+    rename_all = "SCREAMING_SNAKE_CASE",
+    module = "bullterrier_audio"
+)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum Hit {
+    Kick,
+    Snare,
+    Hat,
+}
+
+impl From<Hit> for bullterrier_audio::Hit {
+    fn from(hit: Hit) -> Self {
+        match hit {
+            Hit::Kick => Self::Kick,
+            Hit::Snare => Self::Snare,
+            Hit::Hat => Self::Hat,
+        }
+    }
+}
+
+#[pymethods]
+impl Hit {
+    /// The label of the events of this class: `kick`, `snare`, `hat`.
+    #[getter]
+    #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
+    fn name(&self) -> &'static str {
+        bullterrier_audio::Hit::from(*self).name()
+    }
 }
 
 /// An instrument the model separates out, in the model's output order.
@@ -780,6 +831,64 @@ impl Sound {
     /// downloads them only if the environment variable `BT_AUDIO_ALLOW_DOWNLOAD` is `1`, `true` or `yes`.
     fn notes(&self, py: Python<'_>) -> PyResult<Vec<Event>> {
         py.detach(|| self.0.notes())
+            .map(|events| events.into_iter().map(Event::from).collect())
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The drum-hit parameters `hits` reads.
+    #[getter]
+    fn hits_params(&self) -> Hits {
+        let h = self.0.hits_params();
+        Hits {
+            kick_threshold: h.kick_threshold(),
+            snare_threshold: h.snare_threshold(),
+            hat_threshold: h.hat_threshold(),
+            pre_average: h.pre_average(),
+            post_average: h.post_average(),
+            pre_max: h.pre_max(),
+            post_max: h.post_max(),
+            combine: h.combine(),
+        }
+    }
+
+    /// This sound with the drum-hit parameters with the given fields changed; a field left out (or `None`) keeps its value. A
+    /// value outside its range or NaN is an `InvalidError` naming the field.
+    #[pyo3(signature = (*, kick_threshold=None, snare_threshold=None, hat_threshold=None, pre_average=None,
+        post_average=None, pre_max=None, post_max=None, combine=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn with_hits(
+        &self,
+        py: Python<'_>,
+        kick_threshold: Option<f64>,
+        snare_threshold: Option<f64>,
+        hat_threshold: Option<f64>,
+        pre_average: Option<f64>,
+        post_average: Option<f64>,
+        pre_max: Option<f64>,
+        post_max: Option<f64>,
+        combine: Option<f64>,
+    ) -> PyResult<Self> {
+        let h = self.0.hits_params();
+        bullterrier_audio::Hits::new(
+            kick_threshold.unwrap_or(h.kick_threshold()),
+            snare_threshold.unwrap_or(h.snare_threshold()),
+            hat_threshold.unwrap_or(h.hat_threshold()),
+            pre_average.unwrap_or(h.pre_average()),
+            post_average.unwrap_or(h.post_average()),
+            pre_max.unwrap_or(h.pre_max()),
+            post_max.unwrap_or(h.post_max()),
+            combine.unwrap_or(h.combine()),
+        )
+        .map(|hits| Self(self.0.with_hits(hits)))
+        .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The hits of one drum class, as events labelled with the class and `strength` the model's activation (0 to 1),
+    /// found by the ADTOF model. A sound that is not the drums stem is separated first. It needs the ONNX Runtime library
+    /// and the models: without them a `ModelUnavailableError` says to run `bt-audio install`. It downloads them only if
+    /// the environment variable `BT_AUDIO_ALLOW_DOWNLOAD` is `1`, `true` or `yes`.
+    fn hits(&self, py: Python<'_>, hit: Hit) -> PyResult<Vec<Event>> {
+        py.detach(|| self.0.hits(hit.into()))
             .map(|events| events.into_iter().map(Event::from).collect())
             .map_err(|error| error::raised(py, &error))
     }
