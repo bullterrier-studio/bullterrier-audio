@@ -19,7 +19,9 @@ use crate::notes_params::Notes;
 use crate::onsets;
 use crate::resample::resample;
 use crate::sections::{self, Section};
+use crate::separation::Separation;
 use crate::spectrum::{self, Band, Spectrogram};
+use crate::stems::{self, Stem, Stems};
 use crate::structure::Structure;
 use crate::summary;
 use crate::write::write;
@@ -51,6 +53,9 @@ struct Measured {
     /// Only `Sound::notes` fills it, and that needs the `onnx` feature.
     #[cfg(feature = "onnx")]
     notes: OnceLock<Vec<Event>>,
+    /// Only `Sound::stems` fills it, and that needs the `onnx` feature.
+    #[cfg(feature = "onnx")]
+    stems: OnceLock<Stems>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -82,6 +87,8 @@ pub struct Sound {
     analysis: Analysis,
     structure: Structure,
     notes: Notes,
+    separation: Separation,
+    stem: Option<Stem>,
     memo: Memo,
 }
 
@@ -151,6 +158,8 @@ impl Sound {
             analysis: Analysis::default(),
             structure: Structure::default(),
             notes: Notes::default(),
+            separation: Separation::default(),
+            stem: None,
             memo: Memo::default(),
         })
     }
@@ -220,6 +229,8 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         })
     }
@@ -261,6 +272,8 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         })
     }
@@ -287,6 +300,8 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         }
     }
@@ -307,11 +322,19 @@ impl Sound {
         if rate == self.rate {
             return Ok(self.clone());
         }
-        let mut sound = Self::from_samples(resample(&self.samples, self.rate, rate)?, rate)?;
+        let mut sound = self.with_samples(resample(&self.samples, self.rate, rate)?, rate)?;
+        sound.stem = self.stem;
+        Ok(sound)
+    }
+
+    /// A sound of `samples` at `rate` that carries this sound's origin and parameters; it is not a stem.
+    pub(crate) fn with_samples(&self, samples: Vec<Vec<f32>>, rate: u32) -> Result<Self, Error> {
+        let mut sound = Self::from_samples(samples, rate)?;
         sound.origin = self.origin.clone();
         sound.analysis = self.analysis;
         sound.structure = self.structure;
         sound.notes = self.notes;
+        sound.separation = self.separation;
         Ok(sound)
     }
 
@@ -331,6 +354,8 @@ impl Sound {
             analysis,
             structure: self.structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         }
     }
@@ -351,6 +376,8 @@ impl Sound {
             analysis: self.analysis,
             structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         }
     }
@@ -371,8 +398,80 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         }
+    }
+
+    /// The separation parameters this sound's `Sound::stems` reads.
+    #[must_use]
+    pub fn separation(&self) -> &Separation {
+        &self.separation
+    }
+
+    /// This sound separated under `separation` instead; nothing measured so far is carried over.
+    #[must_use]
+    pub fn with_separation(&self, separation: Separation) -> Self {
+        Self {
+            samples: self.samples.clone(),
+            rate: self.rate,
+            origin: self.origin.clone(),
+            analysis: self.analysis,
+            structure: self.structure,
+            notes: self.notes,
+            separation,
+            stem: self.stem,
+            memo: Memo::default(),
+        }
+    }
+
+    /// The stem this sound is, when it was made by [`Sound::stems`] or [`Sound::stems_with`]; `None` for any other
+    /// sound. Edits (`cut`, `fade`, `mono`, `resampled`, `normalised`) keep it.
+    #[must_use]
+    pub fn stem(&self) -> Option<Stem> {
+        self.stem
+    }
+
+    /// This sound marked as `stem`.
+    pub(crate) fn marked_as(mut self, stem: Stem) -> Self {
+        self.stem = Some(stem);
+        self
+    }
+
+    /// The stems of the sound, separated by the installed `HTDemucs` model; see [`Sound::stems_with`] for what is
+    /// promised. The result is computed once per sound. Needs the `onnx` feature, the ONNX Runtime library and the model
+    /// (`bt-audio install`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ModelUnavailable`] naming `bt-audio install` when the library or the model is not installed (or
+    /// cannot be used); otherwise as [`Sound::stems_with`].
+    #[cfg(feature = "onnx")]
+    pub fn stems(&self) -> Result<Stems, Error> {
+        if let Some(stems) = self.memo.0.stems.get() {
+            return Ok(stems.clone());
+        }
+        // validate the sound before the model is loaded: loading takes seconds and gigabytes
+        stems::check_length(self)?;
+        let model = crate::models::OrtInfer::open(&crate::models::models()[1], &crate::models::Options::from_env())?;
+        let stems = self.stems_with(&model)?;
+        Ok(self.memo.0.stems.get_or_init(|| stems).clone())
+    }
+
+    /// The stems of the sound, separated with `model` (the 6-source `HTDemucs`: `Sound::stems` passes the installed
+    /// one), at 44.1 kHz in two channels.
+    ///
+    /// Promises: see [`Stems`]. The algorithm is that of Demucs' `apply_model` (v4.0.1); [`Separation`] says what its
+    /// shifts do and what is refused.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `duration` when the stems would hold more than 2^29 samples (about 17 minutes);
+    /// naming `rate` when the sound cannot be resampled to 44.1 kHz; when `model` does not answer as `HTDemucs` does (one
+    /// output of shape 1 by 6 by 2 by 343 980) or fails.
+    pub fn stems_with(&self, model: &impl Infer) -> Result<Stems, Error> {
+        stems::separate(self, model)
     }
 
     /// The notes of the sound, found by the installed Basic Pitch model and cleaned up; see [`Sound::notes_with`] for
@@ -770,6 +869,8 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            separation: self.separation,
+            stem: self.stem,
             memo: Memo::default(),
         })
     }

@@ -17,3 +17,4 @@ mod models;
 mod notes;
 mod sections;
 mod sound;
+mod stems;
