@@ -3,18 +3,21 @@
 
 from os import PathLike
 from pathlib import Path
+from typing import final
 
 import numpy as np
 import numpy.typing as npt
 
 __all__ = ["Origin", "Sound", "load"]
 
+@final
 class Origin:
     @property
     def source(self) -> Path | None: ...
     @property
     def offset(self) -> float: ...
 
+@final
 class Sound:
     @staticmethod
     def from_samples(samples: npt.NDArray[np.float32], rate: int) -> Sound: ...
