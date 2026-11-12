@@ -12,6 +12,8 @@ use crate::Error;
 pub enum ModelKind {
     /// Notes: pitched events with onset and length.
     Notes,
+    /// Stems: a sound taken apart into the instruments it is made of.
+    Separator,
 }
 
 /// A model file the package can download and run.
@@ -39,16 +41,33 @@ pub struct Model {
 ///   in the order [`OrtInfer::output_names`](super::OrtInfer::output_names) gives: `StatefulPartitionedCall:2` the onset
 ///   posteriorgram `(1, 172, 88)`, `StatefulPartitionedCall:1` the note (frame) posteriorgram `(1, 172, 88)`,
 ///   `StatefulPartitionedCall:0` the contour `(1, 172, 264)`. 88 pitches from MIDI 21; 172 frames of 256 samples.
+/// - `htdemucs-6s`: Demucs v4 `HTDemucs` with six sources, exported to ONNX by StemSplit (the STFT and inverse STFT are in
+///   the graph). Code MIT; the weights are released for science only according to their author (facebookresearch/demucs
+///   issue 327); the export is MIT. 258 159 781 bytes, SHA-256 re-derived by streaming the file. Verified with ONNX Runtime
+///   1.23.2 on the CPU: one input `mix`, f32 `(1, 2, 343980)` (7.8 s of stereo at 44 100 Hz, normalised as Demucs does);
+///   one f32 output `stems`, `(1, 6, 2, 343980)`: sources in the order drums, bass, other, vocals, guitar, piano. A run
+///   took about 4.8 s on one thread (opening the session 2 s), whatever the input; the process peaked at 3.7 to 5.2 GB
+///   resident.
 #[must_use]
 pub fn models() -> &'static [Model] {
-    &[Model {
-        name: "basic-pitch",
-        url: "https://raw.githubusercontent.com/spotify/basic-pitch/v0.4.0/basic_pitch/saved_models/icassp_2022/nmp.onnx",
-        sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
-        size: 230_444,
-        licence: "Apache-2.0",
-        kind: ModelKind::Notes,
-    }]
+    &[
+        Model {
+            name: "basic-pitch",
+            url: "https://raw.githubusercontent.com/spotify/basic-pitch/v0.4.0/basic_pitch/saved_models/icassp_2022/nmp.onnx",
+            sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+            size: 230_444,
+            licence: "Apache-2.0",
+            kind: ModelKind::Notes,
+        },
+        Model {
+            name: "htdemucs-6s",
+            url: "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s.onnx",
+            sha256: "48f8e84945579f8ab340e083339e9221e03785dbe733a52c388200b6d3ca779a",
+            size: 258_159_781,
+            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+            kind: ModelKind::Separator,
+        },
+    ]
 }
 
 fn file_of(model: &Model, options: &Options) -> Result<PathBuf, Error> {

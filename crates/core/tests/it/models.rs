@@ -453,14 +453,23 @@ mod where_things_are {
     }
 
     #[test]
-    fn the_catalogue_pins_basic_pitch() {
-        let [pitch] = models() else { unreachable!("one model") };
+    fn the_catalogue_pins_each_model() {
+        let [pitch, demucs] = models() else {
+            unreachable!("two models")
+        };
         assert_eq!(
             (pitch.name, pitch.licence, pitch.kind),
             ("basic-pitch", "Apache-2.0", ModelKind::Notes)
         );
         assert!(pitch.url.starts_with("https://") && pitch.url.contains("v0.4.0"));
         assert_eq!(pitch.sha256.len(), 64);
+        assert_eq!((demucs.name, demucs.kind), ("htdemucs-6s", ModelKind::Separator));
+        assert!(demucs.url.starts_with("https://") && demucs.url.ends_with("htdemucs_6s.onnx"));
+        assert_eq!(demucs.sha256.len(), 64);
+        assert!(
+            demucs.licence.contains("science-only"),
+            "the licence says what the weights allow"
+        );
     }
 
     #[test]
