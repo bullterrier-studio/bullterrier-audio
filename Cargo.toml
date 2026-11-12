@@ -1,0 +1,61 @@
+# The Rust of bullterrier-audio: `crates/core` (pure Rust: the logic) and `crates/python` (the bindings that build
+# `bullterrier_audio._native._core`; maturin builds it, see [tool.maturin] in pyproject.toml). Rust settings live here, except
+# what a tool cannot read from this file: rust-toolchain.toml, rustfmt.toml, deny.toml.
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/python"]
+
+[workspace.package]
+version = "0.0.0"  # never published on its own: the Python package's version (pyproject.toml) is the release's
+edition = "2024"
+rust-version = "1.99.1"  # the toolchain rust-toolchain.toml pins
+license = "MIT"
+repository = "https://github.com/bullterrier-studio/bullterrier-audio"
+publish = false
+
+[workspace.dependencies]
+bullterrier-audio = { path = "crates/core" }
+proptest = "1.12"
+# abi3-py312: one wheel per platform serves every Python from 3.12 (the oldest the package supports)
+pyo3 = { version = "0.30", features = ["abi3-py312"] }
+
+# Warnings, not errors, so a newer compiler's new lint never breaks a user's install; the gate (`poe check`) runs clippy
+# and rustdoc with `-D warnings`, so every one fails it.
+[workspace.lints.rust]
+missing_docs = "warn"  # ruff's D1xx: every public item is documented
+unreachable_pub = "warn"  # `pub` only where a crate's users reach it; inside a crate, `pub(crate)`
+unsafe_code = "deny"  # the core forbids it outright (`#![forbid(unsafe_code)]`); the bindings deny it too
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# restriction picks: no panicking shortcut (an error is returned), no printing (the library never prints)
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+undocumented_unsafe_blocks = "warn"
+
+# The tools the gate runs that rustup does not install, each at the version the gate expects. `uv run poe setup`
+# installs them; `tools/rust_tools.py` reads this table, the one place their versions are written.
+[workspace.metadata.tools]
+cargo-shear = "1.14.0"
+cargo-deny = "0.20.2"
+
+# Debug builds keep file and line tables (panics and backtraces still name them) but no variable information, and on
+# macOS the debug info stays in the binary: by default (`unpacked`) cargo leaves every object file of every build behind
+# in target/debug/deps, never cleaned (measured in a sibling project: 1.1 million files, 38 GB after a week). `cargo test`
+# uses the `test` profile, which inherits this one.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "off"
+
+# Tests run lightly optimised: in a sibling project this took the Rust tests from 13 minutes to 33 seconds with the same
+# assertions, and the default (opt-level 0) compiles code that is slow to run. The cost: a test of stack depth or frame size
+# sees smaller frames (one measured 32-64 KB needed at opt-level 0, at most 8 KB at 1), so it bounds the recursion more loosely.
+# A project with such a test sets `opt-level = 0` here, with its reason.
+[profile.test]
+opt-level = 1

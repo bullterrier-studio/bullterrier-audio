@@ -6,22 +6,25 @@ way it is.
 
 ## Set up
 
-You need [uv](https://docs.astral.sh/uv/) and git.
+You need [uv](https://docs.astral.sh/uv/), git and [rustup](https://rustup.rs/) (the core is Rust;
+`rust-toolchain.toml` makes rustup install the right compiler on the first build).
 
 ```bash
 git clone https://github.com/bullterrier-studio/bullterrier-audio.git
 cd bullterrier-audio
-uv sync                # the project and its development tools, in .venv
-uv run poe setup       # once per clone: the git hooks and the commit-message template
+uv sync                # the project (its Rust extension built) and its development tools, in .venv
+uv run poe setup       # once per clone: the git hooks, the commit-message template, cargo-shear and cargo-deny
 ```
+
+`uv sync` and `uv run` rebuild the extension when a Rust file changes.
 
 ## Before you push
 
 ```bash
 uv run poe fast        # while working: format, lint, types, quick tests
-uv run poe check       # every gate: format, lint, workflows, dead code, dependencies, build, types, tests
+uv run poe check       # every gate, Python and Rust: format, lint, workflows, dead code, dependencies, build, types, tests
 uv run poe fix         # repairs what lint and format can repair by themselves
-uv run poe audit       # known vulnerabilities in the locked dependencies (pip-audit; needs the network)
+uv run poe audit       # known vulnerabilities in the locked dependencies (pip-audit, cargo-deny; needs the network)
 uv run pytest tests/test_cli.py -n 0  # one file or folder, in one process; `uv run poe test` runs the suite on every core
 ```
 
@@ -38,8 +41,9 @@ means in practice.
 
 ## Continuous integration and releasing
 
-Every push to `main` and every pull request runs the whole gate on GitHub, and builds the sdist and the wheel, which is
-installed and run on Linux, macOS and Windows before anything is released; a release is one command, `uv run poe release
+Every push to `main` and every pull request runs the whole gate on GitHub, builds the Rust core in every job that
+imports the package, and builds the sdist and a wheel per platform (Linux x86_64 and aarch64, macOS arm64 and x86_64,
+Windows x86_64), each installed and run before anything is released; a release is one command, `uv run poe release
 VERSION`, and it publishes only if everything passes. How it works, how to approve and recover, and the one-time setup
 are in [docs/releasing.md](docs/releasing.md).
 

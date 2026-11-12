@@ -2,7 +2,8 @@
 # exactly these files), and prove each works when installed on its own, away from the checkout. Called by ci.yml once
 # every check passed; can also be started by hand (only release.yml publishes, and only what its own CI built).
 #
-# The sdist and the one pure-Python wheel. No job here restores a build cache: what it builds may be published.
+# The sdist and one abi3 wheel per platform; which platforms, and why: docs/template-decisions.md, "Platforms". No job
+# here restores a build cache: what it builds may be published.
 name: Build
 
 on:
@@ -13,8 +14,8 @@ permissions:
   contents: read
 
 jobs:
-  dist:
-    name: Build and check the distributions
+  sdist:
+    name: Build the sdist
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -24,23 +25,103 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: false # these files may be published: nothing restored from a cache goes into them
-      - name: Build the sdist and wheel and check them (twine, check-wheel-contents)
-        run: uv run --locked poe build-check
+      # maturin reads the crates' metadata with cargo, so the sdist is made with the toolchain rust-toolchain.toml pins
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      - name: Build the sdist
+        run: uv build --sdist --out-dir dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  wheels:
+    name: Build the wheel for ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false # one red platform must not hide the state of the others
+      matrix:
+        include:
+          # Linux: in the manylinux container of the runner's own architecture (maturin-action's), so nothing is
+          # cross-compiled; macOS x86_64 is cross-compiled on the arm64 runner
+          - { platform: linux-x86_64, runner: ubuntu-latest, target: x86_64, manylinux: "2_28" }
+          - { platform: linux-aarch64, runner: ubuntu-24.04-arm, target: aarch64, manylinux: "2_28" }
+          - { platform: macos-arm64, runner: macos-latest, target: aarch64 }
+          - { platform: macos-x86_64, runner: macos-latest, target: x86_64 }
+          - { platform: windows-x86_64, runner: windows-latest, target: x64 }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # the interpreter maturin builds the abi3 wheel for (the manylinux container has its own)
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: runner.os != 'Linux'
+        with:
+          python-version: "3.12"
+      # maturin's version from [build-system] in pyproject.toml, the Rust toolchain from rust-toolchain.toml
+      - uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --locked --out dist
+          sccache: false # these files may be published: nothing restored from a cache goes into them
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheel-${{ matrix.platform }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  dist:
+    name: Check the distributions and keep them
+    needs: [sdist, wheels]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # the checkout is the package tree check-wheel-contents compares each wheel with; nothing is built here
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+      - name: Install the checking tools (twine, check-wheel-contents), not the package
+        run: uv sync --locked --no-install-project
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: wheel-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sdist
+          path: dist
+      # the checks `poe build-check` runs locally: twine, one build of the extension per wheel, check-wheel-contents
+      - name: Check every distribution (tools/check_dists.py)
+        run: uv run --no-sync python tools/check_dists.py dist && ls -l dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
-          path: dist/check/
+          path: dist/
           if-no-files-found: error
 
   smoke:
-    name: Install the wheel on ${{ matrix.os }}
+    name: Install the ${{ matrix.from }} on ${{ matrix.os }}
     needs: dist
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest, from: wheel } # Linux x86_64
+          - { os: ubuntu-24.04-arm, from: wheel } # Linux aarch64
+          - { os: macos-latest, from: wheel } # macOS arm64
+          - { os: macos-15-intel, from: wheel } # macOS x86_64
+          - { os: windows-latest, from: wheel } # Windows x86_64
+          - { os: ubuntu-latest, from: sdist } # built here with Rust, as on a platform without a wheel
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -50,16 +131,50 @@ jobs:
         with:
           enable-cache: false
           python-version: "3.12"
-      # no checkout: the environment has the wheel and its dependencies only
-      - name: Install the wheel in a fresh environment and run the command
+      # only the script that names the installed file, kept outside the environment under test
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: checkout
+          sparse-checkout: |
+            tools/check_installed.py
+          sparse-checkout-cone-mode: false
+      # an sdist builds on the machine that installs it: that machine needs the toolchain the sdist pins
+      - name: Install the Rust toolchain the sdist pins (its rust-toolchain.toml)
+        if: matrix.from == 'sdist'
         shell: bash
         run: |
           set -euo pipefail
-          wheel=$(ls "$GITHUB_WORKSPACE"/dist/*.whl)
+          mkdir "$RUNNER_TEMP/unpacked"
+          tar -xzf dist/bullterrier_audio-*.tar.gz -C "$RUNNER_TEMP/unpacked" --strip-components=1
+          cd "$RUNNER_TEMP/unpacked"
+          rustup toolchain install --no-self-update && cargo --version
+      # The environment has the package and its dependencies only. A wheel comes from the artifact alone (`--no-index`:
+      # no release from PyPI; `--only-binary`: no sdist built on the fly), the platform's wheel chosen by uv; then its
+      # dependencies, as its installed metadata names them, from PyPI (`--no-index` cannot resolve them). The sdist is
+      # installed from its file and built here, with the toolchain its own rust-toolchain.toml pins (installed in the
+      # step before). check_installed.py then names the artifact's file it came from, or fails. The last line is the
+      # project's smoke command, which calls the Rust extension, so its answer proves the installed build runs: the
+      # template's runs the demo `scale`, a project replaces it with its own, and the template never changes that line.
+      - name: Install the ${{ matrix.from }} in a fresh environment and run the extension
+        shell: bash
+        env:
+          FROM: ${{ matrix.from }}
+        run: |
+          set -euo pipefail
+          dist="$GITHUB_WORKSPACE/dist"
           cd "$RUNNER_TEMP"
           uv venv --quiet smoke
-          uv pip install --quiet --python smoke "$wheel"
           if [ "$RUNNER_OS" = Windows ]; then bin=smoke/Scripts; else bin=smoke/bin; fi
+          if [ "$FROM" = wheel ]; then
+            uv pip install --python smoke --no-index --find-links "$dist" --only-binary bullterrier-audio --no-deps bullterrier-audio
+            "$bin/python" -c "from importlib.metadata import requires; print('\n'.join(requires('bullterrier-audio') or []))" > requirements.txt
+            uv pip install --python smoke --requirement requirements.txt
+          else
+            uv pip install --python smoke "$dist"/bullterrier_audio-*.tar.gz
+          fi
+          "$bin/python" "$GITHUB_WORKSPACE/checkout/tools/check_installed.py" "$dist" --from "$FROM"
+          uv pip list --python smoke
           "$bin/bt-audio" --version
           "$bin/bt-audio" --help
           # the project's own smoke command (the template never changes this line)

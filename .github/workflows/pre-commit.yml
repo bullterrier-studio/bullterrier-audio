@@ -27,7 +27,7 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-      # the tools only: no hook imports the package
+      # the tools only: no hook imports the package, so its Rust extension is not built (and no toolchain is needed)
       - name: Install the locked development tools, not the package
         run: uv sync --locked --no-install-project
       # ruff-format and ruff-check are the first two steps of the lint job; running them here too would do it twice

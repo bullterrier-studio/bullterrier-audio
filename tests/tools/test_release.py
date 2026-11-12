@@ -10,6 +10,7 @@ far from this project's own, so no test ever holds the project's version (tests/
 
 import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 
@@ -393,3 +394,58 @@ def test_a_failure_while_committing_says_how_to_undo(git_repo):
     assert "nothing was pushed" in result.stderr
     assert f"git reset --hard {before}" in result.stderr
     assert git_repo.git("ls-remote", "origin", "refs/tags/*") == ""
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# after-bump hooks: the commands of `[tool.release] after-bump`, run with the new version as their last argument
+
+
+def with_hook(git_repo, script: str) -> None:
+    """The released-once project, with a hook `python hook.py VERSION` whose body is `script`, committed and pushed."""
+    released_once(git_repo)
+    git_repo.write("hook.py", "import sys\nversion = sys.argv[-1]\n" + script)
+    git_repo.write("crate.txt", "unbumped\n")
+    pyproject = git_repo.read("pyproject.toml") + f'\n[tool.release]\nafter-bump = ["{sys.executable} hook.py"]\n'
+    git_repo.commit("chore: add a release hook", {"pyproject.toml": pyproject})
+    git_repo.push()
+
+
+def test_a_file_a_hook_changes_joins_the_release_commit(git_repo):
+    with_hook(git_repo, "open('crate.txt', 'w').write(version + '\\n')\nopen('made.txt', 'w').write(version)\n")
+
+    release(git_repo, "7.2.0rc1")
+
+    committed = git_repo.git("show", "--name-only", "--format=", "HEAD").split()
+    assert sorted(committed) == ["CHANGELOG.md", "crate.txt", "made.txt", "pyproject.toml", "uv.lock"]
+    assert git_repo.read("crate.txt") == "7.2.0rc1\n"  # the hook got the new version as its last argument
+    assert git_repo.git("status", "--porcelain") == ""
+    assert on_origin(git_repo, "refs/tags/v7.2.0rc1") == git_repo.git("rev-parse", "HEAD")
+
+
+def test_a_hook_that_fails_stops_the_release_and_puts_the_tree_back(git_repo):
+    with_hook(
+        git_repo, "open('crate.txt', 'w').write('half done\\n')\nopen('stray.txt', 'w').write('x')\nsys.exit(3)\n"
+    )
+    before = snapshot(git_repo)
+
+    result = git_repo.run_tool("release.py", "7.2.0rc1", "--yes")
+
+    assert result.returncode == 2
+    assert "hook.py" in result.stderr
+    assert "exited with 3" in result.stderr
+    assert "as it was" in result.stderr
+    assert snapshot(git_repo) == before  # no commit, no tag, the same files; nothing reached origin
+    assert not (git_repo.path / "stray.txt").exists()
+    assert git_repo.read("crate.txt") == "unbumped\n"
+
+
+def test_without_the_key_a_release_commits_only_its_own_files(git_repo):
+    released_once(git_repo)
+
+    release(git_repo, "7.2.0rc1")
+
+    assert sorted(git_repo.git("show", "--name-only", "--format=", "HEAD").split()) == [
+        "CHANGELOG.md",
+        "pyproject.toml",
+        "uv.lock",
+    ]

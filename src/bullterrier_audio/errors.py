@@ -8,8 +8,12 @@ message says what was wrong and what is valid. A subclass also inherits the buil
 Dependency direction: the bottom layer. It imports nothing from bullterrier_audio, so every layer may raise them.
 """
 
-__all__ = ["BullterrierAudioError"]
+__all__ = ["BullterrierAudioError", "InvalidError"]
 
 
 class BullterrierAudioError(Exception):
     """The base of every exception bullterrier-audio raises on purpose."""
+
+
+class InvalidError(BullterrierAudioError, ValueError):
+    """A value breaks a rule: the message names the argument and what is valid."""

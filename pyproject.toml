@@ -25,8 +25,8 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Typing :: Typed",
 ]
-# None yet: deptry fails on a dependency nothing imports. Each is added with the first code that imports it
-# (docs/roadmap.md, A1); the heavy models (Demucs, ADTOF, Basic Pitch) are optional (docs/design-decisions.md).
+# Each is declared with the first code that imports it (deptry fails on one nothing imports). None yet: the
+# extension is the whole runtime.
 dependencies = []
 
 [project.urls]
@@ -38,12 +38,32 @@ Issues = "https://github.com/bullterrier-studio/bullterrier-audio/issues"
 [project.scripts]
 bt-audio = "bullterrier_audio.cli:main"
 
+# maturin builds the Rust extension `bullterrier_audio._native._core` (crates/python) and packs it with the Python code of src/
 [build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
 
-# Read by `check-wheel-contents` in `poe build-check`: the wheel holds exactly src/bullterrier_audio minus these, so a shipped
-# picture or test fails (W102), and so does library code left out of the wheel (W101).
+[tool.maturin]
+manifest-path = "crates/python/Cargo.toml"
+python-source = "src"
+module-name = "bullterrier_audio._native._core"
+# the sdist builds the extension on its own: it needs the pinned toolchain too
+include = [{ path = "rust-toolchain.toml", format = "sdist" }]
+
+# `uv sync` and `uv run` rebuild the extension when one of these changes (by default uv looks at pyproject.toml only)
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+    { file = "rust-toolchain.toml" },
+    { file = "crates/**/*.rs" },
+    { file = "crates/**/Cargo.toml" },
+]
+
+# Read by tools/check_dists.py (`poe build-check`, and CI's build of every platform's wheel): each wheel holds exactly
+# src/bullterrier_audio minus these, plus its own build of the extension, so a shipped picture or test fails (W102), and so does
+# library code left out of the wheel (W101).
 [tool.check-wheel-contents]
 package = "src/bullterrier_audio"
 # the one top-level name a wheel may hold; it also keeps W005 (a name common to many wheels)
@@ -92,24 +112,39 @@ check-min-deps = { cmd = "python tools/run_capped.py -- uv run --isolated --pyth
 # Not part of `check`: it asks the PyPI vulnerability database about every locked package (runtime, extras and dev
 # tools, pinned by hash), so it needs the network and its verdict changes as advisories are published. For CI and
 # before a release; an advisory with no fixed release is ignored with `--ignore-vuln ID` and listed in SECURITY.md.
-audit = { sequence = ["uv export --frozen --all-extras --all-groups --no-emit-project --quiet --output-file dist/audit/requirements.txt", "pip-audit --requirement dist/audit/requirements.txt --disable-pip --require-hashes --progress-spinner off"], default_item_type = "cmd", help = "Check every locked dependency against known vulnerabilities (needs the network)" }
-fix = { sequence = ["ruff check --fix .", "ruff format ."], default_item_type = "cmd", help = "Apply every automatic lint and format fix" }
-# The sdist and wheel as PyPI would get them, built into dist/check (git-ignored, emptied first) and checked by twine
-# (metadata, rendered README; the quoted glob is twine's to expand) and check-wheel-contents (stray or unimportable files)
-build-check = { sequence = ["uv build --quiet --clear --no-create-gitignore --out-dir dist/check", "twine check --strict 'dist/check/*'", "check-wheel-contents dist/check"], default_item_type = "cmd", help = "Build the sdist and wheel and check what would be uploaded" }
+# The Rust crates in Cargo.lock are checked by cargo-deny against the RustSec advisory database, likewise online.
+audit = { sequence = ["uv export --frozen --all-extras --all-groups --no-emit-project --quiet --output-file dist/audit/requirements.txt", "pip-audit --requirement dist/audit/requirements.txt --disable-pip --require-hashes --progress-spinner off", "cargo deny --locked check advisories"], default_item_type = "cmd", help = "Check every locked dependency (Python and Rust) against known vulnerabilities (needs the network)" }
+fix = { sequence = ["ruff check --fix .", "ruff format .", "cargo fmt --all"], default_item_type = "cmd", help = "Apply every automatic lint and format fix" }
+# The sdist and wheel as PyPI would get them, built into dist/check (git-ignored, emptied first) and checked as CI checks
+# every platform's: tools/check_dists.py (twine, one build of the extension, check-wheel-contents)
+build-check = { sequence = ["uv build --quiet --clear --no-create-gitignore --out-dir dist/check", "python tools/check_dists.py dist/check"], default_item_type = "cmd", help = "Build the sdist and wheel and check what would be uploaded" }
 # The GitHub workflows and dependabot.yml: actionlint (syntax, expressions, job wiring; it also runs shellcheck on the
 # `run:` scripts when shellcheck is installed, as on GitHub's runners) and zizmor (unpinned actions, template
 # injection, persisted credentials, over-broad permissions). `uv run`, because the actionlint-py distribution names
 # its program differently. zizmor stays offline so the gate needs no network; its online audits need a GitHub token.
 lint-workflows = { sequence = ["uv run actionlint", "zizmor --offline .github"], default_item_type = "cmd", help = "Lint the GitHub workflows (actionlint, zizmor)" }
+# The Rust gates, each beside its Python counterpart; cargo comes with rustup, at the version rust-toolchain.toml pins.
+# Warnings fail only here (`-D warnings`), never a user's build. tests/tools/test_rust_gates.py shows each one failing.
+# rustfmt follows `mod` but not `include!`: a file pulled in with `include!` is never checked unless it is named here (add it to this
+# task, as `rustfmt --check <file>`).
+rust-fmt = { cmd = "cargo fmt --all --check", help = "Check the Rust formatting (rustfmt.toml)" }
+rust-lint = { cmd = "cargo clippy --workspace --all-targets --locked --quiet -- -D warnings", help = "Lint the Rust code: clippy, dead code, missing docs, unreachable pub, unsafe ([workspace.lints] in Cargo.toml)" }
+rust-doc = { cmd = "cargo doc --workspace --no-deps --locked --quiet", env = { RUSTDOCFLAGS = "-D warnings" }, help = "Build the Rust documentation; any rustdoc warning (a broken link) fails" }
+rust-tools = { cmd = "python tools/rust_tools.py check", help = "Check that the cargo tools the gate runs are installed at the versions Cargo.toml pins" }
+rust-shear = { cmd = "cargo shear", help = "Find Rust dependencies no code uses (cargo-shear)" }
+rust-deny = { cmd = "cargo deny --offline --locked check bans licenses sources", help = "Check the Rust dependencies offline: banned crates, licences, sources (deny.toml)" }
+stubtest = { cmd = "python -m mypy.stubtest --mypy-config-file pyproject.toml bullterrier_audio._native._core", help = "Check the stub _core.pyi against the built extension" }
+rust-test = { cmd = "python tools/run_capped.py -- cargo test --workspace --locked --quiet --no-fail-fast", help = "Run the Rust tests under the memory cap, every binary even after one fails" }
+# A crate's Rust integration tests are one binary (tests/it/main.rs); tools/check_rust_test_layout.py, the table [tool.rust-tests.own-binaries]
+rust-test-layout = { cmd = "python tools/check_rust_test_layout.py", help = "Check that the Rust integration tests are one binary per crate (tests/it/)" }
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
 # The project's own gates and the steps only `full` runs: the template ships these two lines as no-ops and never changes
 # them again, so a project replaces each with a sequence of its tasks without a conflict at the next update
 project-gates = { cmd = "python -c pass", help = "The project's own gates, run last by check and full (none yet)" }
 project-full = { cmd = "python -c pass", help = "The project's own steps that only full runs (none yet)" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
-gates = { sequence = ["ruff format --check .", "ruff check .", { ref = "lint-workflows" }, { ref = "dead-code" }, "deptry .", "mypy", { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, dependencies, types, tests, the project's own)" }
-fast = { sequence = ["ruff format --check .", "ruff check .", "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
+gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, docs, dependencies, types, tests, the project's own)" }
+fast = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
 # A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
 # change since they last passed touches what they test ([tool.gate-proofs] below), `full` always
 proofs = { cmd = "python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
@@ -119,7 +154,7 @@ full = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, { ref 
 # atomic push of main and the tag (CONTRIBUTING.md, "Releasing")
 release = { cmd = "python tools/release.py", help = "Release VERSION from main (e.g. 0.1.0rc1 to TestPyPI, 0.1.0 to PyPI): check, plan, ask, bump, tag, push [--dry-run] [--yes]" }
 # `default_install_hook_types` in .pre-commit-config.yaml names the three hook types, so a bare `install` covers them
-setup = { sequence = ["pre-commit install --install-hooks", "git config --local commit.template .gitmessage"], default_item_type = "cmd", help = "Install the git hooks, the commit-message template (once per clone)" }
+setup = { sequence = ["pre-commit install --install-hooks", "git config --local commit.template .gitmessage", "python tools/rust_tools.py install"], default_item_type = "cmd", help = "Install the git hooks, the commit-message template and the cargo tools the gate runs (once per clone)" }
 
 # Read by tools/check_commit_message.py (the commit-msg hook): Conventional Commits 1.0 with these limits.
 [tool.commit-message]
@@ -133,6 +168,9 @@ scope-pattern = "^[a-z0-9][a-z0-9/_-]*$"
 [tool.run-capped]
 cap-mb = 4000
 
+# Read by tools/check_rust_test_layout.py: the Rust test files that are binaries of their own (path -> why they need a
+# process to themselves). Empty: every integration test is a module of tests/it/.
+[tool.rust-tests.own-binaries]
 
 # Read by tools/pre_push.py (`poe proofs`, the last step of `poe check`): the gate proofs (tests marked `gate`) run in `check` only when the
 # change since they last passed touches one of these globs, relative to the repository root, or when they never passed here. List every file a proof
@@ -142,6 +180,12 @@ cap-mb = 4000
 triggers = [
     "pyproject.toml",
     ".pre-commit-config.yaml",
+    "rustfmt.toml",
+    "deny.toml",
+    "rust-toolchain.toml",
+    "Cargo.toml",
+    "Cargo.lock",
+    "crates/*/Cargo.toml",
     "tools/*",
     "tests/tools/*",
     ".github/*",
@@ -198,6 +242,7 @@ select = [
     "PLW1514",  # text files opened without `encoding=` use the locale's, which breaks non-ASCII names on Windows (preview)
     "BLE",  # `except Exception` hides bugs; catch what can happen, or say why everything must be caught
     "PTH",  # pathlib, not os.path / open() / glob: one way to handle paths
+    "PYI",  # type stubs (the Rust extension's, `_core.pyi`) written as stubs: no bodies, no docstrings
 ]
 # Deliberately NOT enabled: TRY003 / EM (message-style noise); the docstring style rules D2xx / D4xx beyond D419 (we
 # enforce presence, not formatting); PLR2004 magic numbers and PLR0913 argument counts; FBT (boolean arguments); TID252
@@ -282,13 +327,16 @@ DEP004 = ["packaging"]
 root_package = "bullterrier_audio"
 
 [[tool.importlinter.contracts]]
-name = "Layers: app > errors"
+name = "Layers: __main__ > cli > _native > errors"
 type = "layers"
 containers = ["bullterrier_audio"]
 exhaustive = true  # a new top-level module must be placed in a layer here
 layers = [
     "__main__",  # `python -m bullterrier_audio`: runs the command line
     "cli",  # app: the command line
+    # the home of the Rust extension (`_native._core`): it imports only `errors` (the bindings raise its errors), so
+    # every layer above may use it
+    "_native",
     "errors",  # the exceptions: they import nothing, so every layer may raise them
 ]
 

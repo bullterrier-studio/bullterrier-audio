@@ -13,8 +13,11 @@ writes it (the tag's CI would fail on such a test); the new changelog section pa
 release.yml applies to the pushed tag; `ci-ok` has not failed on GitHub for HEAD (asked through `gh`; a missing or
 offline gh, or a commit GitHub has no result for yet, is a warning: release.yml runs the whole CI on the tag before it
 publishes anything); and `poe full` passes. Then it prints the plan and asks `[y/N]`: `--yes` answers yes for
-scripts, `--dry-run` stops after the plan. Releasing runs `uv version VERSION` (pyproject.toml and uv.lock), writes
-CHANGELOG.md, commits `chore(release): vVERSION`, creates the annotated tag `vVERSION` and runs
+scripts, `--dry-run` stops after the plan. Releasing runs `uv version VERSION` (pyproject.toml and uv.lock), then each
+command of `[tool.release] after-bump` in pyproject.toml (a list of command lines, split at spaces and run from the
+repository root, the new version added as the last argument; for the files a project keeps a version in besides
+pyproject.toml), writes CHANGELOG.md, commits `chore(release): vVERSION` with every file the release changed (what
+`git status` shows), creates the annotated tag `vVERSION` and runs
 `git push --atomic origin main vVERSION` (never a force-push), then prints where the release workflow runs and which
 environment to approve.
 
@@ -24,9 +27,13 @@ and the draft stays for the release. Otherwise git-cliff writes it from the Conv
 release (configured in `[tool.git-cliff]` in pyproject.toml). A new section goes above the first released one, below
 any draft, and its compare link joins the link definitions at the bottom.
 
+A hook that exits non-zero stops the release before anything is committed or tagged and puts the working tree back as it
+was. No `after-bump` key means no hooks.
+
 Run from the repository root (poe does that). Exit code: 0 released (or the dry run passed), 1 refused or cancelled
-(nothing was changed; the reasons are on stderr), 2 failed after the release commit was made (nothing was pushed, or
-the push failed; stderr says how to push again or undo).
+(nothing was changed; the reasons are on stderr), 2 failed after the version was bumped (a hook failed and the tree was
+restored; or the release commit was made and nothing was pushed, or the push failed; stderr says how to push again or
+undo).
 
 Interface for tests: `literal_versions(version, folder)`, the scan behind the tests/ rule.
 """
@@ -218,7 +225,8 @@ def _undo(version: str, start: str) -> str:
 def release(version: str, *, dry_run: bool, assume_yes: bool) -> int:
     """Check everything, show the plan, ask, release and push; return the exit code. Raise ReleaseError when refused."""
     parse_version(version)  # a mistyped version is refused before anything slower runs
-    project = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    project, project_tool = pyproject["project"], pyproject.get("tool", {})
     repository = project.get("urls", {}).get("Repository")
     if not repository:
         raise ReleaseError(["pyproject.toml has no [project.urls] Repository for the changelog's compare links"])
@@ -235,11 +243,13 @@ def release(version: str, *, dry_run: bool, assume_yes: bool) -> int:
         raise ReleaseError(["`poe full` failed: fix the gate before releasing"])
     environment, index = ("testpypi", "pre-release, TestPyPI") if published.prerelease else ("pypi", "PyPI")
     push = f"git push --atomic origin main v{version}"
+    hooks = project_tool.get("release", {}).get("after-bump", [])
+    hooked = "".join(f", and what `{hook}` changes" for hook in hooks)
     carried = f"{ahead} commit{'' if ahead == 1 else 's'} not on origin/main yet" if ahead else "nothing else"
     print(
         f"\nrelease: the plan\n"
         f"  version  {project['version']} -> {version} ({index})\n"
-        f"  commit   chore(release): v{version} (pyproject.toml, uv.lock, CHANGELOG.md)\n"
+        f"  commit   chore(release): v{version} (pyproject.toml, uv.lock, CHANGELOG.md{hooked})\n"
         f"  tag      v{version}, annotated\n"
         f"  push     {push} to {_run('git', 'remote', 'get-url', 'origin')}, carrying {carried}\n"
         f"  ci-ok    {ci}\n"
@@ -253,8 +263,19 @@ def release(version: str, *, dry_run: bool, assume_yes: bool) -> int:
         return 1
     try:
         _run("uv", "version", version, "--no-sync")
+        for hook in hooks:
+            ran = subprocess.run([*hook.split(), version], check=False)  # noqa: S603  the project's own pyproject.toml names it
+            if ran.returncode != 0:
+                _run("git", "reset", "--hard", "--quiet")  # the tree was clean when the release began
+                _run("git", "clean", "--force", "-d", "--quiet")
+                print(
+                    f"release: `{hook}` exited with {ran.returncode}: nothing was committed, tagged or pushed, and the "
+                    "working tree is as it was; fix the hook and release again",
+                    file=sys.stderr,
+                )
+                return 2
         CHANGELOG.write_text(changelog, encoding="utf-8", newline="\n")  # as committed, also on Windows
-        _run("git", "add", str(PYPROJECT), "uv.lock", str(CHANGELOG))
+        _run("git", "add", "--all")  # pyproject.toml, uv.lock, CHANGELOG.md and whatever a hook changed
         _run("git", "commit", "--quiet", "--message", f"chore(release): v{version}")
         _run("git", "tag", "--annotate", f"v{version}", "--message", f"{project['name']} {version}")
     except ReleaseError as error:

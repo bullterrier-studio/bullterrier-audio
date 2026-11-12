@@ -20,3 +20,7 @@ dist/
 # songs are inputs and analyses are outputs: third-party audio, never committed
 inputs/
 out/
+# Rust: the build folder, and the extension an editable install (`uv sync`) builds into the source tree
+target/
+src/bullterrier_audio/_native/_core*.so
+src/bullterrier_audio/_native/_core*.pyd

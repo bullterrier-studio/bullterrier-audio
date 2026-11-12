@@ -7,26 +7,37 @@ choice, and a project overrides it by naming the rule in its own `CLAUDE.md` wit
 
 ## Invariants
 
-1. **No hidden tunables.** A value that shapes a result is a named, documented parameter. Exempt: mathematical and standard
+1. **Core and bindings:** the core never depends on PyO3 or numpy (`deny.toml` bans them outside the bindings; an architecture
+   test scans `src/`). Logic goes in the core, mapping in the bindings.
+2. **No hidden tunables.** A value that shapes a result is a named, documented parameter. Exempt: mathematical and standard
    constants, each cited in a comment.
-2. **Errors:** callers catch `BullterrierAudioError` (`bullterrier_audio.errors`). Library code raises a subclass, never a bare `ValueError`, for
+3. **Errors:** callers catch `BullterrierAudioError` (`bullterrier_audio.errors`). Library code raises a subclass, never a bare `ValueError`, for
    anything a caller or an input file can get wrong; each also inherits the matching builtin. A bug in the calling code (a wrong
    argument type) is a plain `TypeError`/`ValueError`.
-3. **Layering and the contract are tests**, run automatically.
+4. **Layering and the contract are tests**, run automatically.
 
+### Rust code
+
+`#![forbid(unsafe_code)]` in the core; the bindings `deny` it. It discourages unsafe code and does not ban it: unsafe inside a
+vetted dependency is fine. No `unwrap`, `expect`, `panic!`, `todo!` or printing (clippy fails them): return an `Error`. An error in the core is a bug in the caller. `pub` only for what the bindings use, else `pub(crate)`;
+every public item is documented (`missing_docs`), with its promises and an `# Errors` section. A kernel that checks nothing (the
+caller validated) passes bad input through without panicking. Lints are `[workspace.lints]` in `Cargo.toml` (clippy pedantic);
+for a false positive use `#[expect(lint, reason = "..")]`. Tools the gate runs that rustup does not install are pinned in
+`[workspace.metadata.tools]`.
 
 ### Standards
 
 - `src/` holds only code and the data it runs on. Tests, examples and docs live outside it.
 - Public API has `__all__`. Everything else is internal (a leading `_`).
+- Rust crates: `deny.toml` limits licences, registries and bans.
 - Offline and deterministic: same inputs, same result; no global random state, no clock, no network in the library.
 - The CLI catches `BullterrierAudioError` and never prints a traceback for a user's mistake (added with the first command that can raise
   it: no `try` for an error nothing raises).
 - The library never prints and never configures logging.
 - Text is UTF-8 (`encoding="utf-8"` on every open); paths are `pathlib.Path`.
 - Security: ruff `S`, `PGH`, `LOG` run in `poe check` (a subprocess call carries `# noqa: S603  <why its argv is safe>`).
-  `uv run poe audit` (pip-audit on `uv.lock`; needs network) runs before a release and in CI, which uses
-  `uv run --locked poe check`.
+  `uv run poe audit` (pip-audit on `uv.lock`, cargo-deny advisories on `Cargo.lock`; needs network) runs before a release and in CI,
+  which uses `uv run --locked poe check`.
 - Versions are SemVer (a 0.x minor may break the API), changed only by `uv run poe release VERSION` (the owner picks it: checks,
   shows the plan, asks, bumps, writes CHANGELOG.md with git-cliff, commits, tags, pushes main and the tag; `docs/releasing.md`).
   Tests read the version from `pyproject.toml`, never write it.
@@ -61,12 +72,16 @@ A fix removes the cause, not the symptom.
 
 ### Lint, types and gates
 
-`uv run poe check` runs every gate, cheapest first, stopping at the first failure: `ruff format --check`; `ruff check` (plus
-`PLW1514` explicit encodings, `BLE` no blind `except`, `PTH` pathlib); `poe lint-workflows` (actionlint, zizmor); `poe dead-code`
-(vulture on `src`); `deptry`; `mypy`; the tests, in random order. `poe full` adds `poe build-check` (sdist and wheel, twine,
-check-wheel-contents).
-Each of the template's gates has a test proving it fails on a known-bad input (`tests/tools/`). A gate a project adds is
-recommended to have one too, not required.
+`uv run poe check` runs every gate, cheapest first, stopping at the first failure: `ruff format --check` and `rust-fmt`;
+`ruff check` (plus `PLW1514` explicit encodings, `BLE` no blind `except`, `PTH` pathlib, `PYI` stubs) and `rust-lint` (clippy
+pedantic, over the whole workspace; `unwrap`/`expect`/`panic`/print banned; dead code, missing docs, unreachable `pub`);
+`poe lint-workflows` (actionlint, zizmor); `poe dead-code` (vulture on `src`); `rust-doc`; `deptry`; `rust-tools` (cargo-shear and
+cargo-deny at the versions `Cargo.toml` pins; `poe setup` installs them), `rust-test-layout` (the Rust test layout, "Rust tests"),
+`rust-shear` (unused crates), `rust-deny` (bans, licences, sources; `deny.toml`); `mypy` and `stubtest`
+(`_native/_core.pyi` against the extension); `rust-test` (under the memory cap); the tests, in random order. `poe full` adds
+`poe build-check` (maturin sdist and wheel, twine, check-wheel-contents; CI also builds every platform's wheel). Each of the
+template's gates has a test proving it fails on a known-bad input (`tests/tools/`; `test_rust_gates.py` `OFFENCES`). A gate a
+project adds is recommended to have one too, not required.
 
 **Three tiers.** `poe fast` is the inner loop (format, lint, types, the project's own tests; no build, no Rust tests, no proofs). `poe
 check` is every gate except the *tests of the tooling*: the gate proofs (marked `gate`: each copies the workspace, writes one known-bad
@@ -91,7 +106,7 @@ golden file, sleep, mock of our own code) is worse than none: delete it. Reviewe
 - Expected values come from an independent oracle (standard, hand computation, exact arithmetic, brute-force reference), never the
   code's formula.
 - A test that builds large inputs bounds their size. Every task that runs tests goes through `tools/run_capped.py`, which kills
-  a runaway at the memory cap (`[tool.run-capped]`); so does a mutation run.
+  a runaway at the memory cap (`[tool.run-capped]`); so does a mutation run; never an allocator in a test binary.
 - Seeds pin determinism. No sleeps, live network or wall-clock assertions.
 - Tests run in random order (pytest-randomly; rerun with `-p randomly --randomly-seed=N`, disable with `-p no:randomly`); none
   may depend on another.
@@ -105,6 +120,16 @@ golden file, sleep, mock of our own code) is worse than none: delete it. Reviewe
 - **Slow tests in one file:** `--dist=loadfile` runs a test file on one worker, so a module-scoped fixture that spawns tools (ruff,
   mypy, poe, git) is built once. Do not use `xdist_group`: it does nothing with pytest 9.2 and xdist 3.8.
 
+**Rust tests: one binary, black-box by default.** A test goes in `crates/core/tests/it/` (one integration binary: `main.rs` with
+the boundary rule in its `//!`, a `mod` per area, helpers in `common/`) and uses `bullterrier_audio::..` public paths only. It stays inline
+(`#[cfg(test)]` next to its code) only when no public route reaches what it checks: a private kernel (`scaling::product`) or a
+`pub(crate)` item. Never widen an item to `pub`, or change visibility, to move a test out. Architecture scans
+(`tests/it/architecture.rs`) read `src/` through `CARGO_MANIFEST_DIR`, with a known-bad and a known-good row. A file
+`crates/*/tests/<name>.rs` is another executable: only when it needs a process of its own (a `#[global_allocator]`, process-wide
+state), listed with the reason in `[tool.rust-tests.own-binaries]` of `pyproject.toml`, its first line `//! Own binary: <why>`;
+the `rust-test-layout` gate fails any other. A binding crate has `[lib] test = false` and `doctest = false` (the Python suite
+tests it); the core has `doctest = false` (each doctest is an executable; set it to `true` only for an item whose docs need a
+runnable bullterrier-audio). Why: `docs/template-decisions.md`.
 
 **Tests describe behaviour, not implementation:** they must survive any behaviour-preserving refactor.
 - Never import underscore names, read production constants or private attributes, or call private functions. Worth testing means
@@ -131,9 +156,11 @@ for a tag, only if the push changes more than documentation, and not again for a
   which rule failed. Merge, revert and fixup commits git writes pass unchanged.
 - **Never `--no-verify`, skip, silence or loosen a hook:** fix the cause. If a rule is wrong, change it in `pyproject.toml` in its
   own commit and say why.
-- All tooling is configured in `pyproject.toml` (ruff, mypy, pytest, import-linter, commit-message, run-capped). Do not add
-  `ruff.toml`, `mypy.ini`, `setup.cfg`, `pytest.ini`, `.coveragerc` or similar (a test fails). Other config files:
-  `.pre-commit-config.yaml` (hook wiring only), `.editorconfig`, `.gitmessage`.
+- All Python tooling is configured in `pyproject.toml` (ruff, mypy, pytest, import-linter, commit-message, run-capped, rust-tests,
+  maturin), all Rust tooling in `Cargo.toml` (lints, pinned cargo tools). Do not add `ruff.toml`, `mypy.ini`, `setup.cfg`,
+  `pytest.ini`, `.coveragerc`, `.cargo/config.toml` or similar (a test fails). Other config files:
+  `.pre-commit-config.yaml` (hook wiring only), `.editorconfig`, `.gitmessage`, and, for Rust tools that cannot read
+  `Cargo.toml`, `rust-toolchain.toml`, `rustfmt.toml`, `deny.toml`, `clippy.toml` (root only; lint levels stay in `Cargo.toml`).
 
 ## Defaults
 
@@ -152,6 +179,8 @@ for a tag, only if the push changes more than documentation, and not again for a
 - **Mutation-check your tests:** break the code on purpose (a sign, a boundary, an ignored argument) and see a test fail. Surviving
   mutants on core behaviour are review findings. Run mutants through `tools/run_capped.py`; clear `__pycache__` between them.
 - Refactors prove behaviour is preserved by comparing outputs before and after, in the report, not committed.
+- Proptest's regression files (`crates/core/proptest-regressions/`, and `crates/core/tests/proptest-regressions/` for the tests of
+  `tests/it/`) are committed: each is a seed that replays a failure found once, not a golden output.
 - **Running:** one file or folder: `uv run pytest tests/test_cli.py -n 0` (`-p no:randomly` for fixed order); everything:
   `uv run poe test`.
 - **Fast feedback (agents):** while iterating run only the tests covering your change (mirror file or folder, or `-k <name>`). Run
@@ -161,6 +190,13 @@ for a tag, only if the push changes more than documentation, and not again for a
   `[tool.commit-message]`.
 - **Agents** end the message with `Co-Authored-By: <your model name> <noreply@anthropic.com>`.
 
+### Adding a macros crate
+
+Not in the template. When a project needs derives: `crates/macros` (`proc-macro = true`), added to `[workspace] members` and
+`[workspace.dependencies]`, and a dependency of the core. Its `[lib]` gets `test = false` and `doctest = false` (the core's tests
+exercise what it writes); its `Cargo.toml` is checked by `deny.toml` and cargo-shear like the others. Add a row to
+`OFFENCES` in `tests/tools/test_rust_gates.py` for it (an `unwrap` in the macros crate fails `rust-lint`), and name it in the
+Architecture section here. The core re-exports the derives; they only write code.
 
 ### Working style
 

@@ -1,5 +1,5 @@
-# Known vulnerabilities in the locked dependencies (pip-audit), code scanning (CodeQL), and the dependencies a pull
-# request adds (dependency review). Part of every CI run (ci.yml calls it,
+# Known vulnerabilities in the locked dependencies (pip-audit for Python, cargo-deny for Rust), code scanning (CodeQL,
+# Python and Rust), and the dependencies a pull request adds (dependency review). Part of every CI run (ci.yml calls it,
 # so a known vulnerability stops the build and the release), and on its own weekly, because advisories appear without
 # any change here, and by hand.
 # No `concurrency`: called from ci.yml, a group shared with a scheduled run could cancel CI's pending security job.
@@ -26,11 +26,22 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
-      # the tools only: the audit reads the lock file, so the package is not built. UV_NO_SYNC reaches the `uv run` poe
-      # runs each command with.
+      # rustup is on the runner; with no argument it installs the toolchain rust-toolchain.toml pins
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      # cargo-deny checks Cargo.lock against the RustSec advisories; its version is written once, in Cargo.toml's
+      # [workspace.metadata.tools], and install-action downloads a prebuilt, checksum-verified binary
+      - name: Read the cargo tools' versions (Cargo.toml)
+        id: cargo-tools
+        run: echo "specs=$(uv run --no-project python tools/rust_tools.py specs)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: ${{ steps.cargo-tools.outputs.specs }}
+      # the tools only: the audit reads the lock files, so the package and its Rust extension are not built; cargo-deny
+      # still needs the toolchain above for `cargo metadata`. UV_NO_SYNC reaches the `uv run` poe runs each command with.
       - name: Install the locked development tools, not the package
         run: uv sync --locked --no-install-project
-      - name: Python dependencies (pip-audit) against known vulnerabilities
+      - name: Python (pip-audit) and Rust (cargo-deny advisories) dependencies against known vulnerabilities
         run: uv run --no-sync poe audit
         env:
           UV_NO_SYNC: "1"
@@ -46,10 +57,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # reads the source as it is (build-mode none): nothing is compiled for the analysis
+      # rustup is on the runner; with no argument it installs the toolchain rust-toolchain.toml pins
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      # both read the source as it is (build-mode none): nothing is compiled for the analysis
       - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
-          languages: python
+          languages: python, rust
           build-mode: none
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
 

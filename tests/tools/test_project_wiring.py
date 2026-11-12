@@ -6,6 +6,7 @@ detector the rules use is shown a known-bad and a known-good input.
 """
 
 import itertools
+import json
 import re
 import shlex
 import shutil
@@ -19,8 +20,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 # the only commands that are not dev dependencies: tools every machine that can clone the repository already has, the
-# interpreter of the environment poe runs in
-SYSTEM_COMMANDS = {"git", "uv", "python"}
+# interpreter of the environment poe runs in, and cargo, which rustup installs at the version rust-toolchain.toml pins
+SYSTEM_COMMANDS = {"git", "uv", "python", "cargo"}
 # tool settings must live in pyproject.toml, never in the hook wiring
 TOOL_OPTIONS = ("--select", "--ignore", "--extend-select", "--line-length", "--config", "--strict", "--python-version")
 FIXING_OPTIONS = ("--fix", "--unsafe-fixes", "--write")
@@ -110,6 +111,8 @@ def test_every_poe_command_runs_a_dev_dependency_or_a_system_tool(pyproject, poe
     allowed = (
         dev_dependency_names(pyproject)
         | SYSTEM_COMMANDS
+        # the cargo tools Cargo.toml pins: `poe setup` installs them and `poe rust-tools` checks their versions
+        | set(tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["metadata"]["tools"])
         | set(pyproject["tool"].get("project-wiring", {}).get("system-commands", []))
     )
     for task, commands in poe_runs.items():
@@ -182,8 +185,9 @@ def test_every_stage_a_hook_runs_at_is_installed_by_a_bare_install(precommit):
     assert used <= installed, f"hooks run at {sorted(used - installed)}, which a bare install does not set up"
 
 
-# `uv run` options a hook may give: `--no-sync` runs the tool as the environment is, without syncing it first (the
-# commit hooks never import the package)
+# `uv run` options a hook may give: `--no-sync` runs the tool as the environment is, without rebuilding the Rust
+# extension first (the commit hooks never import the package, and a sync after a Rust change rebuilds it, which fails
+# on a commit that stages only part of the Rust changes)
 UV_RUN_OPTIONS = {"--no-sync"}
 
 
@@ -278,3 +282,65 @@ def test_every_poe_command_the_documentation_mentions_is_a_task(pyproject, docum
     mentioned = set(re.findall(r"uv run poe ([a-z][a-z-]*)", (ROOT / document).read_text(encoding="utf-8")))
     assert mentioned, f"{document} should mention at least one poe task"
     assert mentioned <= pyproject["tool"]["poe"]["tasks"].keys()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# names: the Rust crate a Rust user depends on is the Python package's twin
+
+
+def core_crate_names(workspace: Path) -> tuple[str, str]:
+    """The core crate's package and library names in the Cargo workspace at `workspace`, as cargo reports them (so a
+    library name left to cargo's default counts as what cargo makes of it)."""
+    result = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--offline", "--format-version", "1"],
+        cwd=workspace,
+        capture_output=True,
+        encoding="utf-8",
+        check=True,
+    )
+    core = (workspace / "crates" / "core" / "Cargo.toml").resolve()
+    [package] = [package for package in json.loads(result.stdout)["packages"] if Path(package["manifest_path"]) == core]
+    [library] = [target["name"] for target in package["targets"] if "lib" in target["kind"]]
+    return package["name"], library
+
+
+def public_names(pyproject) -> tuple[str, str]:
+    """The package's name on PyPI and the name it is imported by."""
+    return pyproject["project"]["name"], pyproject["tool"]["maturin"]["module-name"].split(".")[0]
+
+
+def test_the_core_crate_is_named_as_the_package_is_on_pypi_and_imported(pyproject):
+    """Naming rule: crates.io and PyPI carry the same name, and the crate's library the import name."""
+    assert core_crate_names(ROOT) == public_names(pyproject)
+
+
+CORE = "crates/core/Cargo.toml"
+RENAMED = {  # a way the core crate can drift from the public names -> its edits: (files, old text, new text)
+    # the library keeps the import name here, so only the package's name differs
+    "the package renamed": [
+        (
+            "Cargo.toml",
+            'bullterrier-audio = { path = "crates/core" }',
+            'bullterrier-audio-core = { path = "crates/core" }',
+        ),
+        (CORE, '[package]\nname = "bullterrier-audio"\n', '[package]\nname = "bullterrier-audio-core"\n'),
+        # every member that depends on the core (the bindings, and whatever crates the project adds)
+        ("crates/*/Cargo.toml", "bullterrier-audio.workspace", "bullterrier-audio-core.workspace"),
+    ],
+    "the library renamed": [
+        (CORE, '[lib]\nname = "bullterrier_audio"\n', '[lib]\nname = "bullterrier_audio_core"\n'),
+    ],
+}
+
+
+@pytest.mark.parametrize("edits", RENAMED.values(), ids=RENAMED.keys())
+def test_the_naming_rule_catches_a_core_crate_named_otherwise(pyproject, tmp_path, edits):
+    for name in ("Cargo.toml", "Cargo.lock"):
+        shutil.copy(ROOT / name, tmp_path)
+    shutil.copytree(ROOT / "crates", tmp_path / "crates", ignore=shutil.ignore_patterns("target"))
+    for pattern, old, new in edits:
+        holders = [path for path in tmp_path.glob(pattern) if old in path.read_text(encoding="utf-8")]
+        assert holders, f"no {pattern} holds {old!r}"
+        for path in holders:
+            path.write_text(path.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
+    assert core_crate_names(tmp_path) != public_names(pyproject)

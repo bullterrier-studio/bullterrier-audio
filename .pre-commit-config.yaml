@@ -20,8 +20,9 @@ repos:
   - repo: local
     hooks:
       # Hooks only check; they never rewrite staged files. The hook name is what pre-commit prints on a failure,
-      # so it carries the fix. ruff and the commit-message check run with `--no-sync`: neither imports the package.
-      # The pre-push gate syncs: it tests the package.
+      # so it carries the fix. ruff and the commit-message check run with `--no-sync`: neither imports the package,
+      # and syncing would rebuild the Rust extension after every Rust change (and fail on a commit that stages only
+      # part of one). The pre-push gate syncs: it tests the package.
       - id: ruff-format
         name: ruff-format (fix with `uv run poe fix`)
         entry: uv run --no-sync ruff format --check

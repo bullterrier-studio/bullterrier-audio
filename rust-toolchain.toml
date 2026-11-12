@@ -1,0 +1,5 @@
+# The Rust toolchain of this repository: rustup installs it on the first cargo command in the checkout.
+[toolchain]
+channel = "1.99.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

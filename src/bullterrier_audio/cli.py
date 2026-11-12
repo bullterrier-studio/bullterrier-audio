@@ -5,8 +5,11 @@ other input is a usage error.
 """
 
 import argparse
+import sys
 
 from . import __version__
+from ._native import _core
+from .errors import BullterrierAudioError
 
 _EXIT_CODES = """\
 exit codes:
@@ -24,11 +27,22 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="bt-audio",
-        description="Find what is in a sound and write it down as time-aligned data.",
+        description="A placeholder command line over the Rust core.",
         epilog=_EXIT_CODES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--version", action="version", version=f"bt-audio {__version__}")
-    parser.parse_args(argv)
-    parser.print_help()
+    commands = parser.add_subparsers(dest="command", metavar="COMMAND")
+    scaling = commands.add_parser("scale", help="multiply a value by a factor")
+    scaling.add_argument("value", type=float, help="the number to scale")
+    scaling.add_argument("factor", type=float, help="what to multiply it by")
+    args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
+        return 0
+    try:
+        print(_core.scale(args.value, args.factor))
+    except BullterrierAudioError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
     return 0

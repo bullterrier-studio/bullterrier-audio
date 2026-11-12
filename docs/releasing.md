@@ -6,13 +6,14 @@ How a change is checked on GitHub and how a version reaches PyPI. The short rule
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push to main, pull request and merge-queue entry, and by hand (Actions tab,
-*CI*, *Run workflow*). Stage 1 runs every check in parallel: `lint.yml` (format, lint, dead code, dependencies, types,
-workflows), `test.yml` (the suite on Linux, macOS and Windows, Python 3.12 to 3.14), `min-deps.yml` (the lowest allowed
+*CI*, *Run workflow*). Stage 1 runs every check in parallel: `lint.yml` (the Python and Rust gates: format, lint, dead code, dependencies, types,
+workflows), `test.yml` (the suite on Linux, macOS and Windows, Python 3.12 to 3.14, and `cargo test`), `min-deps.yml` (the lowest allowed
 dependencies), `security.yml` (pip-audit, CodeQL, and dependency review on pull requests) and `pre-commit.yml` (the
-commit hooks over every file). Stage 2, `build.yml`, only once every check passed: the sdist and the pure-Python wheel
-([which](template-decisions.md#platforms); no build cache), checked by twine and check-wheel-contents (`poe build-check`) and
-kept as one `dist` artifact; then the wheel is installed from that artifact alone on each platform and runs
-the project's smoke command (the template's: `bt-audio scale 3 2`). `ci-ok` waits for all of them and is
+commit hooks over every file). Stage 2, `build.yml`, only once every check passed: the sdist and one abi3 wheel per
+platform ([which](template-decisions.md#platforms); built with maturin-action, no build cache), checked by
+`tools/check_dists.py` and kept as one `dist` artifact; then each wheel is installed from that artifact alone on its
+own platform and the sdist is built on Linux, `tools/check_installed.py` names the file each came from, and each runs
+the project's smoke command (the template's: `bt-audio scale 3 2`), so the Rust extension runs. `ci-ok` waits for all of them and is
 the one required check. Each of these workflows can also be started by hand, and `security.yml` runs weekly on its
 own. A release runs the whole CI again and publishes only the files its build made, so nothing that fails a check can
 be built or published.

@@ -22,5 +22,22 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.12"
+      # rustup is on every runner; with no argument it installs the toolchain rust-toolchain.toml pins
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # the suite runs the cargo tools too (tests/tools/test_rust_gates.py); their versions are written once, in
+      # Cargo.toml's [workspace.metadata.tools], and install-action downloads prebuilt, checksum-verified binaries
+      - name: Read the cargo tools' versions (Cargo.toml)
+        id: cargo-tools
+        shell: bash
+        run: echo "specs=$(uv run --no-project python tools/rust_tools.py specs)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: ${{ steps.cargo-tools.outputs.specs }}
+      # every crate Cargo.lock names, for every platform and target: the dev-dependencies and the cargo-deny gate's
+      # metadata too, which building the extension does not download. The gates and tests below run cargo offline.
+      - name: Fetch the locked crates (cargo fetch)
+        run: cargo fetch --locked
       - name: Tests on the lowest allowed dependencies (pytest; skips and the 10 slowest tests are listed)
         run: uv run --locked poe check-min-deps -ra --durations=10

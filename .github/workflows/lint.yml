@@ -1,5 +1,5 @@
-# The static gates of `poe check`, each its own step so a failure names its tool, plus the workflow linters. Called by
-# ci.yml; can also be started by hand.
+# The static gates of `poe check`, Python and Rust, each its own step so a failure names its tool, plus the workflow
+# linters. Called by ci.yml; can also be started by hand.
 name: Lint
 
 on:
@@ -21,17 +21,49 @@ jobs:
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           enable-cache: true
-      - name: Install the locked dependencies
+      # rustup is on the runner; with no argument it installs the toolchain rust-toolchain.toml pins (rustfmt, clippy)
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # the versions are written once, in Cargo.toml's [workspace.metadata.tools]; install-action downloads prebuilt,
+      # checksum-verified binaries instead of building them
+      - name: Read the cargo tools' versions (Cargo.toml)
+        id: cargo-tools
+        run: echo "specs=$(uv run --no-project python tools/rust_tools.py specs)" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: ${{ steps.cargo-tools.outputs.specs }}
+      # every crate Cargo.lock names, for every platform and target: the dev-dependencies and the cargo-deny gate's
+      # metadata too, which building the extension does not download. The gates and tests below run cargo offline.
+      - name: Fetch the locked crates (cargo fetch)
+        run: cargo fetch --locked
+      - name: Install the locked dependencies (builds the Rust extension)
         run: uv sync --locked
       - name: Format (ruff format)
         run: uv run --locked ruff format --check .
+      - name: Format (rustfmt)
+        run: uv run --locked poe rust-fmt
       - name: Lint (ruff check)
         run: uv run --locked ruff check .
-      - name: Dead code (vulture)
+      - name: Lint (clippy)
+        run: uv run --locked poe rust-lint
+      - name: Dead code (vulture, the fields the Rust core reads excepted)
         run: uv run --locked poe dead-code && echo "vulture found no dead code"
+      - name: Rust documentation (rustdoc)
+        run: uv run --locked poe rust-doc
       - name: Dependencies (deptry)
         run: uv run --locked deptry .
+      - name: Cargo tools at the pinned versions
+        run: uv run --locked poe rust-tools
+      - name: Rust integration tests are one binary per crate
+        run: uv run --locked poe rust-test-layout
+      - name: Unused Rust dependencies (cargo-shear)
+        run: uv run --locked poe rust-shear
+      - name: Rust dependencies (cargo-deny bans, licenses, sources)
+        run: uv run --locked poe rust-deny
       - name: Types (mypy)
         run: uv run --locked mypy
+      - name: Stub of the Rust extension (stubtest)
+        run: uv run --locked poe stubtest
       - name: Workflows (actionlint, zizmor)
         run: uv run --locked poe lint-workflows

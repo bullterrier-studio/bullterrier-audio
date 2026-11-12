@@ -27,8 +27,8 @@ bullterrier-control's `docs/api.md`. Changing a call here is a design change: up
 import bullterrier_audio as bta
 
 song = bta.load("song.wav")
-kicks = song.hits(bta.Hit.KICK)            # list[Event]: t (s), strength 0..1
-bass = song.energy(bta.Band.BASS)          # Series: rate, values 0..1, scaling stated
+kicks = song.hits(bta.Hit.KICK)  # list[Event]: t (s), strength 0..1
+bass = song.energy(bta.Band.BASS)  # Series: rate, values 0..1, scaling stated
 ```
 
 ```rust
@@ -42,13 +42,13 @@ let bass = song.energy(Band::Bass)?;       // Series
 ## 2. List what is in a song
 
 ```python
-grid = song.grid()        # Grid: tempo (BPM), beats, downbeats, meter, confidence
-song.sections()           # list[Section]: start, end (s), label "A", "B", ..., confidence
-song.key()                # Key: tonic "F", mode Mode.MINOR, confidence
-song.drops()              # list[Event]
-song.onsets()             # list[Event]
-song.loudness()           # Series in decibels (EBU R128 short-term)
-song.brightness()         # Series in hertz (spectral centroid)
+grid = song.grid()  # Grid: tempo (BPM), beats, downbeats, meter, confidence
+song.sections()  # list[Section]: start, end (s), label "A", "B", ..., confidence
+song.key()  # Key: tonic "F", mode Mode.MINOR, confidence
+song.drops()  # list[Event]
+song.onsets()  # list[Event]
+song.loudness()  # Series in decibels (EBU R128 short-term)
+song.brightness()  # Series in hertz (spectral centroid)
 ```
 
 `print(song.summary())` gives the same as text; `bt-audio info song.wav` prints it.
@@ -56,7 +56,7 @@ song.brightness()         # Series in hertz (spectral centroid)
 ## 3. Ask a stem
 
 ```python
-stems = song.stems()                        # Stems: one Sound per Stem; separated once, cached
+stems = song.stems()  # Stems: one Sound per Stem; separated once, cached
 stems[bta.Stem.BASS].energy(bta.Band.SUB)
 stems[bta.Stem.VOCALS].sections()
 ```
@@ -69,14 +69,14 @@ let sub = stems[Stem::Bass].energy(Band::Sub)?;
 ## 4. The notes of a part
 
 ```python
-lead = song.notes()                          # list[Event]: t, duration, pitch (MIDI), strength; polyphonic, the mix
-bassline = stems[bta.Stem.BASS].notes()      # the same call on a stem
+lead = song.notes()  # list[Event]: t, duration, pitch (MIDI), strength; polyphonic, the mix
+bassline = stems[bta.Stem.BASS].notes()  # the same call on a stem
 ```
 
 ## 5. Hand everything to video or a file
 
 ```python
-song.bundle().write("song.bundle.json")      # every core measure, in control's Bundle format
+song.bundle().write("song.bundle.json")  # every core measure, in control's Bundle format
 ```
 
 ```rust
@@ -89,7 +89,7 @@ needs no conversion.
 ## 6. Cut, isolate and write sound
 
 ```python
-drop = song.cut(start=64.0, end=80.0)        # Sound: the clip, measured like a song
+drop = song.cut(start=64.0, end=80.0)  # Sound: the clip, measured like a song
 drop.energy(bta.Band.BASS)
 song.section(2).fade(in_=0.5, out=2.0).write("section-c.wav")
 stems[bta.Stem.BASS].write("bass.flac")
@@ -119,7 +119,8 @@ for beat in song.grid()?.beats() { /* ... */ }
 @bta.measure("pumping", unit="decibels")
 def pumping(sound: bta.Sound) -> bta.Series: ...
 
-song.measure("pumping")                      # registered measures are asked by name; bundle() includes them
+
+song.measure("pumping")  # registered measures are asked by name; bundle() includes them
 ```
 
 The Rust side is a trait (`Measure`) registered in a `Registry` value, as bullterrier-control's sources are. Built-in
