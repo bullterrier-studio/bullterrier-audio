@@ -8,7 +8,7 @@ message says what was wrong and what is valid. A subclass also inherits the buil
 Dependency direction: the bottom layer. It imports nothing from bullterrier_audio, so every layer may raise them.
 """
 
-__all__ = ["BullterrierAudioError", "InvalidError"]
+__all__ = ["BullterrierAudioError", "DecodeError", "InvalidError", "WriteError"]
 
 
 class BullterrierAudioError(Exception):
@@ -17,3 +17,11 @@ class BullterrierAudioError(Exception):
 
 class InvalidError(BullterrierAudioError, ValueError):
     """A value breaks a rule: the message names the argument and what is valid."""
+
+
+class DecodeError(BullterrierAudioError, OSError):
+    """A file cannot be read as sound: missing, not audio, or corrupt. The message names the file."""
+
+
+class WriteError(BullterrierAudioError, OSError):
+    """A file cannot be written. The message names the file."""

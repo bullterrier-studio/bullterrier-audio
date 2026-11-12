@@ -13,7 +13,7 @@ commit hooks over every file). Stage 2, `build.yml`, only once every check passe
 platform ([which](template-decisions.md#platforms); built with maturin-action, no build cache), checked by
 `tools/check_dists.py` and kept as one `dist` artifact; then each wheel is installed from that artifact alone on its
 own platform and the sdist is built on Linux, `tools/check_installed.py` names the file each came from, and each runs
-the project's smoke command (the template's: `bt-audio scale 3 2`), so the Rust extension runs. `ci-ok` waits for all of them and is
+the project's smoke command, so the Rust extension runs. `ci-ok` waits for all of them and is
 the one required check. Each of these workflows can also be started by hand, and `security.yml` runs weekly on its
 own. A release runs the whole CI again and publishes only the files its build made, so nothing that fails a check can
 be built or published.

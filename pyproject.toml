@@ -25,9 +25,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Typing :: Typed",
 ]
-# Each is declared with the first code that imports it (deptry fails on one nothing imports). None yet: the
-# extension is the whole runtime.
-dependencies = []
+# Each is declared with the first code that imports it (deptry fails on one nothing imports). numpy: the arrays
+# `Sound.samples` and `Sound.from_samples` exchange; 1.26 is the oldest release with wheels for Python 3.12.
+dependencies = ["numpy>=1.26"]
 
 [project.urls]
 Repository = "https://github.com/bullterrier-studio/bullterrier-audio"

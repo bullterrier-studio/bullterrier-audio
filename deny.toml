@@ -24,9 +24,8 @@ wildcards = "deny"
 allow-wildcard-paths = true  # the workspace's own crates depend on each other by path
 # Python reaches the core only through the bindings crate: the core stays pure Rust, with no PyO3 in it
 deny = [
-    { crate = "pyo3", wrappers = ["bullterrier-audio-python"] },
-    # not used yet: banned outright, so the first crate to use it (the bindings) names itself as a wrapper here
-    { crate = "numpy" },
+    { crate = "pyo3", wrappers = ["bullterrier-audio-python", "numpy"] },
+    { crate = "numpy", wrappers = ["bullterrier-audio-python"] },
     { crate = "pyo3-ffi", wrappers = ["pyo3"] },
     { crate = "pyo3-build-config", wrappers = ["pyo3", "pyo3-ffi"] },
 ]

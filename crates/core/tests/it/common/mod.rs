@@ -3,13 +3,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use proptest::prelude::*;
-
-/// Finite numbers, from tiny to huge: the arguments `scale` accepts (their product may still overflow).
-pub(crate) fn finite() -> impl Strategy<Value = f64> {
-    prop_oneof![-1.0e6..1.0e6, -1.0e300..1.0e300, -1.0e-300..1.0e-300]
-}
-
 /// Every `.rs` file under `dir`, sorted.
 pub(crate) fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();

@@ -300,22 +300,22 @@ def test_the_stub_as_it_is_matches_the_extension(project_copy, copy_env):
     assert verdict.returncode == 0, verdict.report
 
 
-# A function left out of the stub is not a row: the package imports `scale`, so mypy reports it first and stubtest does
+# A function left out of the stub is not a row: the package imports `load`, so mypy reports it first and stubtest does
 # not run.
 @pytest.mark.typecheck
 @pytest.mark.parametrize(
     ("old", "new", "named"),
     [
         pytest.param(
-            "def scale(value: float, factor: float) -> float: ...\n",
-            "def scale(value: float, factor: float) -> float: ...\ndef ghost() -> int: ...\n",
+            "def load(path: str | PathLike[str]) -> Sound: ...\n",
+            "def load(path: str | PathLike[str]) -> Sound: ...\ndef ghost() -> int: ...\n",
             f"{EXTENSION}.ghost",
             id="a function the extension lacks",
         ),
         pytest.param(
-            "def scale(value: float, factor: float) -> float: ...\n",
-            "def scale(value: float, factor: float, extra: int) -> float: ...\n",
-            f"{EXTENSION}.scale",
+            "def load(path: str | PathLike[str]) -> Sound: ...\n",
+            "def load(path: str | PathLike[str], extra: int) -> Sound: ...\n",
+            f"{EXTENSION}.load",
             id="a parameter the extension lacks",
         ),
     ],
