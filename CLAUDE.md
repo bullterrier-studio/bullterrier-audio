@@ -16,8 +16,8 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: A6 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (next: A7, measures by name and the API review). Much of the analysis exists in earlier
+**State: A7 done (the first release is the owner's).** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+before it starts: `docs/roadmap.md` (the core roadmap is complete; what is on demand is in the roadmap). Much of the analysis exists in earlier
 experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
 and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
 never commit or cite them.
@@ -59,9 +59,9 @@ importing control**: a copy of control's JSON Schema lives here and a conformanc
 ## Names
 
 `bullterrier-audio` (PyPI, repository), `bullterrier_audio` (import; docs alias `bta`), `bt-audio` (command, `bt-audio.toml`,
-cache folder), `BT_AUDIO_*` (env vars), `BullterrierAudioError` (base exception), `bullterrier_audio.analysers` (plugin group,
-declared with the first analyser). Full name for identity, `bt-` for what a person types. Names inside the package (`analyse`,
-`Analysis`, analysers) carry no prefix.
+cache folder), `BT_AUDIO_*` (env vars), `BullterrierAudioError` (base exception), `bullterrier_audio.measures` (plugin group of the
+entry points). Full name for identity, `bt-` for what a person types. Names inside the package (`analyse`, `Analysis`, measures)
+carry no prefix.
 
 ## Architecture
 
@@ -79,7 +79,9 @@ Rust (`crates/core`, pure: no PyO3, no numpy): `sound` (`Sound`, `Origin`, the e
 (rubato), `write` (hound, flacenc), `formats` (control's bundle v1 written from plain types; the writer enforces the rules the
 schema cannot), `analysis` (`Analysis`: the parameters of every measure, declared once), `spectrum` (the one STFT and the
 bands), `loudness` (EBU R128 through `ebur128`), `onsets`, `structure` (`Structure`: the parameters of the A3 measures), `grid`, `sections`, `key`, `drops`, `bundle`, `models/` (the
-ONNX runtime, verified downloads, the catalogue; feature `onnx`), `infer` (the `Infer` seam), `notes` (`Notes` parameters), `stems` / `separation` / `stem_cache` (Demucs separation, `Separation`, the disk cache), `hits` / `hits_params` (ADTOF drum hits), `error`. A
+ONNX runtime, verified downloads, the catalogue; feature `onnx`), `infer` (the `Infer` seam), `notes` (`Notes` parameters), `stems` / `separation` / `stem_cache` (Demucs separation, `Separation`, the disk cache), `hits` / `hits_params` (ADTOF drum hits), `measure` / `registry` / `builtin` (measures by name: the `Measure` trait, the `Registry`
+value and the twelve built-ins that `bundle()` collects), `error`. Parameter structs are built from a parts struct:
+`Structure::new(StructureParts { tempo_max: 170.0, ..Default::default() })?`. A
 `Sound` memoises its measures (an edit starts empty).
 `crates/python` maps calls and errors only. Errors: `Decode` and `Write` are also `OSError`,
 `Invalid` is also `ValueError`.
@@ -100,12 +102,15 @@ where they are stricter. This file is the project's: an update never changes it.
 2. **Analysers never import each other.** Shared numeric code goes to a module named for its concept (`spectrum`, `onsets`,
    `grid`).
 3. **Parameters are declared once**, with unit, range and description.
-4. **Open/closed:** adding an analyser creates files named for it and modifies none.
+4. **Open/closed at the plugin boundary:** a plugin measure modifies nothing in the package (it registers by name, decorator or
+   entry point). A built-in measure is one file plus one line in the built-in list of `Registry::builtin()` (amended in A7: a
+   hand-kept list instead of discovery at build time; the cost is that one line).
 5. **Nothing tuned to one song.** Every threshold is relative to the input (its own levels, percentiles, tempo) or a named,
    documented parameter with its evidence. No song, artist or preset names in code, docstrings or comments.
 6. **Determinism:** same input and settings give the same analysis on the same machine and library versions; models run with
    fixed seeds; no global random state.
-7. **The contract runs over every analyser**, found automatically: a new analyser needs no test registration.
+7. **The contract runs over every registered measure**, found automatically (`tests/test_contract.py`, and its Rust twin over
+   `Registry::builtin()`): a new measure needs no test registration.
 
 ## Audio's standards
 
@@ -124,7 +129,7 @@ where they are stricter. This file is the project's: an update never changes it.
 unit (`seconds`, `beats`, `hz`, `decibels`, `semitones`, `count`, `fraction`), a range that holds the default, and a description.
 Use the field's own terms (window, hop, band, threshold, tolerance, floor), never `strength`, `factor`, `val`, `k`. A threshold is
 relative to the input (a share of its loudness, a percentile of its own values) and says so in the unit and description; an
-absolute one carries its evidence. A bad value fails at construction, naming analyser, field, constraint and value.
+absolute one carries its evidence. A bad value fails at construction, naming struct, field, constraint and value.
 
 ## Skills
 

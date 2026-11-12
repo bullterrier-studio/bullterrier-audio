@@ -18,7 +18,7 @@ into one of those seams.
 | A4 | Models, and notes | M | an ONNX model behind a method | done |
 | A5 | Stems | L | a stem is a `Sound` | done |
 | A6 | Drum hits | M | labelled events from a part | done |
-| A7 | Measures by name, API review, first release | M | the extension point | |
+| A7 | Measures by name, API review, first release | M | the extension point | done (release: owner) |
 
 ## A1 Rust core, `Sound`, edits, formats out (done)
 
@@ -30,7 +30,7 @@ into one of those seams.
 - `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), `duration`,
   `channels`. `DecodeError` names the file and the reason.
 - Edits that return a `Sound`: `cut(start, end)` (with `origin`), `fade`, `mono`, `resampled(rate)`, `normalised(lufs=)`
-  (needs A2's loudness: lands there); `write(path)` as wav and flac. Parameter structs wait for the first analyser (A2).
+  (needs A2's loudness: lands there); `write(path)` as wav and flac. Parameter structs wait for the first measure that needs them (A2).
 - Oracles for edits: a cut's length is `round(end*rate) - round(start*rate)`; a write then load gives the samples back
   (lossless); a fade's gain curve matches its formula at known samples. "Cutting then measuring equals measuring then taking
   the same span (within one hop)" moves to A2, which has the first measure.
@@ -131,14 +131,20 @@ not exposed. The kick class also hears kick tails on synthetic kicks (precision 
 - `hits(kind=None)`: `Event`s labelled `kick`, `snare`, `hat`; on the mix it separates the drums itself.
 - Oracles: drum parts sequenced from synthesised one-shots, with the truth by construction.
 
-## A7 Measures by name, API review, first release
+## A7 Measures by name, API review, first release (done, except the release)
+
+Built: `Measure`, `Measurement`, `Registry` (Rust); `@bta.measure`, `bta.measures()`, `bta.plugin.isolated()`, the
+`bullterrier_audio.measures` entry-point group (Python); the contract over every registered measure (Python and Rust); parameter
+structs built from parts structs; catalogue entries as constants. `bundle()` and `bt-audio analyse` collect the registry.
+The first release (`poe release`, tags, PyPI trusted publishing) is the owner's. Left for the owner or a template change: the core
+crate's `default = ["onnx"]` (the template's wiring test forbids enabling the feature from the Python crate).
 
 - `Measure` trait and `Registry` value in Rust; `@bta.measure` and the `bullterrier_audio.measures` entry-point group in
   Python; built-ins registered; `song.measure(name)`; `bundle()` and the command include registered measures.
 - The contract runs over every registered measure: seconds only, events inside the file, units from the list, a stated scaling
   for every 0..1 series, determinism.
 - API review against api.md (deep modules, one way per measure, no leaked internals); fix before release.
-- First release: GitHub CI green, trusted publishing, `uv run poe release 0.1.0rc1`, then `0.1.0`.
+- First release: GitHub CI green, trusted publishing, `uv run poe release 0.1.0rc1`, then `0.1.0` (the owner runs it).
 
 ## On demand, after the core
 

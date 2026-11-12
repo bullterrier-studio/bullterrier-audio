@@ -172,9 +172,24 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   merge within 20 ms; the prototype's one-song snare threshold 0.14 is not used. *Cost:* the weights are CC BY-NC-SA 4.0
   (recorded, not gating until a commercial release); memory is about 5 MB per second of audio, so a drums stem over 650 s is refused; a whole mix is limited earlier by the separator (440 s; measured peak 3.2 GB at 440 s).
 
+- **Measures by name: a trait, a Registry value, one plugin boundary** (2026-11-12). `Measure` (name, description, unit, scaling, identity,
+  `measure(&Sound)`) returns a `Measurement` (a `Series` or a list of `Event`s); `Registry` is a value (`builtin()`, `new()`, `register`,
+  `get`, sorted `names`), as bullterrier-control's is. The twelve built-ins (`energy.sub` … `energy.air`, `brightness`, `loudness`,
+  `onsets`, `sections`, `drops`, `key`) are registered under the names `bundle()` always wrote (a test pinned the bundle byte for byte
+  before and after); `grid` stays the bundle's typed slot, and `notes`, `hits`, `stems` are typed methods, not registered, because a
+  bundle must not depend on a download. Series and events share one namespace; a built-in name can never be replaced; the same
+  identity registered again replaces itself (a reloaded module). Registration checks the name (the bundle's pattern), the description
+  and the unit/scaling pair once; `bundle()` checks the returned kind and unit against the declaration and the writer checks the
+  format. A plugin's own exception is re-raised unchanged. Plugin results are not memoised (a `shortcut:` comment): asking twice runs
+  it twice. Python holds one process-wide registry; entry points of `bullterrier_audio.measures` load lazily on the first query, never
+  at import, one failing entry point is restored and named. *Rule 4 was amended*: a built-in is one file plus one line in the list.
+- **Parameter structs are built from a parts struct** (2026-11-12): `Structure::new(StructureParts { tempo_max: 170.0,
+  ..Default::default() })?` replaced positional constructors of up to fifteen arguments; validation still happens once at
+  construction and the defaults live in one place. The catalogue's entries are named constants, not indices.
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI
   workflows and release command). Its reasons are in `docs/template-decisions.md`; a fix arrives with `copier update`.
 - **The version is 0.0.0 until the first release.** `poe release` accepts only a version above the one in `pyproject.toml`.
-- **The entry-point group `bullterrier_audio.analysers` is declared with the first analyser and its registry.**
+- **The entry-point group is `bullterrier_audio.measures`** (it was `analysers` in the scaffold; A7 renamed it with the registry).

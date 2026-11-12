@@ -153,14 +153,23 @@ for beat in song.grid()?.beats() { /* ... */ }
 
 ```python
 @bta.measure("pumping", unit="decibels")
-def pumping(sound: bta.Sound) -> bta.Series: ...
+def pumping(sound: bta.Sound) -> bta.Series:
+    """How far the level dips on each kick."""
+    ...
 
 
-song.measure("pumping")  # registered measures are asked by name; bundle() includes them
+song.measure("pumping")  # registered measures are asked by name; bundle() and `bt-audio analyse` include them
+bta.measures()  # every name, built-ins and plugins, sorted
 ```
 
-The Rust side is a trait (`Measure`) registered in a `Registry` value, as bullterrier-control's sources are. Built-in
-measures are registered too, so `bundle()` and the command list them all; the typed methods are how built-ins are asked.
+The Rust side is a trait (`Measure`) registered in a `Registry` value, as bullterrier-control's sources are
+(`song.bundle_with(&registry)`, `song.measure_with(&registry, "name")`). The twelve built-ins are registered too
+(`energy.sub` … `energy.air`, `brightness`, `loudness`, `onsets`, `sections`, `drops`, `key`); `notes`, `hits` and `stems` need a
+download and stay typed methods. A package registers measures by naming a module in the `bullterrier_audio.measures` entry-point
+group (`[project.entry-points."bullterrier_audio.measures"]`); entry points load on the first query, never at import. A name must
+match `^[a-z0-9][a-z0-9_.-]*$`, series and events share one namespace, a built-in name cannot be replaced, a returned unit
+must be the declared one, and an exception a measure raises reaches the caller unchanged. `bta.plugin.isolated()` gives a plugin
+author's tests a registry with only the built-ins.
 
 ## Decisions the tasks force
 
