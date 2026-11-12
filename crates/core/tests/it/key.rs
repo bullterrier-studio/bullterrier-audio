@@ -155,6 +155,17 @@ fn a_quiet_wrong_chord_does_not_outvote_a_loud_right_progression() -> Outcome {
 }
 
 #[test]
+fn chords_weigh_by_power_not_by_amplitude() -> Outcome {
+    // 8 s of C F G C at amplitude 0.2, then 20 s of F# B C# F# at 0.1. Power weighs the first 0.2^2 * 8 = 0.32 against
+    // 0.1^2 * 20 = 0.20 for the second, so C major; amplitude would weigh 1.6 against 2.0 and read F# major.
+    let mut samples = triads(&C_F_G_C, 2.0, 0.2);
+    samples.extend(triads(&[(6, false), (11, false), (13, false), (6, false)], 5.0, 0.1));
+    let key = Sound::from_samples(vec![samples], RATE)?.key()?;
+    assert_eq!((key.tonic, key.mode), (PitchClass::C, Mode::Major), "{key:?}");
+    Ok(())
+}
+
+#[test]
 fn the_pitch_range_decides_what_counts_as_pitch() -> Outcome {
     // C F G C plus a loud steady tone: B1 (61.7 Hz) below the default range, F#8 (5919.9 Hz) above it
     let rows = [
@@ -217,12 +228,17 @@ fn structure_refuses_a_pitch_range_outside_its_limits() {
 
 #[test]
 fn a_stereo_sound_is_read_as_its_mixdown() -> Outcome {
+    // the mixdown of a left channel and silence is the left channel at half the level: a mono sound built apart
     let left = triads(&AM_DM_E_AM, CHORD, 0.2);
     let stereo = Sound::from_samples(vec![left.clone(), vec![0.0; left.len()]], RATE)?;
-    let (mixed, mono) = (stereo.key()?, stereo.mono().key()?);
+    let mono = Sound::from_samples(vec![triads(&AM_DM_E_AM, CHORD, 0.1)], RATE)?;
+    let (mixed, expected) = (stereo.key()?, mono.key()?);
     assert_eq!((mixed.tonic, mixed.mode), (PitchClass::A, Mode::Minor));
-    assert_eq!((mixed.tonic, mixed.mode), (mono.tonic, mono.mode));
-    assert!((mixed.confidence - mono.confidence).abs() < 1e-6);
+    assert_eq!((mixed.tonic, mixed.mode), (expected.tonic, expected.mode));
+    assert!(
+        (mixed.confidence - expected.confidence).abs() < 1e-4,
+        "{mixed:?} vs {expected:?}"
+    );
     Ok(())
 }
 
@@ -237,7 +253,6 @@ fn the_first_chord_of_a_progression_is_the_key_of_its_triad() -> Outcome {
 fn the_key_is_deterministic_and_independent_of_the_analysis_hop() -> Outcome {
     let sound = progression(&AM_DM_E_AM)?;
     let key = sound.key()?;
-    assert_eq!(key, sound.key()?);
     assert_eq!(key, progression(&AM_DM_E_AM)?.key()?);
     let coarse = Analysis::new(0.0464, 0.05, 0.03, 0.05, 0.1, 0.1, -80.0)?;
     assert_eq!(key, sound.with_analysis(coarse).key()?);

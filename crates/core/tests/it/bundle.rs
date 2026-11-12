@@ -2,7 +2,12 @@
 //! and key are known by construction.
 
 // bar counts in these tests stay far below 2^52; a failed assert_eq! on whole series would build a diff of the buffers
-#![allow(clippy::cast_precision_loss, clippy::manual_assert_eq)]
+#![allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::manual_assert_eq
+)]
 
 use std::sync::LazyLock;
 
@@ -12,7 +17,7 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 use crate::common::arrangement::{BAR, BEAT, Hats, MinorPad, Pad, arrangement, full, top};
-use crate::common::{Outcome, sine, valid_for_its_version};
+use crate::common::{Outcome, clicks, sine, valid_for_its_version};
 
 const BARS: usize = 24;
 const TOLERANCE: f64 = 0.03;
@@ -155,11 +160,31 @@ fn each_energy_series_is_the_band_it_is_named_for() -> Outcome {
             "{name}"
         );
     }
-    assert!(bundle.series["loudness"] == sound.loudness()?);
     assert!(bundle.series["brightness"] == sound.brightness()?);
     assert!(bundle.events["onsets"] == sound.onsets()?);
     assert!(bundle.events["drops"] == sound.drops()?);
     assert!(bundle.grid == Some(sound.grid()?));
+    Ok(())
+}
+
+#[test]
+fn the_loudness_series_is_the_short_term_loudness_of_a_known_level() -> Outcome {
+    // a 1 kHz tone of amplitude 10^(-23/20) on both channels reads -23 LUFS (0 dBFS dual mono is 0 LUFS: EBU R128)
+    let (seconds, amplitude) = (8_usize, 10.0_f64.powf(-23.0 / 20.0));
+    // faint clicks every half second give the bundle the beats it needs; their power is under 0.1 % of the tone's
+    let at: Vec<(f64, f64)> = (0..15).map(|k| (0.1 + f64::from(k) * 0.5, 0.01)).collect();
+    let mut tone = sine(1000.0, amplitude, 44100, seconds * 44100);
+    for (sample, click) in tone.iter_mut().zip(clicks(&at, 44100, seconds as f64)) {
+        *sample += click;
+    }
+    let sound = Sound::from_samples(vec![tone.clone(), tone], 44100)?;
+    let loudness = &sound.bundle()?.series["loudness"];
+    assert_eq!(loudness.start, 3.0);
+    assert!((loudness.rate - 1.0 / sound.analysis().hop()).abs() < 1e-9);
+    let windows = ((seconds as f64 - 3.0) * loudness.rate).floor() as usize + 1;
+    assert_eq!(loudness.values.len(), windows);
+    let worst = loudness.values.iter().map(|v| (v + 23.0).abs()).fold(0.0, f64::max);
+    assert!(worst < 0.1, "{worst} LU from -23");
     Ok(())
 }
 

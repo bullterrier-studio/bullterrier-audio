@@ -246,7 +246,10 @@ fn a_rise_beyond_the_span_is_as_strong_as_it_gets() -> Outcome {
     let drops = sound.drops()?;
     let strengths: Vec<(f64, f64)> = drops.iter().map(|d| (d.t / BAR, d.strength)).collect();
     assert_eq!(drops.len(), 2, "{strengths:?}");
-    assert!((strengths[1].0 - 30.0).abs() < 0.1 && strengths[1].1 == 1.0, "{strengths:?}");
+    assert!(
+        (strengths[1].0 - 30.0).abs() < 0.1 && (strengths[1].1 - 1.0).abs() < 1e-12,
+        "{strengths:?}"
+    );
     Ok(())
 }
 

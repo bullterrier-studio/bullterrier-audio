@@ -269,11 +269,20 @@ fn a_cut_snapped_from_a_bar_without_room_keeps_a_confidence_of_at_most_one() -> 
     let sound = at120(
         0.0,
         0.0,
-        &[(3, tones(0)), (5, tones(0b111111)), (4, tones(0b011111)), (4, tones(0b001111)), (4, tones(0b000111))],
+        &[
+            (3, tones(0)),
+            (5, tones(0b11_1111)),
+            (4, tones(0b01_1111)),
+            (4, tones(0b00_1111)),
+            (4, tones(0b00_0111)),
+        ],
     )?
     .with_structure(structure(4, 0.3, 3.0, Some(4), 1.0));
     let sections = sound.sections()?;
-    assert!(sections.iter().all(|s| (0.0..=1.0).contains(&s.confidence)), "{sections:?}");
+    assert!(
+        sections.iter().all(|s| (0.0..=1.0).contains(&s.confidence)),
+        "{sections:?}"
+    );
     sound.bundle()?;
     Ok(())
 }
