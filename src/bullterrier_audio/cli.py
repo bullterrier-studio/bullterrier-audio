@@ -7,7 +7,8 @@ answer, and any other input is a usage error.
 import argparse
 import sys
 
-from . import __version__, load
+from . import __version__
+from ._native._core import load
 from .errors import BullterrierAudioError
 
 _EXIT_CODES = """\
