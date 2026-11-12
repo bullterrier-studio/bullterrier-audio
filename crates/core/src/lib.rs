@@ -8,6 +8,7 @@
 
 mod decode;
 mod error;
+pub mod formats;
 mod resample;
 mod scaling;
 mod sound;

@@ -6,5 +6,6 @@ mod common;
 
 mod architecture;
 mod edits;
+mod formats;
 mod scale;
 mod sound;
