@@ -1,5 +1,4 @@
 import math
-import time
 from typing import Any
 
 import numpy as np
@@ -380,15 +379,12 @@ def test_the_parts_of_every_section_add_up_to_1(song_mix, song_stems):
 
 
 @pytest.mark.models
-def test_the_second_separation_of_an_equal_sound_is_read_from_the_cache(song_mix, kept_stems_cache):
-    def timed(cache: bool):
-        sound = Sound.from_samples(song_mix, 44100).with_separation(cache=cache)
-        start = time.perf_counter()
-        stems = sound.stems()
-        return stems, time.perf_counter() - start
+def test_the_second_separation_of_an_equal_sound_is_read_from_the_cache(song_mix, kept_stems_cache, monkeypatch):
+    def separated():
+        return Sound.from_samples(song_mix, 44100).with_separation(cache=True).stems()
 
-    uncached, computed = timed(False)
-    timed(True)  # computes and stores, or reads what an earlier run left
-    again, read = timed(True)
-    assert read < computed / 2
-    assert all(np.array_equal(again[stem].samples, uncached[stem].samples) for stem in STEM_ORDER)
+    first = separated()  # computes and stores, or reads what an earlier run left
+    # a hit needs no runtime: with the library gone, only a read can succeed
+    monkeypatch.setenv("BT_AUDIO_ONNX_LIB", "/no-such-dir/libonnxruntime.dylib")
+    again = separated()
+    assert all(np.array_equal(again[stem].samples, first[stem].samples) for stem in STEM_ORDER)

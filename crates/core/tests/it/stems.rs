@@ -1409,8 +1409,9 @@ mod real_model {
             "the stems' sum differs from the mix by {:.2} % of its energy",
             100.0 * difference / energy
         );
+        // measured 1.5 % (Apple silicon, ONNX Runtime 1.23.2); the bound is a third of the 0.1 it was, still structural
         assert!(
-            difference / energy < 0.1,
+            difference / energy < 0.05,
             "the stems must add up to the mix: {}",
             difference / energy
         );
@@ -1428,7 +1429,8 @@ mod real_model {
             (low + if hz(bin) < 250.0 { power } else { 0.0 }, all + power)
         });
         println!("bass stem: {:.1} % of the energy under 250 Hz", 100.0 * low / all);
-        assert!(low / all > 0.5, "the bass stem is not low: {}", low / all);
+        // measured 99.8 %: a bass stem that is not low is wrong, whatever its SDR
+        assert!(low / all > 0.9, "the bass stem is not low: {}", low / all);
 
         // the drums stem: the share of its energy within 50 ms after a click
         let drums = &stems.get(Stem::Drums).samples()[0];
@@ -1447,7 +1449,8 @@ mod real_model {
             "drums stem: {:.1} % of the energy within 50 ms after a click (10 % of the time)",
             100.0 * on / total
         );
-        assert!(on / total > 0.3, "the drums stem is not at the clicks: {}", on / total);
+        // measured 99.6 % (10 % of the time): chance is 0.1
+        assert!(on / total > 0.8, "the drums stem is not at the clicks: {}", on / total);
         Ok(())
     }
 
@@ -1562,7 +1565,7 @@ mod real_model {
 
     #[test]
     #[ignore = "needs the installed model: poe rust-test-models"]
-    fn the_second_separation_of_an_equal_sound_is_read_from_the_cache() -> Outcome {
+    fn the_second_separation_of_an_equal_sound_is_stored_once_and_read_back() -> Outcome {
         let _one = one_at_a_time();
         let cache = bullterrier_audio::models::cache_dir()?.join("stems");
         let before: Vec<_> = std::fs::read_dir(&cache)
@@ -1572,11 +1575,8 @@ mod real_model {
         let make = || -> Result<Sound, Error> {
             Ok(sound(samples.clone(), RATE)?.with_separation(Separation::new(0, false, 0, true, 4)?))
         };
-        let (start, first) = (std::time::Instant::now(), make()?.stems()?);
-        let computed = start.elapsed().as_secs_f64();
-        let (start, second) = (std::time::Instant::now(), make()?.stems()?);
-        let read = start.elapsed().as_secs_f64();
-        println!("computed in {computed:.2} s, read back in {read:.2} s");
+        // that the second does no model work is proved with a counting stand-in (`cache`), not by timing
+        let (first, second) = (make()?.stems()?, make()?.stems()?);
         assert!(same(&second, &first));
         let created: Vec<_> = std::fs::read_dir(&cache)?
             .filter_map(|e| e.ok().map(|e| e.path()))
@@ -1586,7 +1586,6 @@ mod real_model {
         for folder in created {
             std::fs::remove_dir_all(folder)?;
         }
-        assert!(read < computed / 2.0, "{read} {computed}");
         Ok(())
     }
 }
