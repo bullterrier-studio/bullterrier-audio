@@ -1,62 +1,127 @@
 # Roadmap
 
-Batches of work, in order. Each batch gets its own plan before work starts. Sizes: **S** about one working session,
-**M** two or three, **L** four or more. Decisions behind the batches: [design-decisions.md](design-decisions.md).
-Much of this package's work exists in earlier experiments (a song-to-Sonic-Pi rebuild tool and an audio-reactive video
-prototype); batches extract and re-test it, they do not invent it.
+Batches in order. Each gets its own plan before work starts. Sizes: **S** about one working session, **M** two or three,
+**L** four or more. The calls each batch builds are in [api.md](api.md); the decisions behind them in
+[design-decisions.md](design-decisions.md). Much of the analysis exists in earlier experiments: batches port and re-test it
+against oracles, they do not invent it, and they port none of the experiments' song-tuned thresholds unchecked.
 
-| # | Batch | Size | State |
-|---|---|---|---|
-| A0 | Scaffold: gate, hooks, CI, release tooling, CLAUDE.md | S | done |
-| A1 | `analyse()`: the clock, sections and band energies | L | waits for bullterrier-control C0 (formats) |
-| A2 | Stems, drum hits, builds and drops | L | |
-| A3 | Notes, contours, voices | L | |
-| A4 | Measured modulation | M | |
-| A5 | First release | S | |
+**The core** (A1-A7) proves every seam once: decoding and formats out, a DSP measure family, a model-backed measure, stems,
+labelled and pitched events, and the extension point. After A7, every further measure is a feature on demand that plugs
+into one of those seams.
 
-## A1 analyse()
+| # | Batch | Size | Seam it proves | State |
+|---|---|---|---|---|
+| A0 | Scaffold: gate, hooks, CI, release tooling, CLAUDE.md | S | | done |
+| A1 | Rust core, `Sound`, cache, formats out | M | decode → `Sound` → Bundle | |
+| A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | |
+| A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | |
+| A4 | Models, and notes | M | an ONNX model behind a method | |
+| A5 | Stems | L | a stem is a `Sound` | |
+| A6 | Drum hits | M | labelled events from a part | |
+| A7 | Measures by name, API review, first release | M | the extension point | |
 
-One deep call: `analyse(path) -> Analysis` with the grid, sections, events by kind and series by name, cached per input.
-- Workspace: artifacts of one song computed on demand, cached by input fingerprint and producer version.
-- Grid: tempo (tempogram peaks folded into a musical range by how well each grid explains the onsets), grid phase, downbeat,
-  meter; a tempo map later.
-- Sections: novelty on per-bar band energies, labels shared by similar sections (k grown until each cluster is tight).
-- Key.
-- Events: onsets (strength 0..1), beats, downbeats. Times are seconds. Detection does not depend on the analysis hop: the same
-  song analysed at two hop sizes finds the same onsets (and, from A2, the same kicks) within one hop, and a strength keeps its
-  0..1 meaning. A test proves it. Why: a prototype that detected kicks as jumps in a bass band had to rescale its threshold when
-  its frame rate changed from 20 to 30 per second; a consumer must be able to change its frame rate without touching a threshold.
-- Series: energy per band (sub, bass, low-mid, mid, high), loudness, spectral centroid, onset strength; scaling documented,
-  no smoothing for taste.
-- Writes and validates control's formats (schema copy plus conformance test); `bt-audio analyse SONG -o DIR`.
-- Python 3.14: librosa needs numba; check wheels before widening the supported range.
+## A1 Rust core, `Sound`, cache, formats out
 
-## A2 Stems, drum hits, builds and drops
+- Switch to the template's Rust layout (`copier update` with `rust: true`; not hand-made crates): `crates/core`
+  (`bullterrier-audio`), `crates/python` (`_core`), the Python package as a thin facade with a typed stub.
+- Record the language decision (design-decisions) and update `CLAUDE.md` (state, architecture, parameters as Rust structs).
+  Ask the owner to update the ecosystem text in the design notes and in control's and image's `docs/ecosystem.md`, which
+  still say models are Python adapters (image already runs ONNX in Rust).
+- `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), resampling to the analysis rate, `duration`,
+  `channels`. `DecodeError` names the file and the reason.
+- Cache: the whole-file fingerprint plus producer identity; in memory per `Sound`, on disk in the `bt-audio` cache folder;
+  immutable artifacts.
+- Formats: own `Series`, `Event`, `Grid`, `Bundle` types that write control's bundle format, with a copy of its schema. The
+  writer enforces the rules the schema cannot express (events sorted by time, durations inside the file, beats strictly
+  increasing, fractions in 0..1, finite numbers); the conformance test runs every output through the schema and those rules.
+- `bt-audio info FILE`.
+- Oracles: synthesised files written in the test (a sine of known length and rate decodes to that length; the same file in
+  two containers gives the same samples within codec tolerance).
 
-- Stem separation (Demucs ensemble) as an optional, isolated step; per-stem Series.
-- Roles per section (which stem carries drums, bass, lead), since separators are not consistent across a song.
-- Drum hits (kick, snare, hat) as labelled Events; non-kit drum events (crashes, swells).
-- Drops and builds from stems (the bass switching on after a quiet stretch), risers (a held note into a drop).
-- Tempo refined on the drum stem.
+## A2 Spectrum: bands, loudness, brightness, onsets
 
-## A3 Notes, contours, voices
+- One `spectrum` module owns the STFT, the bands (`Band`, edges in api.md) and onset strength; every later measure uses it.
+- `energy(band)`, `loudness()` (EBU R128 short-term, decibels), `brightness()` (centroid, hertz), `onsets()`.
+- 0..1 scaling for `energy` stated and fixed (a dB range or the song's percentiles; decided in the plan, written in the
+  docstring).
+- Acceptance: detection does not depend on the analysis hop. The same file analysed at two hops gives the same onsets within one
+  hop, and a strength keeps its 0..1 meaning. Why: a prototype had to rescale its kick threshold when its frame rate changed.
+- Oracles: a tone in one band and silence in the others; clicks at known times give onsets at those times; EBU R128 test
+  signals at their published loudness. librosa as a dev-only parity reference for the spectrum, never a runtime dependency.
 
-- Notes with duration and pitch (Basic Pitch for melodic stems, pyin for bass), cleaned (merged held notes, ghosts, bleed,
-  harmonic aliases dropped).
-- Melody onsets in the full mix (harmonic part, spectral flux), for songs without stems.
-- Pitch and level contours as Series; voices (distinct sounds inside one stem) as labels.
+## A3 Grid, sections, key, drops
 
-## A4 Measured modulation
+- `grid()`: tempo (tempogram peaks folded into a musical range by how well each grid explains the onsets, refined to 0.01 BPM
+  by the median of the near-best plateau), beat phase, downbeats, meter, `confidence` (low on four-on-the-floor, where the
+  downbeat cannot be told).
+- `sections()`: novelty on per-bar band energies; labels shared by similar sections; no fixed list of label names.
+- `key()` with its `confidence` (the correlation the prototype computed and discarded); chroma power-weighted, not
+  normalised per frame.
+- `drops()`: only with a detector validated on synthesised arrangements (bass and kick enter after a stretch without them).
+  A false drop does more harm than a missing one; if it cannot be validated, it waits.
+- `summary()`, `bundle()`, `bt-audio analyse FILE -o BUNDLE`.
+- Oracles: click tracks at known tempo, phase and meter (including tempos that fold, 85 and 170 BPM); arrangements of
+  synthesised parts with known section boundaries; chord progressions in a known key.
+- **Milestone:** the demos run on bullterrier-audio and their hacked analysis is deleted.
 
-Measurements in audio's own terms, for an app or video to turn into control sources: sidechain pumping (dip in dB, release
-in beats), wobble (filter movement rate in cycles per beat, depth), envelope shape per voice (attack, decay, sustain,
-release).
+## A4 Models, and notes
 
-## A5 First release
+- The model runtime, ported from image's pattern: ONNX Runtime loaded at run time, models as pinned URL and sha256,
+  downloads only through `bt-audio install`; `bt-audio models`, `bt-audio doctor`; a seam so tests run without a model.
+- **Entry condition for every model in the catalogue:** its weights' licence is verified and allows redistribution through
+  a download; recorded in design-decisions.
+- `notes()`: Basic Pitch (Apache-2.0, ONNX published by its authors), then cleanup (held notes merged, ghosts, octave aliases
+  and partials dropped, each rule relative to the note's own level).
+- `ModelUnavailableError` names the install command.
+- Oracles: synthesised melodies and chords with known pitches and times; long digital silence gives no notes.
 
-GitHub repository under `bullterrier-studio`, first CI run, trusted publishing, `uv run poe release 0.1.0rc1`, then `0.1.0`.
+## A5 Stems
+
+- **Entry condition:** a separator whose weights' licence is verified. Demucs (HTDemucs, ONNX exports exist) is the
+  candidate; its code is MIT but the weights' terms are unclear. If they do not allow it, search for another separator
+  before this batch is planned.
+- `stems()` returns `Stems`, one `Sound` per `Stem`; every measure works on a stem; a stem knows it is one (`sound.stem`).
+- Parts per section (which stem carries drums, bass, lead), since separators route a part to different stems across a song.
+- `drops()` from the bass and drum stems, if A3 deferred it.
+- Oracles: mixes of synthesised parts (drums, bass, a lead) where each part is the truth; separation quality measured
+  (SDR) and recorded, not asserted to a number tuned on one mix.
+
+## A6 Drum hits
+
+- **Spike first, then the plan:** an ONNX export of a drum transcriber (ADTOF has a PyTorch port; none is published as
+  ONNX) against a DSP detector on the drum stem (band onsets for kick, snare, hat). The plan picks one by measured F-measure
+  on synthesised drum parts; one backend, no fallback.
+- `hits(kind=None)`: `Event`s labelled `kick`, `snare`, `hat`; on the mix it separates the drums itself.
+- Oracles: drum parts sequenced from synthesised one-shots, with the truth by construction.
+
+## A7 Measures by name, API review, first release
+
+- `Measure` trait and `Registry` value in Rust; `@bta.measure` and the `bullterrier_audio.measures` entry-point group in
+  Python; built-ins registered; `song.measure(name)`; `bundle()` and the command include registered measures.
+- The contract runs over every registered measure: seconds only, events inside the file, units from the list, a stated scaling
+  for every 0..1 series, determinism.
+- API review against api.md (deep modules, one way per measure, no leaked internals); fix before release.
+- First release: GitHub CI green, trusted publishing, `uv run poe release 0.1.0rc1`, then `0.1.0`.
+
+## On demand, after the core
+
+Each plugs into a seam the core proved; none is planned until a consumer asks.
+
+| Feature | Seam | Prior work |
+|---|---|---|
+| Voices: distinct sounds in one stem | stems, notes | GMM with BIC on per-note descriptors, score-informed masks |
+| Contours: pitch and level of non-note parts (growls, noise) | spectrum, stems | pyin step states, glides, wobbles |
+| Measured modulation: sidechain dip, wobble rate, envelope shape, detune, FM ratio, reverb decay | measures by name | estimators with confidence, tested on synthesised signals only |
+| Builds and risers | stems, grid | a riser detector was removed after false positives: needs validation first |
+| Instrument labels | models | CLAP or an AudioSet tagger as ONNX; licence first |
+| Distance between two sounds (QA of a render) | spectrum | beat-folded spectral, groove and balance terms |
+| Tempo map, meter changes, swing | grid | not in any prior work |
+| Beats from a model (Beat This!, ONNX, beats and downbeats) | models, grid | replaces the DSP grid only if measured better; licence first |
+| Live analysis (microphone in, onsets and band energies within milliseconds) | spectrum | the reason a Rust core was first considered |
+| WebAssembly build of the DSP measures | core | models stay native |
 
 ## Not here
 
-Sound synthesis, fitting a synth to a song, Sonic Pi output: those stay in the Sonic Pi experiment (the rebuild app), which
-later uses this package for its analysis. Smoothing, envelopes and mapping: bullterrier-control and bullterrier-video.
+Sound synthesis, fitting a synth to a song, Sonic Pi output: the rebuild app, which later uses this package. Smoothing,
+envelopes and mapping: bullterrier-control and bullterrier-video. Processing sound (filters, effects): a separate package
+if ever wanted.

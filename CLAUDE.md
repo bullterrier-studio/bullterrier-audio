@@ -15,8 +15,8 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: scaffold only.** The project shell and gates exist; no analysis is written yet. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (next: A1, after bullterrier-control's formats). Much of the analysis exists in earlier
+**State: scaffold only.** The project shell and gates exist; no analysis is written yet. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+before it starts: `docs/roadmap.md` (next: A1, the Rust core; A1 also rewrites this file). Much of the analysis exists in earlier
 experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
 and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
 never commit or cite them.

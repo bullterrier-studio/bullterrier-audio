@@ -1,0 +1,122 @@
+# The API, from the tasks it serves
+
+**Design, not yet built.** Each task below shows the intended call in Python and Rust; the batch that builds it is named
+in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
+bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
+
+## Principles
+
+1. **One object, asked questions.** A `Sound` is a decoded file or a stem. Every measure is a method on it, computed on
+   first ask and cached. There is no second way to get a measure; the export (`bundle`) and the command collect the same
+   methods.
+2. **A stem is a `Sound`.** Everything asked of a song can be asked of its bass stem.
+3. **Deep calls.** A measure that needs a part (drum hits, bass notes) finds the part itself: `song.hits()` separates the
+   drums when it must. The caller never orders steps.
+4. **Seconds everywhere.** Beats appear only next to the `Grid` that converts them.
+5. **Measures, not looks.** No smoothing, gates, ranges or envelopes: those are bullterrier-control's. A 0..1 series states
+   its scaling.
+6. **Every estimate says how sure it is** (`confidence` 0..1), so a caller can refuse a weak key or a guessed downbeat.
+7. **Closed vocabularies are enums:** `Band`, `Stem`, `Hit`, `Mode`. A typo is a type error, not an empty result.
+8. **Output in bullterrier-control's formats** (`Series`, `Event`, `Grid`, `Bundle`), written without importing control.
+9. **Python and Rust say the same thing in the same order;** only the idiom differs.
+
+## 1. Kicks and bass drive a visual (replaces the demos' hacked audio)
+
+```python
+import bullterrier_audio as bta
+
+song = bta.load("song.wav")
+kicks = song.hits(bta.Hit.KICK)            # list[Event]: t (s), strength 0..1
+bass = song.energy(bta.Band.BASS)          # Series: rate, values 0..1, scaling stated
+```
+
+```rust
+use bullterrier_audio::{Band, Hit, Sound};
+
+let song = Sound::load("song.wav")?;
+let kicks = song.hits(Hit::Kick)?;         // Vec<Event>
+let bass = song.energy(Band::Bass)?;       // Series
+```
+
+## 2. List what is in a song
+
+```python
+grid = song.grid()        # Grid: tempo (BPM), beats, downbeats, meter, confidence
+song.sections()           # list[Section]: start, end (s), label "A", "B", ..., confidence
+song.key()                # Key: tonic "F", mode Mode.MINOR, confidence
+song.drops()              # list[Event]
+song.onsets()             # list[Event]
+song.loudness()           # Series in decibels (EBU R128 short-term)
+song.brightness()         # Series in hertz (spectral centroid)
+```
+
+`print(song.summary())` gives the same as text; `bt-audio info song.wav` prints it.
+
+## 3. Ask a stem
+
+```python
+stems = song.stems()                        # Stems: one Sound per Stem; separated once, cached
+stems[bta.Stem.BASS].energy(bta.Band.SUB)
+stems[bta.Stem.VOCALS].sections()
+```
+
+```rust
+let stems = song.stems()?;
+let sub = stems[Stem::Bass].energy(Band::Sub)?;
+```
+
+## 4. The notes of a part
+
+```python
+lead = song.notes()                          # list[Event]: t, duration, pitch (MIDI), strength; polyphonic, the mix
+bassline = stems[bta.Stem.BASS].notes()      # the same call on a stem
+```
+
+## 5. Hand everything to video or a file
+
+```python
+song.bundle().write("song.bundle.json")      # every core measure, in control's Bundle format
+```
+
+```rust
+song.bundle()?.write("song.bundle.json")?;
+```
+
+`bt-audio analyse song.wav -o song.bundle.json` does the same. A `Bundle` read by bullterrier-control's `Bundle.load`
+needs no conversion.
+
+## 6. An app calls audio in-process (Rust)
+
+```rust
+// a video renderer or a server: no files, no subprocess
+let song = Sound::from_samples(&samples, sample_rate)?;
+for beat in song.grid()?.beats() { /* ... */ }
+```
+
+## 7. A new measure plugs in
+
+```python
+@bta.measure("pumping", unit="decibels")
+def pumping(sound: bta.Sound) -> bta.Series: ...
+
+song.measure("pumping")                      # registered measures are asked by name; bundle() includes them
+```
+
+The Rust side is a trait (`Measure`) registered in a `Registry` value, as bullterrier-control's sources are. Built-in
+measures are registered too, so `bundle()` and the command list them all; the typed methods are how built-ins are asked.
+
+## Decisions the tasks force
+
+| Decision | Choice | Why |
+|---|---|---|
+| Entry point | `load(path)` / `from_samples(samples, rate)` give a `Sound`; nothing is measured until asked | A caller that wants kicks pays for kicks only |
+| Cache | Per `Sound` in memory, and on disk by input fingerprint (whole file) and producer identity (core version + model hash); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way |
+| Artifacts | Immutable: no measure rewrites another's result; refined tempo is a different producer, not an overwrite | A step that rewrote another's output is the main recorded failure of the prototypes |
+| Analysis rate | Decode at the file's rate; DSP at 44.1 kHz mono; each model resamples to its own rate inside | The prototypes' 22.05 kHz could not see above 11 kHz, so `Band.AIR` would mean nothing |
+| Bands | `SUB` 20-60, `BASS` 60-250, `LOW_MID` 250-500, `MID` 500-2k, `HIGH` 2k-6k, `AIR` 6k-20k Hz, one owner (`spectrum`) | The prototypes had five band sets in five places |
+| Units | control's: `fraction`, `decibels`, `hertz`, `midi`, `seconds`, `beats` | Bundles read without conversion |
+| Confidence | A field on each result type (`Grid.confidence`, `Key.confidence`, `Section.confidence`, `Event.strength`), not a wrapper type | One less type to unwrap |
+| Models | ONNX, run from the Rust core with image's pattern: pinned URL and sha256, the runtime loaded at run time, `bt-audio install`, `bt-audio models`, `bt-audio doctor`; no download at import, no prompt from the library | No torch or TensorFlow environments; the same in Python, Rust and an app |
+| A model missing | `ModelUnavailableError` naming the install command; never a silent other method | One backend per measure, chosen in design, as image's finders |
+| Errors | `BullterrierAudioError` > `DecodeError`, `InvalidError` (also `ValueError`), `ModelUnavailableError` (also `NotImplementedError`) | The house pattern |
+| Limits of the first version | Steady tempo (no tempo map), one meter per song, straight time (no swing) | Stated in `summary()` and the docs, not hidden |
