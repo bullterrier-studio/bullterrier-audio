@@ -100,11 +100,14 @@ def _doctor(args: argparse.Namespace) -> int:
     else:
         runtime_ok = True
     print(f"cache folder: {cache_dir(args.cache)}\nONNX Runtime: {found}\n{_model_lines(args.cache)}")
-    problems = [piece.name for piece in models(args.cache) if piece.status != "installed" and not _left_out(piece)]
+    broken = [piece for piece in models(args.cache) if piece.status != "installed" and not _left_out(piece)]
+    problems = [piece.name for piece in broken]
     if not runtime_ok:
         problems.insert(0, runtime.name)
     if problems:
-        print(f"error: {', '.join(problems)} not usable; run `bt-audio install`", file=sys.stderr)
+        # plain `install` skips the optional models, so a damaged one needs `--ensemble`
+        fix = "bt-audio install --ensemble" if any(piece.optional for piece in broken) else "bt-audio install"
+        print(f"error: {', '.join(problems)} not usable; run `{fix}`", file=sys.stderr)
         return 1
     print("ok: ONNX Runtime and every required model are installed")
     return 0

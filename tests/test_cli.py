@@ -128,7 +128,18 @@ def test_doctor_calls_a_damaged_ensemble_model_a_problem(tmp_path, capsys, monke
     monkeypatch.delenv("BT_AUDIO_ONNX_LIB", raising=False)
     (tmp_path / "htdemucs-ft-bass.onnx").write_bytes(b"not the model")
     assert main(["doctor", "--cache", str(tmp_path)]) == 1
-    assert "htdemucs-ft-bass" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "htdemucs-ft-bass" in err
+    # plain `install` skips optional models, so the hint that would fix a damaged one is `install --ensemble`
+    assert err.strip().endswith("run `bt-audio install --ensemble`")
+
+
+def test_install_with_the_ensemble_replans_a_damaged_ensemble_model(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("BT_AUDIO_ONNX_LIB", raising=False)
+    monkeypatch.setattr("sys.stdin", io.StringIO("n\n"))
+    (tmp_path / "htdemucs-ft-bass.onnx").write_bytes(b"not the model")
+    assert main(["install", "--ensemble", "--cache", str(tmp_path)]) == 1
+    assert "htdemucs-ft-bass" in capsys.readouterr().out.split("[y/N]")[0]
 
 
 @pytest.mark.parametrize("answer", ["n\n", "\n", ""], ids=["no", "default", "end of input"])
