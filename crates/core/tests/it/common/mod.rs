@@ -81,3 +81,25 @@ pub(crate) fn first_time_mismatch(a: &[f64], b: &[f64], tolerance: f64) -> Optio
         _ => true,
     })
 }
+
+/// A mono signal of `seconds` at `rate` with a burst of `hz` (amplitude `amplitude`) lasting `length` seconds at each
+/// time in `at`: a 2 ms linear attack and release, sustained between; silent elsewhere.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub(crate) fn tone_bursts(at: &[f64], hz: f64, length: f64, amplitude: f64, rate: u32, seconds: f64) -> Vec<f32> {
+    let mut samples = vec![0.0_f32; (seconds * f64::from(rate)).round() as usize];
+    let frames = (length * f64::from(rate)).round() as usize;
+    let ramp = (0.002 * f64::from(rate)).round() as usize;
+    for &time in at {
+        let start = (time * f64::from(rate)).round() as usize;
+        for i in 0..frames {
+            let envelope = (i.min(frames - 1 - i) as f64 / ramp as f64).min(1.0);
+            let wave = (std::f64::consts::TAU * hz * i as f64 / f64::from(rate)).sin();
+            samples[start + i] = (amplitude * envelope * wave) as f32;
+        }
+    }
+    samples
+}

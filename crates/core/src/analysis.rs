@@ -71,13 +71,13 @@ impl Analysis {
             .iter()
             .map(|band| band.edges().1 - band.edges().0)
             .fold(f64::INFINITY, f64::min);
-        within("window", window, 1.0 / narrowest..=1.0, "seconds")?;
-        within("hop", hop, 0.001..=1.0, "seconds")?;
-        within("lag", lag, 0.001..=0.5, "seconds")?;
-        within("min_gap", min_gap, 0.001..=1.0, "seconds")?;
-        within("relative_height", relative_height, 0.0..=1.0, "a fraction")?;
-        within("min_rise", min_rise, 0.0..=100.0, "decibels")?;
-        within("floor", floor, -120.0..=-20.0, "decibels")?;
+        within("Analysis", "window", window, 1.0 / narrowest..=1.0, "seconds")?;
+        within("Analysis", "hop", hop, 0.001..=1.0, "seconds")?;
+        within("Analysis", "lag", lag, 0.001..=0.5, "seconds")?;
+        within("Analysis", "min_gap", min_gap, 0.001..=1.0, "seconds")?;
+        within("Analysis", "relative_height", relative_height, 0.0..=1.0, "a fraction")?;
+        within("Analysis", "min_rise", min_rise, 0.0..=100.0, "decibels")?;
+        within("Analysis", "floor", floor, -120.0..=-20.0, "decibels")?;
         Ok(Self {
             window,
             hop,
@@ -135,12 +135,19 @@ impl Analysis {
     }
 }
 
-fn within(field: &str, value: f64, range: RangeInclusive<f64>, unit: &str) -> Result<(), Error> {
+/// `value` must lie in `range` (NaN does not): else an [`Error::Invalid`] naming `owner`, `field`, the range and the value.
+pub(crate) fn within(
+    owner: &str,
+    field: &str,
+    value: f64,
+    range: RangeInclusive<f64>,
+    unit: &str,
+) -> Result<(), Error> {
     if range.contains(&value) {
         return Ok(());
     }
     Err(Error::Invalid(format!(
-        "Analysis {field} must be {unit} from {} to {}, got {value}",
+        "{owner} {field} must be {unit} from {} to {}, got {value}",
         range.start(),
         range.end()
     )))

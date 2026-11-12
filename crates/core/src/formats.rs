@@ -278,7 +278,12 @@ impl Grid {
             || "grid.first_downbeat: must be below the meter and below the number of beats".to_owned(),
         );
         if let Some(confidence) = self.confidence {
-            problems.number("grid.confidence", confidence, (0.0..=1.0).contains(&confidence), "must be in 0..1");
+            problems.number(
+                "grid.confidence",
+                confidence,
+                (0.0..=1.0).contains(&confidence),
+                "must be in 0..1",
+            );
         }
     }
 }

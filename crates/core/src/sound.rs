@@ -7,11 +7,13 @@ use std::sync::{Arc, OnceLock};
 use crate::Error;
 use crate::analysis::Analysis;
 use crate::decode::decode;
-use crate::formats::{Event, Series, Unit};
+use crate::formats::{Event, Grid, Series, Unit};
+use crate::grid;
 use crate::loudness;
 use crate::onsets;
 use crate::resample::resample;
 use crate::spectrum::{self, Band, Spectrogram};
+use crate::structure::Structure;
 use crate::write::write;
 
 /// Where a sound came from: the file and the time in it at which this sound starts.
@@ -34,6 +36,7 @@ struct Measured {
     brightness: OnceLock<Series>,
     loudness: OnceLock<Series>,
     onsets: OnceLock<Vec<Event>>,
+    grid: OnceLock<Result<Grid, Error>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -63,6 +66,7 @@ pub struct Sound {
     rate: u32,
     origin: Origin,
     analysis: Analysis,
+    structure: Structure,
     memo: Memo,
 }
 
@@ -130,6 +134,7 @@ impl Sound {
                 offset: 0.0,
             },
             analysis: Analysis::default(),
+            structure: Structure::default(),
             memo: Memo::default(),
         })
     }
@@ -197,6 +202,7 @@ impl Sound {
                 offset: self.origin.offset + from as f64 / f64::from(self.rate),
             },
             analysis: self.analysis,
+            structure: self.structure,
             memo: Memo::default(),
         })
     }
@@ -236,6 +242,7 @@ impl Sound {
             rate: self.rate,
             origin: self.origin.clone(),
             analysis: self.analysis,
+            structure: self.structure,
             memo: Memo::default(),
         })
     }
@@ -260,6 +267,7 @@ impl Sound {
             rate: self.rate,
             origin: self.origin.clone(),
             analysis: self.analysis,
+            structure: self.structure,
             memo: Memo::default(),
         }
     }
@@ -283,6 +291,7 @@ impl Sound {
         let mut sound = Self::from_samples(resample(&self.samples, self.rate, rate)?, rate)?;
         sound.origin = self.origin.clone();
         sound.analysis = self.analysis;
+        sound.structure = self.structure;
         Ok(sound)
     }
 
@@ -300,6 +309,26 @@ impl Sound {
             rate: self.rate,
             origin: self.origin.clone(),
             analysis,
+            structure: self.structure,
+            memo: Memo::default(),
+        }
+    }
+
+    /// The structure parameters this sound's musical measures read.
+    #[must_use]
+    pub fn structure(&self) -> &Structure {
+        &self.structure
+    }
+
+    /// This sound measured under `structure` instead; nothing measured so far is carried over.
+    #[must_use]
+    pub fn with_structure(&self, structure: Structure) -> Self {
+        Self {
+            samples: self.samples.clone(),
+            rate: self.rate,
+            origin: self.origin.clone(),
+            analysis: self.analysis,
+            structure,
             memo: Memo::default(),
         }
     }
@@ -380,6 +409,38 @@ impl Sound {
             .onsets
             .get_or_init(|| onsets::onsets(spectrogram, &self.analysis))
             .clone())
+    }
+
+    /// The beat grid of the sound: tempo, the beats over the whole sound, the meter and the first downbeat, with a
+    /// confidence.
+    ///
+    /// Promises: `beats` are strictly increasing, inside `0..=duration`, at least 2, and lie on one line
+    /// `phase + k * period` (the tempo is the same on every interval, within `tempo_min..=tempo_max` of the
+    /// [`Structure`] up to the fit). The period and phase are found from the [`Sound::onsets`] (weighted by their
+    /// strength and the low-band level at them): candidate periods from their autocorrelation over 0.27 to 1.2 s,
+    /// folded by 0.5, 0.75, 1, 1.5 and 2 into the tempo range; the candidate whose beats best match the onsets
+    /// (F-measure within the effective tolerance) wins, and a slower one within 20% of the best score wins over a
+    /// faster one. The fit is then refined by least squares over the matched onsets, so the tempo is exact to well
+    /// under a hop. `meter` is 4 or 3 and `first_downbeat` the position in the bar whose beats carry the most
+    /// accent (low-band level and onset strength) against the others; 4 is kept unless 3 scores more than 0.1 higher.
+    /// `confidence` is `1 - others / accent` for that position: 0 when no position stands out (four on the floor),
+    /// towards 1 when one does; with fewer than two bars it is 0 and the downbeat the first beat. The result is
+    /// computed once per sound.
+    ///
+    /// Limits: one steady tempo (a ritardando or a tempo change is fitted by its average and loses beats), straight
+    /// time (no swing), meters 3 and 4 only. A tempo is the beat level the onsets support at the lowest tempo that
+    /// scores nearly as well, within the range; a sound whose beat lies outside the range is read at a multiple.
+    /// Onset times have no latency to correct: measured at the default analysis (hop 10 ms), the onset nearest a
+    /// click or a burst of 30 or 100 ms (60 Hz to 1 kHz) lay between -3.7 and +6.3 ms from its start, which is the
+    /// quantisation to the hop. That is why the tolerance is 30 ms, and at least 1.5 hops.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming the duration and "no tempo" when the sound has fewer than 4 onsets (silence, a steady
+    /// tone), shows no period between 0.27 and 1.2 s, or has fewer than two beats. Otherwise as [`Sound::onsets`] and
+    /// [`Sound::energy`].
+    pub fn grid(&self) -> Result<Grid, Error> {
+        self.memo.0.grid.get_or_init(|| grid::grid(self)).clone()
     }
 
     /// The short-term loudness over time, in LUFS, measured by EBU R128 on the sound's own channels and rate.
@@ -463,6 +524,7 @@ impl Sound {
             rate: self.rate,
             origin: self.origin.clone(),
             analysis: self.analysis,
+            structure: self.structure,
             memo: Memo::default(),
         })
     }

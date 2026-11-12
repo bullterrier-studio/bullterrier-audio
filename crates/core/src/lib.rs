@@ -9,14 +9,17 @@ mod analysis;
 mod decode;
 mod error;
 pub mod formats;
+mod grid;
 mod loudness;
 mod onsets;
 mod resample;
 mod sound;
 mod spectrum;
+mod structure;
 mod write;
 
 pub use analysis::Analysis;
 pub use error::Error;
 pub use sound::{Origin, Sound};
 pub use spectrum::Band;
+pub use structure::Structure;
