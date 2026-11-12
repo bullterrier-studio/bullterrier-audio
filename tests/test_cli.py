@@ -150,7 +150,8 @@ def test_install_that_is_declined_downloads_nothing_and_exits_1(tmp_path, capsys
     assert main(["install", "--cache", str(cache)]) == 1
     captured = capsys.readouterr()
     assert re.search(
-        r"download ONNX Runtime \S+ \(\d+ MB\) and basic-pitch \(\d+ MB\) and htdemucs-6s \(\d+ MB\) into .*\? \[y/N\]",
+        r"download ONNX Runtime \S+ \(\d+ MB\) and basic-pitch \(\d+ MB\) and htdemucs-6s \(\d+ MB\)"
+        r" and adtof-frame-rnn \(\d+ MB\) into .*\? \[y/N\]",
         captured.out,
     )
     assert "nothing downloaded" in captured.err
@@ -165,7 +166,8 @@ def test_install_with_the_ensemble_lists_the_four_fine_tuned_models_in_the_plan(
     assert main(["install", "--ensemble", "--cache", str(cache)]) == 1
     captured = capsys.readouterr()
     assert re.search(
-        r"and htdemucs-6s \(\d+ MB\)( and htdemucs-ft-(drums|bass|other|vocals) \(3\d\d MB\)){4} into .*\? \[y/N\]",
+        r"and htdemucs-6s \(\d+ MB\)( and htdemucs-ft-(drums|bass|other|vocals) \(3\d\d MB\)){4}"
+        r" and adtof-frame-rnn \(\d+ MB\) into .*\? \[y/N\]",
         captured.out,
     )
     assert not cache.exists()

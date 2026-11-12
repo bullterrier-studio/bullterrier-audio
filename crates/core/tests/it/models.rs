@@ -464,7 +464,7 @@ mod where_things_are {
 
     #[test]
     fn the_catalogue_pins_each_model() {
-        let [pitch, demucs, _ft @ ..] = models() else {
+        let [pitch, demucs, _ft @ .., adtof] = models() else {
             unreachable!("at least two models")
         };
         assert_eq!(
@@ -480,11 +480,22 @@ mod where_things_are {
             demucs.licence.contains("science-only"),
             "the licence says what the weights allow"
         );
+        assert_eq!(
+            (adtof.name, adtof.kind, adtof.size),
+            ("adtof-frame-rnn", ModelKind::Transcriber, 2_171_762)
+        );
+        assert!(adtof.url.starts_with("https://") && adtof.url.ends_with("adtof_frame_rnn.onnx"));
+        assert_eq!(adtof.sha256.len(), 64);
+        assert!(
+            adtof.licence.contains("CC BY-NC-SA 4.0"),
+            "the licence says the weights are non-commercial"
+        );
     }
 
     #[test]
     fn the_ensemble_models_are_the_four_ft_entries_in_stem_order() {
         let ft = ensemble_models();
+        assert_eq!(ft.len(), 4, "the model appended after them is not one of the ensemble");
         assert_eq!(
             ft.iter().map(|m| m.name).collect::<Vec<_>>(),
             [

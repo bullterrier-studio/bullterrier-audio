@@ -14,6 +14,8 @@ pub enum ModelKind {
     Notes,
     /// Stems: a sound taken apart into the instruments it is made of.
     Separator,
+    /// Drum hits: kick, snare, hat and the rest of a drum kit, as activations over time.
+    Transcriber,
 }
 
 /// A model file the package can download and run.
@@ -53,6 +55,15 @@ pub struct Model {
 ///   one input `mix`, f32 `(1, 2, 343980)`; one output `stems`, `(1, 4, 2, 343980)`: drums, bass, other, vocals. The bag
 ///   weights every model one-hot (`remote/htdemucs_ft.yaml`), so only the output row of the model's own name is used.
 ///   A run took about 5.0 s on one thread (opening the session 9 s); the process peaked at 1.7 GB resident.
+/// - `adtof-frame-rnn`: the `Frame_RNN` of ADTOF (Zehren, Alunno, Bientinesi; checkpoint `Frame_RNN_adtofAll_0`), exported to
+///   ONNX by thebluescreen (opset 17; repository revision `d0e809bb`, so the URL cannot move). CC BY-NC-SA 4.0 for the
+///   ADTOF code and weights, the export under the same terms. 2 171 762 bytes, SHA-256 re-derived by streaming the file.
+///   Verified with ONNX Runtime 1.23.2 on the CPU: one input `waveform`, f32 `[1, samples]` (mono, 44 100 Hz, in -1..1; the
+///   log-filtered spectrogram is inside the graph; any length, no multiple needed); one f32 output `activations`,
+///   `[1, ceil(samples / 441), 5]`: sigmoid activations at 100 frames per second, columns kick, snare, tom, hat,
+///   cymbal and ride. All values finite. A hit's peak lies on the frame 10 ms before its onset (measured on synthesised
+///   drums: mean error -9 to -10 ms for all three classes). 30 s took 0.29 s on one thread (0.15 s on four), 5 min 3.0 s;
+///   the process peaked at 0.21 GB resident for 30 s and 1.6 GB for 5 min (about 5 MB per second of sound).
 #[must_use]
 pub fn models() -> &'static [Model] {
     &[
@@ -103,6 +114,14 @@ pub fn models() -> &'static [Model] {
             size: 316_446_953,
             licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
             kind: ModelKind::Separator,
+        },
+        Model {
+            name: "adtof-frame-rnn",
+            url: "https://huggingface.co/thebluescreen/adtof-drums-onnx/resolve/d0e809bb1c1b6fe8a4a00c576852117a0636ab5a/adtof_frame_rnn.onnx",
+            sha256: "189ca3c2bc7339a5f0fdc0bb11069d4bcc4fafabd142e945228c368c379b6227",
+            size: 2_171_762,
+            licence: "CC BY-NC-SA 4.0 (ADTOF code and weights); export by thebluescreen, same terms",
+            kind: ModelKind::Transcriber,
         },
     ]
 }
