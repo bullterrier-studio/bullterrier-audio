@@ -168,7 +168,9 @@ fn the_pitch_range_decides_what_counts_as_pitch() -> Outcome {
         for (sample, tone) in samples.iter_mut().zip(sine(tone_hz, 0.5, RATE, 16 * 44100)) {
             *sample += tone;
         }
-        let structure = Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high)?;
+        let structure = Structure::new(
+            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high, 4, 0.8, 10.0,
+        )?;
         let key = Sound::from_samples(vec![samples], RATE)?
             .with_structure(structure)
             .key()?;
@@ -197,13 +199,20 @@ fn structure_refuses_a_pitch_range_outside_its_limits() {
         ("low above high", 900.0, 500.0, "chroma_low must be below chroma_high"),
     ];
     for (id, low, high, refusal) in rows {
-        let result = Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high);
+        let result = Structure::new(
+            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, low, high, 4, 0.8, 10.0,
+        );
         assert!(
             matches!(&result, Err(Error::Invalid(text)) if text.contains("Structure") && text.contains(refusal)),
             "{id}: {result:?}"
         );
     }
-    assert!(Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, 20.0, 20000.0).is_ok());
+    assert!(
+        Structure::new(
+            70.0, 180.0, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0, 20.0, 20000.0, 4, 0.8, 10.0
+        )
+        .is_ok()
+    );
 }
 
 #[test]

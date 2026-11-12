@@ -23,10 +23,10 @@ pub struct Section {
 }
 
 /// The level of each band over a stretch, on the 0 to 1 scale of [`Sound::energy`].
-type Levels = [f64; 6];
+pub(crate) type Levels = [f64; 6];
 
-pub(crate) fn sections(sound: &Sound) -> Result<Vec<Section>, Error> {
-    let structure = sound.structure();
+/// The edges of the bars of the sound's grid (see [`bar_edges`]) and the level of each band in each bar.
+pub(crate) fn bar_levels(sound: &Sound) -> Result<(Vec<f64>, Vec<Levels>), Error> {
     let grid = sound.grid()?;
     let edges = bar_edges(&grid, sound.duration());
     let hop = sound.analysis().hop();
@@ -34,10 +34,16 @@ pub(crate) fn sections(sound: &Sound) -> Result<Vec<Section>, Error> {
         .iter()
         .map(|&band| sound.energy(band).map(|s| s.values))
         .collect::<Result<Vec<_>, _>>()?;
-    let bars: Vec<Levels> = edges
+    let bars = edges
         .windows(2)
         .map(|bar| mean_levels(&series, bar[0] / hop, bar[1] / hop))
         .collect();
+    Ok((edges, bars))
+}
+
+pub(crate) fn sections(sound: &Sound) -> Result<Vec<Section>, Error> {
+    let structure = sound.structure();
+    let (edges, bars) = bar_levels(sound)?;
 
     // decibels to the energy scale: it spans |floor| decibels
     let per_db = 1.0 / sound.analysis().floor().abs();

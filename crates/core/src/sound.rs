@@ -7,6 +7,7 @@ use std::sync::{Arc, OnceLock};
 use crate::Error;
 use crate::analysis::Analysis;
 use crate::decode::decode;
+use crate::drops;
 use crate::formats::{Event, Grid, Series, Unit};
 use crate::grid;
 use crate::key::{self, Key};
@@ -41,6 +42,7 @@ struct Measured {
     grid: OnceLock<Result<Grid, Error>>,
     sections: OnceLock<Result<Vec<Section>, Error>>,
     key: OnceLock<Result<Key, Error>>,
+    drops: OnceLock<Result<Vec<Event>, Error>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -479,6 +481,29 @@ impl Sound {
     /// As [`Sound::grid`] (no tempo, no sections).
     pub fn sections(&self) -> Result<Vec<Section>, Error> {
         self.memo.0.sections.get_or_init(|| sections::sections(self)).clone()
+    }
+
+    /// The drops of the sound: bars at which bass and kick enter after a stretch without them, as events at the bar
+    /// start, in order, without label, duration or pitch.
+    ///
+    /// The level of a bar is the mean of the Sub and Bass [`Sound::energy`] over it (bars as in [`Sound::sections`]).
+    /// A bar `i` is a drop when each of the `drop_bars` bars before it is at most `1 - drop_share` of the way up the
+    /// song's own span of levels (10th to 90th percentile) and each of the `drop_bars` bars from it is at least
+    /// `drop_share` of the way up; a song whose span is under `drop_min_span` has none. The strength is the rise over
+    /// the span, from the loudest bar before to the quietest bar after, at most 1. See [`Structure`].
+    ///
+    /// A false drop does more harm than a missing one, so it is strict: a bass that fades in, a noise riser, a kick
+    /// entering over a sounding bass, a short silence that returns to the same level, a drop down and a loud section
+    /// without bass are no drops (validated on synthesised arrangements of each). Limits: a drop in the last
+    /// `drop_bars` bars is not seen; a drop is a step in the low end only, so a drop of another kind (a lead entering)
+    /// is not heard; a quiet stretch under a tenth of the song's bars is no lowest decile, so such a song reads as one level.
+    /// Validated on synthesised arrangements only, not on recorded music. The result is computed once per sound.
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::grid`] (no tempo).
+    pub fn drops(&self) -> Result<Vec<Event>, Error> {
+        self.memo.0.drops.get_or_init(|| drops::drops(self)).clone()
     }
 
     /// The `index`th of [`Sound::sections`] as a sound of its own: `cut(start, end)` of it, so it keeps its origin.

@@ -1,4 +1,4 @@
-//! `Structure`: the parameters of the musical measures (grid, sections, key, and later drops), declared once.
+//! `Structure`: the parameters of the musical measures (grid, sections, key, drops), declared once.
 
 use crate::Error;
 use crate::analysis::within;
@@ -20,6 +20,9 @@ use crate::analysis::within;
 /// | `novelty_floor` | decibels | 0.01 to 40 | 1 |
 /// | `chroma_low` | hertz | 20 to 20000, below `chroma_high` | 100 |
 /// | `chroma_high` | hertz | 20 to 20000, above `chroma_low` | 5000 |
+/// | `drop_bars` | count | 1 and up | 4 |
+/// | `drop_share` | fraction | 0.5 to 1 | 0.8 |
+/// | `drop_min_span` | decibels | 0 to 120 | 10 |
 ///
 /// `tempo_min` and `tempo_max` bound the tempo [`Sound::grid`](crate::Sound::grid) reports: a tempo found outside
 /// them is halved or doubled (and 3:2 related) into them. The default range is the usual one of dance music: a stated
@@ -58,6 +61,16 @@ use crate::analysis::within;
 /// 100 Hz a semitone (6 Hz at 100 Hz) is narrower than the frequency resolution of any practical window, so the
 /// pitch class of a bin is wrong; above about 5 kHz the energy is overtones and noise, not the pitch of notes. Lowering
 /// `chroma_low` lengthens the key's analysis window (it is derived from it, see [`Sound::key`](crate::Sound::key)).
+///
+/// The last three steer [`Sound::drops`](crate::Sound::drops), on the per-bar level of Sub and Bass. `drop_bars`: how
+/// many bars before the drop must be quiet and after it loud. Evidence: a gap of 3 silent bars in a bass line must not
+/// read as a stretch without bass, which `drop_bars` of 4 settles and 2 does not. `drop_share`: the song's levels span
+/// from its 10th to its 90th percentile; the bars before lie in the lowest `1 - drop_share` of that span, the bars after
+/// in the highest. Evidence: the first bar of a bass fading in over 8 bars sits at 0.62 of the span (the level is in
+/// decibels, so a linear gain jumps up at once), bass and kick entering sit at 0.99, so any share between about 0.65
+/// and 0.98 separates them. `drop_min_span`: a song whose span is under this has no drop, however sharp the step.
+/// Evidence: the Sub and Bass level of hi-hats leaking into the bands rose by 1.6 dB, a kick on a sounding bass line by
+/// 0.6 dB, and bass entering rises by over 60 dB; 10 dB is the rise heard as twice as loud.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Structure {
     tempo_min: f64,
@@ -72,6 +85,9 @@ pub struct Structure {
     novelty_floor: f64,
     chroma_low: f64,
     chroma_high: f64,
+    drop_bars: u32,
+    drop_share: f64,
+    drop_min_span: f64,
 }
 
 impl Default for Structure {
@@ -89,6 +105,9 @@ impl Default for Structure {
             novelty_floor: 1.0,
             chroma_low: 100.0,
             chroma_high: 5000.0,
+            drop_bars: 4,
+            drop_share: 0.8,
+            drop_min_span: 10.0,
         }
     }
 }
@@ -114,6 +133,9 @@ impl Structure {
         novelty_floor: f64,
         chroma_low: f64,
         chroma_high: f64,
+        drop_bars: u32,
+        drop_share: f64,
+        drop_min_span: f64,
     ) -> Result<Self, Error> {
         within("Structure", "tempo_min", tempo_min, 30.0..=300.0, "beats per minute")?;
         within("Structure", "tempo_max", tempo_max, 30.0..=300.0, "beats per minute")?;
@@ -125,6 +147,13 @@ impl Structure {
         within("Structure", "novelty_floor", novelty_floor, 0.01..=40.0, "decibels")?;
         within("Structure", "chroma_low", chroma_low, 20.0..=20000.0, "hertz")?;
         within("Structure", "chroma_high", chroma_high, 20.0..=20000.0, "hertz")?;
+        within("Structure", "drop_share", drop_share, 0.5..=1.0, "a fraction")?;
+        within("Structure", "drop_min_span", drop_min_span, 0.0..=120.0, "decibels")?;
+        if drop_bars == 0 {
+            return Err(Error::Invalid(
+                "Structure drop_bars must be a count of bars from 1, got 0".into(),
+            ));
+        }
         if min_section_bars == 0 {
             return Err(Error::Invalid(
                 "Structure min_section_bars must be a count of bars from 1, got 0".into(),
@@ -158,6 +187,9 @@ impl Structure {
             novelty_floor,
             chroma_low,
             chroma_high,
+            drop_bars,
+            drop_share,
+            drop_min_span,
         })
     }
 
@@ -232,6 +264,25 @@ impl Structure {
     #[must_use]
     pub fn chroma_high(&self) -> f64 {
         self.chroma_high
+    }
+
+    /// The bars that must be quiet before a drop and loud after it.
+    #[must_use]
+    pub fn drop_bars(&self) -> u32 {
+        self.drop_bars
+    }
+
+    /// The share of the song's level span that the bars after a drop must reach and the bars before it stay under
+    /// the complement of.
+    #[must_use]
+    pub fn drop_share(&self) -> f64 {
+        self.drop_share
+    }
+
+    /// Decibels of span in the song's Sub and Bass levels below which it has no drops.
+    #[must_use]
+    pub fn drop_min_span(&self) -> f64 {
+        self.drop_min_span
     }
 
     /// The tolerance in use under a `hop` of the analysis: `max(tolerance, 1.5 * hop)`.

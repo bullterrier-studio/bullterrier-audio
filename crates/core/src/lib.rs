@@ -7,6 +7,7 @@
 
 mod analysis;
 mod decode;
+mod drops;
 mod error;
 pub mod formats;
 mod grid;
