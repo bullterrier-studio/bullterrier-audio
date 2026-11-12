@@ -9,8 +9,9 @@ use crate::{Band, Error, Sound};
 /// The rate in hertz of the grid the onsets are placed on for the autocorrelation: finer than the default hop (100 Hz)
 /// and coarser than the default tolerance (a 30 ms window is 6 steps).
 const GRID_HZ: f64 = 200.0;
-/// The periods in seconds the autocorrelation looks at: 0.27 s is 222 beats per minute, 1.2 s is 50. Tempos outside the
-/// range of a `Structure` are reached through the folds.
+/// The periods in seconds the autocorrelation looks at: 0.27 s is 222 beats per minute, 1.2 s is 50, the beat levels
+/// of music. Not derived from the tempo range: the folds reach it from these peaks, and widening the lags only adds
+/// harmonics to pick from.
 const LAGS: (f64, f64) = (0.27, 1.2);
 /// How many of the highest autocorrelation peaks become candidates.
 const PEAKS: usize = 5;
@@ -22,17 +23,10 @@ const MERGE: f64 = 0.01;
 /// How many times the regression re-matches the onsets and fits again. Each pass pulls in the beats the previous fit
 /// drifted away from; two passes reach the end of a 30 s sound from a period 1% off, four leave room.
 const REFINEMENTS: usize = 4;
-/// A candidate wins over every faster one when its F-measure is within this share of the best: the slower of two beat
-/// levels is the more likely beat (a train of eighth notes also fits the double tempo almost as well).
-const SLOWER_PRIOR: f64 = 0.2;
-/// Fewest onsets from which a tempo is looked for.
+/// Fewest onsets from which a tempo is looked for: fewer give no period to correlate.
 const MIN_ONSETS: usize = 4;
-/// The meters considered, the preferred first.
+/// The meters considered, the preferred first: the two common ones in straight time.
 const METERS: [usize; 2] = [4, 3];
-/// Meter 3 replaces meter 4 only when its score (0 to 1) is higher by more than this. Without an accent the scores
-/// are quantisation noise: a flat train at 85 beats per minute scored 0.034 for meter 4 and 0.039 for meter 3, so a
-/// relative margin of 10% would not keep the four.
-const METER_PRIOR: f64 = 0.1;
 
 /// The onsets of a sound with the weight each carries: its strength times one plus the low-band level at it.
 struct Onsets {
@@ -145,7 +139,10 @@ pub(crate) fn grid(sound: &Sound) -> Result<Grid, Error> {
     // slowest first: the first within the margin of the best wins
     fits.sort_by(|a, b| b.1.period.total_cmp(&a.1.period));
     let best = fits.iter().map(|&(f, _)| f).fold(f64::NEG_INFINITY, f64::max);
-    let Some(&(_, fit)) = fits.iter().find(|&&(f, _)| f >= (1.0 - SLOWER_PRIOR) * best) else {
+    let Some(&(_, fit)) = fits
+        .iter()
+        .find(|&&(f, _)| f >= (1.0 - structure.slower_margin()) * best)
+    else {
         return Err(no_tempo(
             "the onsets show no period between 0.27 s and 1.2 s".to_owned(),
         ));
@@ -166,7 +163,7 @@ pub(crate) fn grid(sound: &Sound) -> Result<Grid, Error> {
             low_near(&low, beat, hop) + onset
         })
         .collect();
-    let (meter, first_downbeat, confidence) = meter(&accents);
+    let (meter, first_downbeat, confidence) = meter(&accents, structure.meter_margin());
     Ok(Grid {
         beats,
         meter: NonZeroUsize::MIN.saturating_add(meter - 1),
@@ -292,7 +289,7 @@ fn refine(onsets: &Onsets, mut fit: Fit, tolerance: f64) -> Fit {
 /// equal and tends to 1 when the others are far below. The position with the highest score is the downbeat. Fewer than
 /// two bars give no evidence: position 0, score 0.
 #[allow(clippy::cast_precision_loss)]
-fn meter(accents: &[f64]) -> (usize, usize, f64) {
+fn meter(accents: &[f64], margin: f64) -> (usize, usize, f64) {
     let score = |m: usize| -> (usize, f64) {
         if accents.len() < 2 * m {
             return (0, 0.0);
@@ -321,7 +318,7 @@ fn meter(accents: &[f64]) -> (usize, usize, f64) {
     let [preferred, other] = METERS;
     let (p, s) = score(preferred);
     let (other_p, other_s) = score(other);
-    if other_s > s + METER_PRIOR {
+    if other_s > s + margin {
         (other, other_p, other_s)
     } else {
         (preferred, p, s)
