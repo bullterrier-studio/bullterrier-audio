@@ -107,7 +107,7 @@ impl Series {
         Ok(Self {
             start,
             rate,
-            unit: registry::unit_name(unit),
+            unit: unit.name().to_owned(),
             scaling,
             values,
         })
@@ -125,7 +125,7 @@ impl From<bullterrier_audio::formats::Series> for Series {
         Self {
             start: series.start,
             rate: series.rate,
-            unit: registry::unit_name(series.unit),
+            unit: series.unit.name().to_owned(),
             scaling: series.scaling,
             values: series.values,
         }
@@ -947,7 +947,9 @@ impl Sound {
     }
 
     /// The measure registered under `name` (see `measures`), run on this sound: a `Series` or a list of `Event`s. An
-    /// unknown name is an `InvalidError` listing the names; a plugin's own exception is raised unchanged.
+    /// unknown name is an `InvalidError` listing the names; a plugin's own exception is raised unchanged. The result's
+    /// kind (series or events), unit and scaling are checked against what the measure declared; the format's other
+    /// rules (rate, start, NaN, event range) are enforced when the result is bundled by `bundle()`, not here.
     fn measure(&self, py: Python<'_>, name: &str) -> PyResult<Measured> {
         let registry = registry::current(py)?;
         match py.detach(|| self.0.measure_with(&registry, name)) {

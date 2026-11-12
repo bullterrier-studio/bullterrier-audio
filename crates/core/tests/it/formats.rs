@@ -99,6 +99,15 @@ fn problem_text(bundle: &Bundle) -> Result<String, String> {
 }
 
 #[test]
+fn every_unit_name_is_the_name_the_writer_emits() -> Outcome {
+    for unit in Unit::ALL {
+        let written = unchecked_document(&with_series(series(unit, &[0.5])))?;
+        assert_eq!(written["series"]["s"]["unit"], unit.name());
+    }
+    Ok(())
+}
+
+#[test]
 fn a_valid_bundle_is_written_as_schema_valid_json_with_the_header_first() -> Outcome {
     let full = Bundle {
         source: Some("bt-audio test".to_owned()),

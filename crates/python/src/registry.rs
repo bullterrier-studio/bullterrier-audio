@@ -10,26 +10,10 @@ use bullterrier_audio::{Error, Measure, Measurement, Registry};
 
 use super::{Event, Series, Sound, error};
 
-/// Every unit, in the order of the format. The one list of unit names Python sees.
-const UNITS: [Unit; 7] = [
-    Unit::Fraction,
-    Unit::Decibels,
-    Unit::Hertz,
-    Unit::Midi,
-    Unit::Ratio,
-    Unit::Seconds,
-    Unit::Beats,
-];
-
-/// The unit's name: its serde name, the lowercase variant name.
-pub(crate) fn unit_name(unit: Unit) -> String {
-    format!("{unit:?}").to_lowercase()
-}
-
 /// The unit called `name`.
 pub(crate) fn parse_unit(name: &str) -> Result<Unit, Error> {
-    UNITS.into_iter().find(|unit| unit_name(*unit) == name).ok_or_else(|| {
-        let known: Vec<_> = UNITS.into_iter().map(unit_name).collect();
+    Unit::ALL.into_iter().find(|unit| unit.name() == name).ok_or_else(|| {
+        let known: Vec<_> = Unit::ALL.into_iter().map(Unit::name).collect();
         Error::Invalid(format!("unit '{name}' is not one of: {}", known.join(", ")))
     })
 }
@@ -148,7 +132,7 @@ pub(crate) fn register_measure(
 /// The names of the unit a series may carry.
 #[pyfunction]
 pub(crate) fn units() -> Vec<String> {
-    UNITS.into_iter().map(unit_name).collect()
+    Unit::ALL.into_iter().map(|unit| unit.name().to_owned()).collect()
 }
 
 /// The names of every registered measure, sorted: the built-ins and the plugins'.

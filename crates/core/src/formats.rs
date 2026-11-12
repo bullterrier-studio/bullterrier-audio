@@ -33,6 +33,34 @@ pub enum Unit {
     Beats,
 }
 
+impl Unit {
+    /// Every unit, in the order of the format.
+    pub const ALL: [Self; 7] = [
+        Self::Fraction,
+        Self::Decibels,
+        Self::Hertz,
+        Self::Midi,
+        Self::Ratio,
+        Self::Seconds,
+        Self::Beats,
+    ];
+
+    /// The unit's name as the format writes it. The `match` is exhaustive: a new unit does not compile until it is named
+    /// here (and listed in [`Unit::ALL`], which a test checks against this).
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Fraction => "fraction",
+            Self::Decibels => "decibels",
+            Self::Hertz => "hertz",
+            Self::Midi => "midi",
+            Self::Ratio => "ratio",
+            Self::Seconds => "seconds",
+            Self::Beats => "beats",
+        }
+    }
+}
+
 /// Values at a fixed rate: value `i` is at `start + i / rate` seconds.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Series {
