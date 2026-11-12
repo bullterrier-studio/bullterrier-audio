@@ -67,7 +67,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   amplitude: sample `i` of the fade-in gets `i / n`, the sample `k` places before the end of the fade-out gets `k / n`.
   *Reason:* a fade shape and a rounding rule shape the result, so they are fixed and documented, not parameters.
 - **The cache is in memory in A2; the disk store waits for a slow producer** (2026-11-12). A `Sound` memoises its measures and an
-  edit starts empty. *Reason:* the DSP measures cost milliseconds, so a disk store (fingerprint plus producer identity) would
+  edit starts empty. *Reason:* the DSP measures take well under a second for a song (`loudness()` about 4 s for five minutes of stereo, measured), so a disk store (fingerprint plus producer identity) would
   have nothing to save and no honest test; the first producer worth minutes (grid, models) brings it.
 - **One `Analysis` per sound, every measure reads it** (2026-11-12). Window, hop, lag, min_gap, relative_height, min_rise and
   floor are declared once with unit, range and default; a measure takes no parameters. *Reason:* one way to ask, and a

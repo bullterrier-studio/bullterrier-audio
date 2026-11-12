@@ -45,7 +45,7 @@ into one of those seams.
 
 - Cache: results are memoised in memory per `Sound` (an edit starts empty). The on-disk store (whole-file fingerprint plus
   producer identity, `bt-audio` cache folder) moves to the first slow producer (A3 grid or A4 models): these measures take
-  milliseconds, so a disk store here would have no honest test.
+  well under a second for a song (`loudness()` about 4 s for five minutes of stereo), so a disk store here would have no honest test.
 - Parameters: `Analysis` declares window, hop, lag, min_gap, relative_height, min_rise and floor once, with unit, range and
   default; `with_analysis` sets them for a sound. Librosa as a parity reference was not added: the oracles are independent
   by construction (a sine's band level, the R128 gain law, clicks at known times).

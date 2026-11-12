@@ -58,7 +58,7 @@ song.brightness()  # Series in hertz (spectral centroid)
 `song.with_analysis(hop=0.005)`; every measure reads it, so a measure takes no parameters. `energy` is a `fraction` series: the band
 level in dBFS, `floor` (default -80 dB) mapping to 0 and 0 dB to 1, saturating. `loudness()` starts at 3 s (the first full
 short-term window) and reads -70 for anything quieter (the standard's gate). `onsets()` finds the same onsets, within one hop,
-at any hop.
+at the hops tested (5 to 20 ms); the lag is rounded to whole frames, so a hop near the lag blurs it.
 
 `print(song.summary())` gives the same as text; `bt-audio info song.wav` prints it.
 
@@ -140,7 +140,7 @@ measures are registered too, so `bundle()` and the command list them all; the ty
 | Decision | Choice | Why |
 |---|---|---|
 | Entry point | `load(path)` / `from_samples(samples, rate)` give a `Sound`; nothing is measured until asked | A caller that wants kicks pays for kicks only |
-| Cache | Per `Sound` in memory (A2: `OnceLock`s that an edit resets). On disk by input fingerprint (whole file) and producer identity (core version + model hash) arrives with the first slow producer (A3 or A4); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way. The DSP measures of A2 cost milliseconds |
+| Cache | Per `Sound` in memory (A2: `OnceLock`s that an edit resets). On disk by input fingerprint (whole file) and producer identity (core version + model hash) arrives with the first slow producer (A3 or A4); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way. The DSP measures of A2 take well under a second for a song, `loudness()` about 4 s for five minutes of stereo (measured 2026-11-12) |
 | Artifacts | Immutable: no measure rewrites another's result; refined tempo is a different producer, not an overwrite | A step that rewrote another's output is the main recorded failure of the prototypes |
 | Writing | wav and flac (lossless), at the sound's rate and channels; a lossy format only if a consumer asks | Writing mp3 or aac needs an encoder with its own licence |
 | Analysis rate | Decode at the file's rate; DSP at 44.1 kHz mono; each model resamples to its own rate inside | The prototypes' 22.05 kHz could not see above 11 kHz, so `Band.AIR` would mean nothing |
