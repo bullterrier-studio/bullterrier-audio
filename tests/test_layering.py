@@ -2,6 +2,7 @@
 import only the layers below it:
 
     app        __main__ > cli
+    plugin     the decorator and the loader of entry-point measures; imports `_native` and `errors`
     _native    the home of the Rust extension (`_native._core`); it imports only `errors` (the extension imports its
                `InvalidError` when it first raises one)
     errors     the exceptions; they import nothing from bullterrier_audio, so every layer may raise them
@@ -26,7 +27,7 @@ PACKAGE = Path(bullterrier_audio.__file__).parent
 ROOT = PACKAGE.parent.parent  # the repository: pyproject.toml holds the contracts
 LINT_IMPORTS = Path(sys.executable).with_name("lint-imports")  # `uv run lint-imports` from the repository root
 
-LAYERS = "Layers: __main__ > cli > _native > errors"
+LAYERS = "Layers: __main__ > cli > plugin > _native > errors"
 CONTRACTS = [LAYERS]
 
 
@@ -69,6 +70,7 @@ FORBIDDEN = {
         "bullterrier_audio._native",
         LAYERS,
     ),
+    "plugin to cli": ("plugin.py", "import bullterrier_audio.cli", "bullterrier_audio.plugin", LAYERS),
     "cli to main": ("cli.py", "import bullterrier_audio.__main__", "bullterrier_audio.cli", LAYERS),
 }
 

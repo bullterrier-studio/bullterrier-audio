@@ -1,9 +1,9 @@
 """Command line: `bt-audio`.
 
 A thin layer over the library; no logic of its own. `info FILE` prints what a sound file holds; `analyse FILE -o BUNDLE`
-writes every measure as a control bundle; `stems FILE -o DIR` writes one wav per stem; `install` downloads the ONNX
-Runtime library and the models (after asking; `--ensemble` adds the fine-tuned ones), `models` lists them and `doctor`
-checks them; `--version` and `--help` answer, and any other input is a usage error.
+writes every measure as a control bundle; `measures` lists their names; `stems FILE -o DIR` writes one wav per stem;
+`install` downloads the ONNX Runtime library and the models (after asking; `--ensemble` adds the fine-tuned ones),
+`models` lists them and `doctor` checks them; `--version` and `--help` answer, and any other input is a usage error.
 """
 
 import argparse
@@ -13,7 +13,17 @@ from collections.abc import Callable
 from pathlib import Path
 
 from . import __version__
-from ._native._core import ModelInfo, Sound, cache_dir, install, load, models, onnx_runtime_load, onnx_runtime_status
+from ._native._core import (
+    ModelInfo,
+    Sound,
+    cache_dir,
+    install,
+    load,
+    measures,
+    models,
+    onnx_runtime_load,
+    onnx_runtime_status,
+)
 from .errors import BullterrierAudioError
 
 _EXIT_CODES = """\
@@ -150,6 +160,7 @@ def main(argv: list[str] | None = None, *, download: Downloader = install) -> in
     analyse = commands.add_parser("analyse", help="measure a sound file and write the bundle (control's JSON)")
     analyse.add_argument("file", help="the audio file (wav, flac, mp3, ogg, m4a)")
     analyse.add_argument("-o", "--output", required=True, help="the bundle file to write")
+    commands.add_parser("measures", help="list the names of the measures `analyse` writes (built-in and plugins)")
     stems = commands.add_parser("stems", help="separate a sound file into stems and write one wav per stem")
     stems.add_argument("file", help="the audio file (wav, flac, mp3, ogg, m4a)")
     stems.add_argument("-o", "--output", required=True, metavar="DIR", help="the folder to write <stem>.wav files into")
@@ -173,6 +184,9 @@ def main(argv: list[str] | None = None, *, download: Downloader = install) -> in
     try:
         if args.command == "install":
             return _install(args, download)
+        if args.command == "measures":
+            print("\n".join(measures()))
+            return 0
         if args.command in _MODEL_COMMANDS:
             return _MODEL_COMMANDS[args.command](args)
         sound = load(args.file)

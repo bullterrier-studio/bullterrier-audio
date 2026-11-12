@@ -26,8 +26,10 @@ from ._native._core import (
     Stems,
     Structure,
     load,
+    measures,
 )
 from .errors import BullterrierAudioError, DecodeError, InvalidError, ModelUnavailableError, WriteError
+from .plugin import measure
 
 __version__ = metadata.version("bullterrier-audio")
 
@@ -57,4 +59,6 @@ __all__ = [
     "WriteError",
     "__version__",
     "load",
+    "measure",
+    "measures",
 ]

@@ -1,7 +1,7 @@
 # The stub of the Rust extension `bullterrier_audio._native._core` (crates/python). The documentation is the
 # extension's own (`help(Sound)`).
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from os import PathLike
 from pathlib import Path
 from typing import ClassVar, final
@@ -25,6 +25,7 @@ __all__ = [
     "Section",
     "Separation",
     "Series",
+    "Snapshot",
     "Sound",
     "Stem",
     "Stems",
@@ -32,9 +33,14 @@ __all__ = [
     "cache_dir",
     "install",
     "load",
+    "measures",
     "models",
     "onnx_runtime_load",
     "onnx_runtime_status",
+    "register_measure",
+    "registry_restore",
+    "registry_snapshot",
+    "units",
 ]
 
 @final
@@ -50,6 +56,9 @@ class Band:
 
 @final
 class Series:
+    def __init__(
+        self, start: float, rate: float, values: Sequence[float], unit: str, scaling: str | None = None
+    ) -> None: ...
     @property
     def start(self) -> float: ...
     @property
@@ -63,6 +72,14 @@ class Series:
 
 @final
 class Event:
+    def __init__(
+        self,
+        t: float,
+        strength: float,
+        duration: float | None = None,
+        label: str | None = None,
+        pitch: float | None = None,
+    ) -> None: ...
     @property
     def t(self) -> float: ...
     @property
@@ -385,6 +402,7 @@ class Sound:
     def key(self) -> Key: ...
     def drops(self) -> list[Event]: ...
     def bundle(self) -> Bundle: ...
+    def measure(self, name: str) -> Series | list[Event]: ...
     def summary(self) -> str: ...
     def energy(self, band: Band) -> Series: ...
     def brightness(self) -> Series: ...
@@ -393,6 +411,21 @@ class Sound:
     def normalised(self, lufs: float) -> Sound: ...
     def write(self, path: str | PathLike[str]) -> None: ...
 
+@final
+class Snapshot: ...
+
+def register_measure(
+    function: Callable[[Sound], Series | Sequence[Event]],
+    name: str,
+    identity: str,
+    description: str,
+    unit: str | None = None,
+    scaling: str | None = None,
+) -> None: ...
+def units() -> list[str]: ...
+def measures() -> list[str]: ...
+def registry_snapshot() -> Snapshot: ...
+def registry_restore(snapshot: Snapshot | None) -> None: ...
 def load(path: str | PathLike[str]) -> Sound: ...
 def models(cache: str | PathLike[str] | None = None) -> list[ModelInfo]: ...
 def onnx_runtime_status(cache: str | PathLike[str] | None = None) -> ModelInfo: ...

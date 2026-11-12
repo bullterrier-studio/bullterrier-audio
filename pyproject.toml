@@ -335,13 +335,16 @@ DEP002 = ["numpy"]
 root_package = "bullterrier_audio"
 
 [[tool.importlinter.contracts]]
-name = "Layers: __main__ > cli > _native > errors"
+name = "Layers: __main__ > cli > plugin > _native > errors"
 type = "layers"
 containers = ["bullterrier_audio"]
 exhaustive = true  # a new top-level module must be placed in a layer here
 layers = [
     "__main__",  # `python -m bullterrier_audio`: runs the command line
     "cli",  # app: the command line
+    # the author-facing module: the decorator and the loader of entry-point plugins. The extension calls its `_load` when
+    # a registry is first asked (a call at run time, not an import: the extension still imports nothing of the package)
+    "plugin",
     # the home of the Rust extension (`_native._core`): it imports only `errors` (the bindings raise its errors), so
     # every layer above may use it
     "_native",

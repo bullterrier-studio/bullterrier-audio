@@ -1,14 +1,30 @@
 //! The core's errors raised as the package's exceptions of `bullterrier_audio.errors`.
 
+use std::cell::Cell;
+
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
 use bullterrier_audio::Error;
 
-/// The Python exception for `error`: the class of `bullterrier_audio.errors` that stands for its variant, with the
+thread_local! {
+    /// The exception a plugin raised, kept while the core carries the failure up as an [`Error`] (which holds no Python
+    /// object). The measure runs on the thread that called the core, and `raised` takes it there.
+    static FOREIGN: Cell<Option<PyErr>> = const { Cell::new(None) };
+}
+
+/// Keeps `raised` (the plugin's own exception) to be re-raised unchanged by the next [`raised`] on this thread.
+pub(crate) fn keep_foreign(raised: PyErr) {
+    FOREIGN.set(Some(raised));
+}
+
+/// The Python exception for `error`: the exception a plugin raised, unchanged, if one is kept; else the class of `bullterrier_audio.errors` that stands for its variant, with the
 /// core's message (which names the path of a file error). The module is imported when the first error is raised:
 /// importing the extension imports nothing of the package.
 pub(crate) fn raised(py: Python<'_>, error: &Error) -> PyErr {
+    if let Some(foreign) = FOREIGN.take() {
+        return foreign;
+    }
     let name = match error {
         Error::Decode { .. } => "DecodeError",
         Error::Write { .. } => "WriteError",

@@ -4,6 +4,7 @@
 
 mod error;
 mod onnx;
+mod registry;
 
 use std::path::PathBuf;
 
@@ -11,13 +12,16 @@ use numpy::ndarray::Axis;
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 
-use bullterrier_audio::Error;
+use bullterrier_audio::{Error, Measurement};
 
 /// bullterrier-audio's Rust core.
 #[pymodule]
 mod _core {
     #[pymodule_export]
     use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_load, onnx_runtime_status};
+    #[pymodule_export]
+    #[pymodule_export]
+    use super::registry::{Snapshot, measures, register_measure, registry_restore, registry_snapshot, units};
     #[pymodule_export]
     use super::{
         Analysis, Band, Bundle, Event, Grid, Hit, Hits, Key, Mode, Notes, Origin, Section, Separation, Series, Sound,
@@ -89,6 +93,26 @@ struct Series {
 
 #[pymethods]
 impl Series {
+    #[new]
+    #[pyo3(signature = (start, rate, values, unit, scaling=None))]
+    fn new(
+        py: Python<'_>,
+        start: f64,
+        rate: f64,
+        values: Vec<f64>,
+        unit: &str,
+        scaling: Option<String>,
+    ) -> PyResult<Self> {
+        let unit = registry::parse_unit(unit).map_err(|e| error::raised(py, &e))?;
+        Ok(Self {
+            start,
+            rate,
+            unit: registry::unit_name(unit),
+            scaling,
+            values,
+        })
+    }
+
     /// The values as a new float64 array.
     #[getter]
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
@@ -101,8 +125,7 @@ impl From<bullterrier_audio::formats::Series> for Series {
         Self {
             start: series.start,
             rate: series.rate,
-            // the unit's serde name is its lowercase variant name
-            unit: format!("{:?}", series.unit).to_lowercase(),
+            unit: registry::unit_name(series.unit),
             scaling: series.scaling,
             values: series.values,
         }
@@ -117,6 +140,21 @@ struct Event {
     duration: Option<f64>,
     label: Option<String>,
     pitch: Option<f64>,
+}
+
+#[pymethods]
+impl Event {
+    #[new]
+    #[pyo3(signature = (t, strength, duration=None, label=None, pitch=None))]
+    fn new(t: f64, strength: f64, duration: Option<f64>, label: Option<String>, pitch: Option<f64>) -> Self {
+        Self {
+            t,
+            strength,
+            duration,
+            label,
+            pitch,
+        }
+    }
 }
 
 impl From<bullterrier_audio::formats::Event> for Event {
@@ -902,9 +940,21 @@ impl Sound {
 
     /// Every measure of the sound as one bundle. A sound under 3 s, or with no tempo or key, is an `InvalidError`.
     fn bundle(&self, py: Python<'_>) -> PyResult<Bundle> {
-        py.detach(|| self.0.bundle())
+        let registry = registry::current(py)?;
+        py.detach(|| self.0.bundle_with(&registry))
             .map(Bundle)
             .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The measure registered under `name` (see `measures`), run on this sound: a `Series` or a list of `Event`s. An
+    /// unknown name is an `InvalidError` listing the names; a plugin's own exception is raised unchanged.
+    fn measure(&self, py: Python<'_>, name: &str) -> PyResult<Measured> {
+        let registry = registry::current(py)?;
+        match py.detach(|| self.0.measure_with(&registry, name)) {
+            Ok(Measurement::Series(found)) => Ok(Measured::Series(found.into())),
+            Ok(Measurement::Events(found)) => Ok(Measured::Events(found.into_iter().map(Event::from).collect())),
+            Err(error) => Err(error::raised(py, &error)),
+        }
     }
 
     /// The measures of the sound as text, one fact per line. Errors as `bundle`.
@@ -949,6 +999,13 @@ impl Sound {
         let written = py.detach(|| self.0.write(path));
         written.map_err(|error| error::raised(py, &error))
     }
+}
+
+/// What `Sound.measure` returns.
+#[derive(IntoPyObject)]
+enum Measured {
+    Series(Series),
+    Events(Vec<Event>),
 }
 
 /// The core's sound as a Python `Sound`, or its refusal as the package's exception.
