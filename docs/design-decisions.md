@@ -170,7 +170,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   Rust feature extraction). Kick precision on synthetic kicks is 0.6: it also fires on the kick's tail. Peak picking is ADTOF's
   own (`post_processing.py`): thresholds 0.22/0.24/0.22 applied to the activation minus a moving average, local maxima,
   merge within 20 ms; the prototype's one-song snare threshold 0.14 is not used. *Cost:* the weights are CC BY-NC-SA 4.0
-  (recorded, not gating until a commercial release); memory is about 5 MB per second of audio, so a sound over 650 s is refused.
+  (recorded, not gating until a commercial release); memory is about 5 MB per second of audio, so a drums stem over 650 s is refused; a whole mix is limited earlier by the separator (440 s; measured peak 3.2 GB at 440 s).
 
 ## Project
 

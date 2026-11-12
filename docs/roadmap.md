@@ -122,7 +122,7 @@ needed: A3's beat-level drops cover bass steps. Measured on one Mac (10 cores): 
 The spike chose ADTOF (an ONNX export with the log-spectrogram front-end inside) over a three-band DSP baseline by the rule
 fixed beforehand; numbers in design-decisions. Built: `Sound::hits(Hit)` / `hits_with(&Infer, Hit)`, `Hit`, `Hits` (ADTOF's
 published thresholds and picker windows), the pinned `adtof-frame-rnn` model (2 MB). A sound that is not a drums stem is
-separated first (A5, cached). A sound longer than 650 s is refused (about 5 MB of memory per second). Tom and cymbal columns are
+separated first (A5, cached). A mix is limited by the separator (440 s, 250 s with the ensemble; peak 3.2 GB measured at 440 s); a drums stem alone by 650 s (about 5 MB of memory per second). Tom and cymbal columns are
 not exposed. The kick class also hears kick tails on synthetic kicks (precision 0.6).
 
 - **Spike first, then the plan:** an ONNX export of a drum transcriber (ADTOF has a PyTorch port; none is published as
