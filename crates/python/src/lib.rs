@@ -7,7 +7,7 @@ mod error;
 use std::path::PathBuf;
 
 use numpy::ndarray::Axis;
-use numpy::{PyArray2, PyArrayMethods};
+use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 
 use bullterrier_audio::Error;
@@ -16,7 +16,7 @@ use bullterrier_audio::Error;
 #[pymodule]
 mod _core {
     #[pymodule_export]
-    use super::{Origin, Sound, load};
+    use super::{Analysis, Band, Event, Origin, Series, Sound, load};
 }
 
 /// Where a sound came from: `source`, the file it was loaded from (`None` for a sound made from samples), and `offset`,
@@ -25,6 +25,117 @@ mod _core {
 struct Origin {
     source: Option<PathBuf>,
     offset: f64,
+}
+
+/// A frequency band of the spectrum; `edges` are its lower and upper edge in hertz.
+#[pyclass(
+    eq,
+    eq_int,
+    frozen,
+    hash,
+    from_py_object,
+    rename_all = "SCREAMING_SNAKE_CASE",
+    module = "bullterrier_audio"
+)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+enum Band {
+    Sub,
+    Bass,
+    LowMid,
+    Mid,
+    High,
+    Air,
+}
+
+#[pymethods]
+impl Band {
+    /// The band's edges in hertz, `(lo, hi)`.
+    #[getter]
+    #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
+    fn edges(&self) -> (f64, f64) {
+        bullterrier_audio::Band::from(*self).edges()
+    }
+}
+
+impl From<Band> for bullterrier_audio::Band {
+    fn from(band: Band) -> Self {
+        match band {
+            Band::Sub => Self::Sub,
+            Band::Bass => Self::Bass,
+            Band::LowMid => Self::LowMid,
+            Band::Mid => Self::Mid,
+            Band::High => Self::High,
+            Band::Air => Self::Air,
+        }
+    }
+}
+
+/// Values at a fixed rate: value `i` is at `start + i / rate` seconds. `unit` names what they measure and `scaling`
+/// how a fraction was scaled.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Series {
+    start: f64,
+    rate: f64,
+    unit: String,
+    scaling: Option<String>,
+    values: Vec<f64>,
+}
+
+#[pymethods]
+impl Series {
+    /// The values as a new float64 array.
+    #[getter]
+    fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.values)
+    }
+}
+
+impl From<bullterrier_audio::formats::Series> for Series {
+    fn from(series: bullterrier_audio::formats::Series) -> Self {
+        Self {
+            start: series.start,
+            rate: series.rate,
+            // the unit's serde name is its lowercase variant name
+            unit: format!("{:?}", series.unit).to_lowercase(),
+            scaling: series.scaling,
+            values: series.values,
+        }
+    }
+}
+
+/// Something at `t` seconds with a `strength` in 0..1; a span has a `duration`, a named one a `label`, a note a `pitch`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Event {
+    t: f64,
+    strength: f64,
+    duration: Option<f64>,
+    label: Option<String>,
+    pitch: Option<f64>,
+}
+
+impl From<bullterrier_audio::formats::Event> for Event {
+    fn from(event: bullterrier_audio::formats::Event) -> Self {
+        Self {
+            t: event.t,
+            strength: event.strength,
+            duration: event.duration,
+            label: event.label,
+            pitch: event.pitch,
+        }
+    }
+}
+
+/// How a sound is measured: `window`, `hop`, `lag`, `min_gap`, `relative_height`, `min_rise` and `floor` (units and ranges in the
+/// Rust core's `Analysis`). Read it from `Sound.analysis`; change it with `Sound.with_analysis`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Analysis {
+    window: f64,
+    hop: f64,
+    lag: f64,
+    min_gap: f64,
+    relative_height: f64,
+    min_rise: f64,
+    floor: f64,
 }
 
 /// A sound: one or more channels of float32 samples at one sample rate. It never changes; an edit returns a new one.
@@ -111,6 +222,81 @@ impl Sound {
         wrap(py, py.detach(|| self.0.resampled(rate)))
     }
 
+    /// The analysis the measures of this sound read.
+    #[getter]
+    fn analysis(&self) -> Analysis {
+        let a = self.0.analysis();
+        Analysis {
+            window: a.window(),
+            hop: a.hop(),
+            lag: a.lag(),
+            min_gap: a.min_gap(),
+            relative_height: a.relative_height(),
+            min_rise: a.min_rise(),
+            floor: a.floor(),
+        }
+    }
+
+    /// This sound measured under the analysis with the given fields changed; a field left out keeps its value. A
+    /// value outside its range or NaN is an `InvalidError` naming the field.
+    #[pyo3(signature = (*, window=None, hop=None, lag=None, min_gap=None, relative_height=None, min_rise=None, floor=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn with_analysis(
+        &self,
+        py: Python<'_>,
+        window: Option<f64>,
+        hop: Option<f64>,
+        lag: Option<f64>,
+        min_gap: Option<f64>,
+        relative_height: Option<f64>,
+        min_rise: Option<f64>,
+        floor: Option<f64>,
+    ) -> PyResult<Self> {
+        let a = self.0.analysis();
+        let analysis = bullterrier_audio::Analysis::new(
+            window.unwrap_or(a.window()),
+            hop.unwrap_or(a.hop()),
+            lag.unwrap_or(a.lag()),
+            min_gap.unwrap_or(a.min_gap()),
+            relative_height.unwrap_or(a.relative_height()),
+            min_rise.unwrap_or(a.min_rise()),
+            floor.unwrap_or(a.floor()),
+        );
+        analysis
+            .map(|analysis| Self(self.0.with_analysis(analysis)))
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// Energy in `band` per frame, as a 0..1 series: the band's level in dB on the scale that reads 0 at the
+    /// analysis floor and 1 at full scale.
+    fn energy(&self, py: Python<'_>, band: Band) -> PyResult<Series> {
+        series(py, py.detach(|| self.0.energy(band.into())))
+    }
+
+    /// Spectral centroid per frame, as a series in hertz.
+    fn brightness(&self, py: Python<'_>) -> PyResult<Series> {
+        series(py, py.detach(|| self.0.brightness()))
+    }
+
+    /// Short-term loudness in LUFS (ITU-R BS.1770 / EBU R128), as a series in decibels. A sound shorter than the
+    /// measurement window is an `InvalidError`.
+    fn loudness(&self, py: Python<'_>) -> PyResult<Series> {
+        series(py, py.detach(|| self.0.loudness()))
+    }
+
+    /// The onsets, earliest first, as events with a strength in 0..1.
+    fn onsets(&self, py: Python<'_>) -> PyResult<Vec<Event>> {
+        py.detach(|| self.0.onsets())
+            .map(|events| events.into_iter().map(Event::from).collect())
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// This sound with its gain changed to reach an integrated loudness of `lufs`. A sound too short to measure, or
+    /// a target that is not finite, is an `InvalidError`.
+    fn normalised(&self, py: Python<'_>, lufs: f64) -> PyResult<Self> {
+        wrap(py, py.detach(|| self.0.normalised(lufs)))
+    }
+
     /// Write this sound to `path`; the extension picks the format, `.wav` (32-bit float) or `.flac` (24-bit). Any
     /// other extension is an `InvalidError`, a file that cannot be written a `WriteError`.
     fn write(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
@@ -122,4 +308,9 @@ impl Sound {
 /// The core's sound as a Python `Sound`, or its refusal as the package's exception.
 fn wrap(py: Python<'_>, result: Result<bullterrier_audio::Sound, Error>) -> PyResult<Sound> {
     result.map(Sound).map_err(|error| error::raised(py, &error))
+}
+
+/// The core's series as a Python `Series`, or its refusal as the package's exception.
+fn series(py: Python<'_>, result: Result<bullterrier_audio::formats::Series, Error>) -> PyResult<Series> {
+    result.map(Series::from).map_err(|error| error::raised(py, &error))
 }
