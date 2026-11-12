@@ -296,9 +296,11 @@ impl Sound {
     #[must_use]
     pub fn with_analysis(&self, analysis: Analysis) -> Self {
         Self {
+            samples: self.samples.clone(),
+            rate: self.rate,
+            origin: self.origin.clone(),
             analysis,
             memo: Memo::default(),
-            ..self.clone()
         }
     }
 
@@ -458,8 +460,10 @@ impl Sound {
         }
         Ok(Self {
             samples,
+            rate: self.rate,
+            origin: self.origin.clone(),
+            analysis: self.analysis,
             memo: Memo::default(),
-            ..self.clone()
         })
     }
 
