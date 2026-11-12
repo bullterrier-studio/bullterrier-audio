@@ -20,6 +20,10 @@ const STEMS: usize = 6;
 /// The sources of an ft model: drums, bass, other, vocals.
 const FT_STEMS: usize = 4;
 pub(crate) const CHANNELS: usize = 2;
+/// The revision of the separation: part of the key of the stems on disk. Raise it whenever a change can alter the stems
+/// of a sound (the segmenting, normalisation, shifts or blending here, the resampling, the recipe of the ensemble),
+/// as the crate version stays 0.0.0 while the package is in development and so cannot tell old stems from new.
+pub(crate) const ALGORITHM_REVISION: u32 = 1;
 /// The most samples the stems of one sound may hold (all stems, both channels): 2^29 floats are 2 GiB, about 17
 /// minutes with six stems. A stated limit of this package, from the 4 GB memory budget of a run.
 const MAX_SAMPLES: usize = 1 << 29;
@@ -227,23 +231,31 @@ impl Mix<'_> {
 /// not hold the stems.
 #[cfg(feature = "onnx")]
 pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
-    use crate::models::{Options, OrtInfer, ensemble_models, model_file, models, runtime_library};
+    use crate::models::{Model, Options, OrtInfer, ensemble_models, model_file, models, runtime_library};
 
     let options = Options::from_env();
     let six = &models()[1];
     let ensemble = sound.separation().ensemble();
-    let used: Vec<&str> = std::iter::once(six)
+    let used: Vec<&Model> = std::iter::once(six)
         .chain(ensemble_models().iter().filter(|_| ensemble))
-        .map(|model| model.sha256)
         .collect();
+    let hashes: Vec<&str> = used.iter().map(|model| model.sha256).collect();
     let threads = sound.separation().threads() as usize;
-    sound.stems_cached(&options.cache()?, &used, || {
+    sound.stems_cached(&options.cache()?, &hashes, || {
+        // every file is found (and verified) before the first session opens, so a missing model fails at once and
+        // not after the passes of the models before it; `used` is the six-source model, then drums, bass, other, vocals
+        let files = used
+            .iter()
+            .map(|model| model_file(model, &options))
+            .collect::<Result<Vec<_>, _>>()?;
+        let library = runtime_library(&options)?;
+        // a session holds gigabytes: separation never uses the sessions `OrtInfer::open` keeps for the life of the
+        // process, so that dropping one frees its memory
+        let open = |file: &std::path::Path| OrtInfer::from_file(&library, file, threads);
         if ensemble {
-            // sessions that are not kept for the life of the process, so that dropping one frees its memory
-            let open = |model| OrtInfer::from_file(&runtime_library(&options)?, &model_file(model, &options)?, threads);
-            sound.stems_with_ensemble(|| open(six), |stem| open(&ensemble_models()[stem.index()]))
+            sound.stems_with_ensemble(|| open(&files[0]), |stem| open(&files[1 + stem.index()]))
         } else {
-            sound.stems_with(&OrtInfer::open(six, &options, threads)?)
+            sound.stems_with(&open(&files[0])?)
         }
     })
 }

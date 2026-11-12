@@ -3,13 +3,14 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use hound::{SampleFormat, WavReader};
 use sha2::{Digest, Sha256};
 
 use crate::infer::GRAPH_OPTIMISATION;
 use crate::resample::output_frames;
-use crate::stems::{CHANNELS, RATE, finish};
+use crate::stems::{ALGORITHM_REVISION, CHANNELS, RATE, finish};
 use crate::write::write;
 use crate::{Error, Sound, Stem, Stems};
 
@@ -24,25 +25,30 @@ pub(crate) fn cached(
     if !sound.separation().cache() {
         return compute();
     }
-    let folder = cache.join("stems").join(key(sound, models));
+    let root = cache.join("stems");
+    let folder = root.join(key(sound, models, ALGORITHM_REVISION));
     let frames = output_frames(sound.samples()[0].len(), sound.rate(), RATE);
     if let Some(rows) = load(&folder, frames) {
         return finish(sound, rows);
     }
+    // a folder that cannot be written fails now, not after minutes of separation
+    prepare(&root, &folder)?;
     let stems = compute()?;
     store(&folder, &stems)?;
     Ok(stems)
 }
 
 /// The name of the folder: the SHA-256, in hex, of a text that says everything the stems depend on, followed by the
-/// samples as little-endian `f32`, channel after channel. Models are named by their SHA-256, sorted.
-fn key(sound: &Sound, models: &[&str]) -> String {
+/// samples as little-endian `f32`, channel after channel. Models are named by their SHA-256, sorted. `revision` is the
+/// [`ALGORITHM_REVISION`]. The version of the ONNX Runtime library is not in it: a hit must not load the library, so a
+/// different build of it can differ in the last bits.
+fn key(sound: &Sound, models: &[&str], revision: u32) -> String {
     let separation = sound.separation();
     let mut models = models.to_vec();
     models.sort_unstable();
     let mut hash = Sha256::new();
     hash.update(format!(
-        "bt-audio stems v1\nversion={}\nrate={}\nchannels={}\nshifts={}\nensemble={}\nseed={}\noptimisation={GRAPH_OPTIMISATION}\nmodels={}\nsamples\n",
+        "bt-audio stems v1\nversion={}\nrevision={revision}\nrate={}\nchannels={}\nshifts={}\nensemble={}\nseed={}\noptimisation={GRAPH_OPTIMISATION}\nmodels={}\nsamples\n",
         env!("CARGO_PKG_VERSION"),
         sound.rate(),
         sound.channels(),
@@ -85,13 +91,51 @@ fn load(folder: &Path, frames: usize) -> Option<Vec<Vec<f32>>> {
     Some(rows)
 }
 
-/// Writes each stem to a temporary file in `folder` and renames it to its name: a reader sees a whole file or none.
-fn store(folder: &Path, stems: &Stems) -> Result<(), Error> {
-    let failed = |path: &Path, reason: String| Error::Write {
+fn failed(path: &Path, reason: String) -> Error {
+    Error::Write {
         path: path.to_path_buf(),
         reason,
-    };
+    }
+}
+
+/// The age after which a temporary file of an earlier store is surely dead (a killed process, a power cut).
+const DEAD_AFTER: Duration = Duration::from_hours(24); // constant: a younger one may be another process storing
+
+/// Deletes the temporary files of writers that died, older than `DEAD_AFTER`, in every key folder under `root`. Nothing
+/// else is touched, and nothing is evicted: stems stay until the user deletes them.
+fn clear_dead(root: &Path) {
+    let Ok(keys) = fs::read_dir(root) else { return };
+    for folder in keys.flatten().filter_map(|key| fs::read_dir(key.path()).ok()) {
+        for entry in folder.flatten() {
+            let name = entry.file_name();
+            let dead = entry
+                .metadata()
+                .and_then(|meta| meta.modified())
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+                .is_some_and(|age| age > DEAD_AFTER);
+            if dead && name.to_string_lossy().starts_with(".tmp-") {
+                // not ours to force: one already gone or held open stays for the next time
+                drop(fs::remove_file(entry.path()));
+            }
+        }
+    }
+}
+
+/// Makes `folder` and proves it can be written to, with a temporary file that is removed again; clears the dead
+/// temporary files under `root`.
+fn prepare(root: &Path, folder: &Path) -> Result<(), Error> {
+    clear_dead(root);
     fs::create_dir_all(folder).map_err(|error| failed(folder, error.to_string()))?;
+    tempfile::Builder::new()
+        .prefix(".tmp-")
+        .tempfile_in(folder)
+        .map(drop)
+        .map_err(|error| failed(folder, error.to_string()))
+}
+
+/// Writes each stem to a temporary file in `folder` and renames it to its name: a reader sees a whole file or none.
+fn store(folder: &Path, stems: &Stems) -> Result<(), Error> {
     for (stem, sound) in stems.iter() {
         let target = file_of(folder, stem);
         let temporary = tempfile::Builder::new()
@@ -105,4 +149,19 @@ fn store(folder: &Path, stems: &Stems) -> Result<(), Error> {
             .map_err(|error| failed(&target, error.to_string()))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    // Not through `Sound::stems_cached`: the revision is a constant of the crate, and only here can a test give another.
+    use super::*;
+
+    #[test]
+    fn another_algorithm_revision_is_another_key() -> Result<(), Error> {
+        let sound = Sound::from_samples(vec![vec![0.5, -0.5, 0.25]], RATE)?;
+        let key = |revision| key(&sound, &["model"], revision);
+        assert_eq!(key(1), key(1));
+        assert_ne!(key(1), key(2));
+        Ok(())
+    }
 }

@@ -27,14 +27,15 @@ use crate::Error;
 /// only when asked for (`models::install_ensemble`); it takes five times as long as one model (15 s of sound: 87 s, against 17 s for
 /// one model with its session opened), and its memory is that of one model at a time (peak 2.7 GB resident for 15 s; one
 /// model alone, 60 s: 2.2 GB, 54 s). `cache` keeps the stems on disk (`Sound::stems_cached`) under a key that holds every
-/// other value here; it is not part of the key.
+/// other value here; it is not part of the key. An entry takes about 127 MB per minute of audio (six stems of two `f32`
+/// channels at 44.1 kHz) and is never evicted: clear them with `rm -r <cache folder>/stems`.
 ///
 /// `threads` is the number of threads ONNX Runtime uses inside an operator while separating. It changes the time, not
 /// the stems: measured with the six-source model on 20 s of stereo, no shifts, Apple silicon with 10 cores, ONNX Runtime
 /// 1.23.2 (time per run; peak resident memory): 1 thread 19.0 s, 2.18 GB; 2 threads 10.8 s, 2.18 GB; 4 threads 7.9 s,
 /// 2.17 GB; 8 threads 7.8 s, 2.20 GB. The stems of every count, and of two runs of each, were bit-identical (SHA-256 of
-/// the `f32` samples), so `threads` is not part of the cache key. 64 is a stated limit of this package. On another
-/// processor or library the bits may differ between counts, and the cached stems of another count are then still read.
+/// the `f32` samples) there, which is not guaranteed on another processor or library; so `threads` is not part of the
+/// cache key, and the cached stems of another count are read as they are. 64 is a stated limit of this package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Separation {
     shifts: u32,

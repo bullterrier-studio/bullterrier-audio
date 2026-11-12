@@ -251,6 +251,21 @@ def test_stems_without_the_library_or_the_models_say_to_install_them(no_models):
     assert not no_models.exists()  # nothing was downloaded or created
 
 
+@pytest.mark.models
+def test_a_missing_ensemble_model_is_reported_before_any_separation_starts(request):
+    """The six-source model is there, the library and the ft models are not: asking for the ensemble names the ft
+    models first. Were the library looked for before them, the six-source pass would run (minutes) before the ft
+    models were found missing."""
+    from bullterrier_audio.cli import cache_dir
+
+    six = cache_dir() / "htdemucs-6s.onnx"
+    request.getfixturevalue("no_models")
+    (cache_dir()).mkdir(parents=True)
+    (cache_dir() / six.name).symlink_to(six)
+    with pytest.raises(ModelUnavailableError, match="install --ensemble"):
+        tone(channels=2, frames=44100, rate=44100).with_separation(ensemble=True, cache=False).stems()
+
+
 def test_a_sound_that_is_not_a_stem_has_none():
     assert tone().stem is None
 

@@ -327,7 +327,8 @@ impl From<bullterrier_audio::Stem> for Stem {
 
 /// The six stems of a sound, each a `Sound` at 44.1 kHz in two channels: `stems[Stem.BASS]`, `len(stems)` is 6, and
 /// iterating gives the `Stem`s in the model's order (`items()` gives the pairs). They add up to the sound, apart
-/// from the model's own error.
+/// from the model's own error and one Demucs convention: the mean of the sound is added back to every stem, so their
+/// sum differs from the sound by five times that mean (zero for audio without a DC offset).
 #[pyclass(frozen, module = "bullterrier_audio")]
 struct Stems(bullterrier_audio::Stems);
 
@@ -661,8 +662,9 @@ impl Sound {
     /// The six stems of the sound, separated by the Demucs model (`htdemucs-6s`; the four fine-tuned ones too with
     /// `ensemble`). It needs the ONNX Runtime library and the model: without them a `ModelUnavailableError` says to
     /// run `bt-audio install` (`bt-audio install --ensemble` for the fine-tuned ones). It takes minutes for a song;
-    /// with `cache` on, the stems are kept on disk and read back for the same sound and parameters. A sound over
-    /// about 17 minutes is an `InvalidError`.
+    /// with `cache` on, the stems are kept on disk and read back for the same sound and parameters: about 127 MB per
+    /// minute of audio for each entry, never evicted (clear them with `rm -r <cache folder>/stems`). A sound over
+    /// the length limit (`LIMIT`) is an `InvalidError`.
     fn stems(&self, py: Python<'_>) -> PyResult<Stems> {
         py.detach(|| self.0.stems())
             .map(Stems)

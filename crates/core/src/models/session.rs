@@ -11,8 +11,8 @@ use super::{Model, Options, Status, model_file, runtime_library, runtime_status}
 use crate::{Error, Infer, Tensor};
 
 /// A model file loaded into ONNX Runtime on the CPU (loading takes a moment). A handle is cheap to clone; clones are
-/// the one session. [`open`](Self::open) keeps the session it loads, so the next call for the same model and library
-/// gets it back (the same threads too).
+/// the one session, which is freed with the last. [`open`](Self::open) keeps the session it loads, so the next call for
+/// the same model, library and threads gets it back.
 ///
 /// Determinism: the session runs `threads` threads inside operators and one across them, and applies no graph rewrites
 /// (optimisation level `Disable`), so what runs does not depend on the processor. (The six-source Demucs model gave
@@ -73,7 +73,8 @@ impl OrtInfer {
 
     /// `model`, found as [`model_file`] and [`runtime_library`] find them (downloading only if `options` allow), loaded.
     /// The session is kept for the life of the process: opening the same model file with the same library again returns
-    /// it instead of loading another. A failure is never kept.
+    /// it instead of loading another. A failure is never kept. For the small notes model only: a separator session
+    /// holds about 2 GB, so separation opens its sessions with [`from_file`](Self::from_file) and drops them.
     ///
     /// # Errors
     /// As [`model_file`], [`runtime_library`] and [`from_file`](Self::from_file).

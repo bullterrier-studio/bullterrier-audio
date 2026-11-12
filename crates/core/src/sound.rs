@@ -441,7 +441,8 @@ impl Sound {
     }
 
     /// The stems of the sound, separated by the installed `HTDemucs` model; see [`Sound::stems_with`] for what is
-    /// promised. The result is computed once per sound. Needs the `onnx` feature, the ONNX Runtime library and the model
+    /// promised. The result is computed once per sound. With [`Separation::cache`] on they are kept on disk: about
+    /// 127 MB per minute of audio per entry, never evicted (`rm -r <cache>/stems` clears them). Needs the `onnx` feature, the ONNX Runtime library and the model
     /// (`bt-audio install`).
     ///
     /// # Errors
@@ -500,18 +501,20 @@ impl Sound {
     /// The stems of the sound as `compute` makes them, kept in `cache` (a folder; its `stems` subfolder is the cache of
     /// stems) so that the same sound separated the same way is read back instead of computed. `models` name by SHA-256
     /// the models `compute` runs; they are part of the key with the sound's samples, rate and channels, its
-    /// [`Separation`] (shifts, ensemble, seed; not `cache`) and the crate version. `Sound::stems` is this with the
-    /// installed models. With [`Separation::cache`] off, `compute` runs and nothing is read or written.
+    /// [`Separation`] (shifts, ensemble, seed; not `cache` or `threads`), the crate version and the revision of the
+    /// separation algorithm. `Sound::stems` is this with the installed models. With [`Separation::cache`] off,
+    /// `compute` runs and nothing is read or written. An entry takes about 127 MB per minute of audio and is never
+    /// evicted (`rm -r <cache>/stems` clears them); the temporary files of dead writers, older than a day, are removed.
     ///
-    /// Promises: a hit gives the stems a miss gave, to the bit. A folder that does not hold all six stems whole (a
+    /// Promises: a hit gives the stems the miss stored, bit for bit (whatever the thread count of the miss). A folder that does not hold all six stems whole (a
     /// missing or damaged file, one of another length, rate or channel count, a temporary file left by a dead writer)
     /// is no hit: `compute` runs and the files are replaced, each by a rename, so a reader sees a whole file or none and
     /// two writers of one key leave a whole folder. Files of other names in the folder are left alone.
     ///
     /// # Errors
     ///
-    /// What `compute` returns; [`Error::Write`] naming the file or folder when the stems cannot be stored (the
-    /// computation is not hidden by it: it fails).
+    /// What `compute` returns; [`Error::Write`] naming the file or folder when the stems cannot be stored. A folder
+    /// that cannot be written is found before `compute` runs.
     pub fn stems_cached(
         &self,
         cache: &Path,

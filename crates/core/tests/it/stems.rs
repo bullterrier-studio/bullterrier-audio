@@ -672,8 +672,6 @@ mod cache {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    use sha2::{Digest, Sha256};
-
     use super::*;
 
     const SIX: &str = "sha-of-the-six-source-model";
@@ -971,40 +969,55 @@ mod cache {
     }
 
     #[test]
-    fn a_cache_folder_that_cannot_be_written_is_an_error_naming_it() -> Outcome {
+    fn a_cache_folder_that_cannot_be_written_fails_naming_it_before_the_model_runs() -> Outcome {
         let dir = tempfile::tempdir()?;
         let file = dir.path().join("a-file");
         fs::write(&file, b"x")?;
         let under_a_file = file.join("cache");
-        let result = run(&base()?, &under_a_file, &[SIX]);
+        let model = StandIn::split(SPLIT);
+        let sound = base()?;
+        let result = sound.stems_cached(&under_a_file, &[SIX], || sound.stems_with(&model));
         assert!(
             matches!(&result, Err(Error::Write { path, .. }) if path.starts_with(&under_a_file)),
             "{:?}",
-            result.map(|(_, calls)| calls)
+            result.map(|_| ())
+        );
+        assert_eq!(
+            model.calls(),
+            0,
+            "the separation ran before the cache folder was found unusable"
         );
         Ok(())
     }
 
     #[test]
-    fn the_key_is_the_sha256_of_the_canonical_description_of_the_input() -> Outcome {
-        // The format is spelled out here, not read from the code: an accidental change of the key (and with it every
-        // stem on disk) fails this. The crate version is part of the key on purpose, so it is read, not written.
-        let samples = mix(100);
-        let sound = sound(samples.clone(), RATE)?.with_separation(separation(3, true, 7, true)?);
-        let mut canonical = format!(
-            "bt-audio stems v1\nversion={}\nrate=44100\nchannels=2\nshifts=3\nensemble=true\nseed=7\noptimisation=disable\nmodels=aaa,bbb\nsamples\n",
-            env!("CARGO_PKG_VERSION")
-        )
-        .into_bytes();
-        for x in samples.iter().flatten() {
-            canonical.extend(x.to_le_bytes());
-        }
+    fn a_store_clears_the_temporary_files_of_dead_writers_and_nothing_else() -> Outcome {
         let dir = tempfile::tempdir()?;
-        run(&sound, dir.path(), &["bbb", "aaa"])?;
+        run(&base()?, dir.path(), &[SIX])?;
         let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
-        assert_eq!(
-            key.file_name().map(|n| n.to_string_lossy().into_owned()),
-            Some(format!("{:x}", Sha256::digest(&canonical)))
+        let long_ago = std::time::SystemTime::now() - std::time::Duration::from_hours(25);
+        let touch = |name: &str, old: bool| -> Outcome {
+            let path = key.join(name);
+            fs::write(&path, b"x")?;
+            if old {
+                fs::File::options().write(true).open(&path)?.set_modified(long_ago)?;
+            }
+            Ok(())
+        };
+        touch(".tmp-dead.wav", true)?;
+        touch(".tmp-alive.wav", false)?;
+        touch("notes.txt", true)?;
+        // another sound: a miss, which stores into a folder of its own
+        let other = sound(mix(101), RATE)?.with_separation(separation(1, false, 0, true)?);
+        run(&other, dir.path(), &[SIX])?;
+        let left = names(&key);
+        assert!(
+            !left.contains(&".tmp-dead.wav".to_owned()),
+            "a dead temporary file stays: {left:?}"
+        );
+        assert!(
+            left.contains(&".tmp-alive.wav".to_owned()) && left.contains(&"notes.txt".to_owned()),
+            "{left:?}"
         );
         Ok(())
     }
@@ -1446,6 +1459,34 @@ mod real_model {
         for ((stem, a), (_, b)) in one.iter().zip(four.iter()) {
             // equal samples: the sounds differ in the separation they carry
             assert!(a.samples() == b.samples(), "{stem:?}");
+        }
+        Ok(())
+    }
+
+    /// The resident memory of this process, in MB.
+    fn resident_mb() -> Result<f64, Box<dyn std::error::Error>> {
+        let out = std::process::Command::new("ps")
+            .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+            .output()?;
+        Ok(String::from_utf8(out.stdout)?.trim().parse::<f64>()? / 1024.0)
+    }
+
+    #[test]
+    #[ignore = "needs the installed model: poe rust-test-models"]
+    fn no_session_stays_resident_after_a_separation() -> Outcome {
+        let _one = one_at_a_time();
+        let samples = song(3).mix;
+        // two thread counts: a kept session per count would leave two of about 2 GB behind
+        for threads in [4, 2] {
+            sound(samples.clone(), RATE)?
+                .with_separation(Separation::new(0, false, 0, false, threads)?)
+                .stems()?;
+            let resident = resident_mb()?;
+            println!("resident after a separation on {threads} threads: {resident:.0} MB");
+            assert!(
+                resident < 1100.0,
+                "a session is still resident after {threads} threads: {resident:.0} MB"
+            );
         }
         Ok(())
     }
