@@ -63,12 +63,16 @@ pub(crate) struct Spectrogram {
 }
 
 impl Spectrogram {
-    fn rows(&self) -> impl Iterator<Item = &[f32]> {
+    pub(crate) fn rows(&self) -> impl Iterator<Item = &[f32]> {
         self.power.chunks_exact(self.bins)
     }
 
+    pub(crate) fn bins(&self) -> usize {
+        self.bins
+    }
+
     #[allow(clippy::cast_precision_loss)] // bin indices are far below 2^52
-    fn frequency(&self, bin: usize) -> f64 {
+    pub(crate) fn frequency(&self, bin: usize) -> f64 {
         bin as f64 * self.bin_hz
     }
 }

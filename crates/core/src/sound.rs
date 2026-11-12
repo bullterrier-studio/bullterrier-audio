@@ -7,8 +7,9 @@ use std::sync::{Arc, OnceLock};
 use crate::Error;
 use crate::analysis::Analysis;
 use crate::decode::decode;
-use crate::formats::{Series, Unit};
+use crate::formats::{Event, Series, Unit};
 use crate::loudness;
+use crate::onsets;
 use crate::resample::resample;
 use crate::spectrum::{self, Band, Spectrogram};
 use crate::write::write;
@@ -32,6 +33,7 @@ struct Measured {
     energy: [OnceLock<Series>; 6],
     brightness: OnceLock<Series>,
     loudness: OnceLock<Series>,
+    onsets: OnceLock<Vec<Event>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -343,6 +345,32 @@ impl Sound {
             .0
             .brightness
             .get_or_init(|| spectrum::brightness(spectrogram, &self.analysis))
+            .clone())
+    }
+
+    /// The onsets of the sound, from the same frames as [`Sound::energy`].
+    ///
+    /// Promises: events sorted by `t`, each at a frame centre `i * hop` seconds and so inside the sound, with
+    /// `strength` in (0, 1]: the flux of the onset over the largest flux of the sound, so the strongest onset reads 1
+    /// and a gain on the whole sound changes nothing. Flux is the rise in dB over `lag` seconds, so times and
+    /// strengths hold within one hop whatever the hop. Only frames whose window lies wholly inside the sound count,
+    /// so an onset closer than half a window plus `lag` to the start, and the end, is not found, and neither is the
+    /// edge of zero padding. A rise under 0.1 dB, silence and steady sounds give no onset. See [`Analysis`] for
+    /// `lag`, `min_gap`, `relative_height` and `floor`. The result is computed once per sound.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    pub fn onsets(&self) -> Result<Vec<Event>, Error> {
+        if let Some(events) = self.memo.0.onsets.get() {
+            return Ok(events.clone());
+        }
+        let spectrogram = self.spectrogram()?;
+        Ok(self
+            .memo
+            .0
+            .onsets
+            .get_or_init(|| onsets::onsets(spectrogram, &self.analysis))
             .clone())
     }
 

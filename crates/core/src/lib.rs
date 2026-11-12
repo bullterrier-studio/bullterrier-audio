@@ -10,6 +10,7 @@ mod decode;
 mod error;
 pub mod formats;
 mod loudness;
+mod onsets;
 mod resample;
 mod sound;
 mod spectrum;

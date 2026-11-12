@@ -51,3 +51,33 @@ pub(crate) fn sine(hz: f64, amplitude: f64, rate: u32, frames: usize) -> Vec<f32
         .map(|frame| (amplitude * (std::f64::consts::TAU * hz * frame as f64 / f64::from(rate)).sin()) as f32)
         .collect()
 }
+
+/// A mono signal of `seconds` at `rate` with a 5 ms burst of a 2 kHz sine under a Hann envelope starting at each
+/// `(time, amplitude)`; silent elsewhere.
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+pub(crate) fn clicks(at: &[(f64, f64)], rate: u32, seconds: f64) -> Vec<f32> {
+    let mut samples = vec![0.0_f32; (seconds * f64::from(rate)).round() as usize];
+    let length = (0.005 * f64::from(rate)).round() as usize;
+    for &(time, amplitude) in at {
+        let start = (time * f64::from(rate)).round() as usize;
+        for i in 0..length {
+            let envelope = 0.5 - 0.5 * (std::f64::consts::TAU * (i as f64 + 0.5) / length as f64).cos();
+            let wave = (std::f64::consts::TAU * 2000.0 * i as f64 / f64::from(rate)).sin();
+            samples[start + i] = (amplitude * envelope * wave) as f32;
+        }
+    }
+    samples
+}
+
+/// The first index where the times `a` and `b` differ by more than `tolerance` (or one list ends), `None` when
+/// they match.
+pub(crate) fn first_time_mismatch(a: &[f64], b: &[f64], tolerance: f64) -> Option<usize> {
+    (0..a.len().max(b.len())).find(|&index| match (a.get(index), b.get(index)) {
+        (Some(x), Some(y)) => (x - y).abs() > tolerance,
+        _ => true,
+    })
+}

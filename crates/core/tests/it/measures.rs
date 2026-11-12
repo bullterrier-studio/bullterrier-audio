@@ -500,3 +500,188 @@ fn normalising_refuses_what_has_no_loudness_or_cannot_hold_it() -> Outcome {
     }
     Ok(())
 }
+
+// ---- onsets ----
+
+use bullterrier_audio::formats::{Bundle, Event};
+
+use crate::common::{clicks, first_time_mismatch};
+
+const CLICKS: [(f64, f64); 5] = [(0.5, 0.5), (1.0, 0.5), (1.5, 0.5), (2.2, 0.5), (3.0, 0.5)];
+
+fn click_sound(at: &[(f64, f64)], hop: f64) -> Result<Sound, Error> {
+    Ok(sound(vec![clicks(at, RATE, 3.5)], RATE)?.with_analysis(analysis(DEFAULT_WINDOW, hop)?))
+}
+
+fn times(events: &[Event]) -> Vec<f64> {
+    events.iter().map(|event| event.t).collect()
+}
+
+fn strengths(events: &[Event]) -> Vec<f64> {
+    events.iter().map(|event| event.strength).collect()
+}
+
+#[test]
+fn clicks_at_known_times_are_found_within_one_hop() -> Outcome {
+    let events = click_sound(&CLICKS, 0.01)?.onsets()?;
+    let expected: Vec<f64> = CLICKS.iter().map(|click| click.0).collect();
+    assert_eq!(times(&events).len(), expected.len(), "{:?}", times(&events));
+    assert_eq!(
+        first_time_mismatch(&times(&events), &expected, 0.01),
+        None,
+        "{:?}",
+        times(&events)
+    );
+    Ok(())
+}
+
+#[test]
+fn the_onsets_hold_across_hops() -> Outcome {
+    let [fine, mid, coarse] = [0.005, 0.01, 0.02].map(|hop| click_sound(&CLICKS, hop).and_then(|s| s.onsets()));
+    let (fine, mid, coarse) = (fine?, mid?, coarse?);
+    assert_eq!(fine.len(), CLICKS.len());
+    for other in [&mid, &coarse] {
+        assert_eq!(first_time_mismatch(&times(&fine), &times(other), 0.02), None);
+        assert_eq!(other.len(), CLICKS.len());
+        for (a, b) in strengths(&fine).iter().zip(strengths(other)) {
+            assert!((a - b).abs() <= 0.15, "strengths {a} and {b}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn the_louder_click_is_stronger_and_the_strongest_reads_one() -> Outcome {
+    let at = [(0.5, 0.25), (1.0, 0.5), (1.5, 0.25)];
+    let events = click_sound(&at, 0.01)?.onsets()?;
+    let s = strengths(&events);
+    assert_eq!(s.len(), 3);
+    assert!(s[1] > s[0] && s[1] > s[2], "{s:?}");
+    assert_eq!(s[1], 1.0);
+    Ok(())
+}
+
+#[test]
+fn a_gain_on_the_whole_sound_keeps_times_and_strengths() -> Outcome {
+    let at = [(0.5, 0.25), (1.0, 0.5), (1.5, 0.125)];
+    let loud = click_sound(&at, 0.01)?.onsets()?;
+    let quiet: Vec<(f64, f64)> = at.iter().map(|&(t, a)| (t, a * 0.5)).collect();
+    let quiet = click_sound(&quiet, 0.01)?.onsets()?;
+    assert_eq!(loud.len(), 3);
+    assert_eq!(first_time_mismatch(&times(&loud), &times(&quiet), 0.01), None);
+    for (a, b) in strengths(&loud).iter().zip(strengths(&quiet)) {
+        assert!((a - b).abs() <= 0.05, "strengths {a} and {b}");
+    }
+    Ok(())
+}
+
+#[test]
+fn silence_and_a_steady_tone_have_no_onsets_and_a_late_tone_has_one() -> Outcome {
+    let silent = sound(vec![vec![0.0; 44100 * 2]], RATE)?;
+    assert_eq!(silent.onsets()?.len(), 0);
+    // a tone that starts and stops with the sound: its edges are zero padding, not onsets
+    let steady = sound(vec![sine(440.0, 0.5, RATE, 44100 * 2)], RATE)?;
+    assert_eq!(steady.onsets()?.len(), 0, "{:?}", steady.onsets()?);
+    let mut late = sine(440.0, 0.5, RATE, 44100 * 2);
+    late[..44100].fill(0.0);
+    let events = sound(vec![late], RATE)?.onsets()?;
+    assert_eq!(events.len(), 1, "{:?}", times(&events));
+    assert!((events[0].t - 1.0).abs() <= 0.03, "{}", events[0].t);
+    assert_eq!(events[0].strength, 1.0);
+    Ok(())
+}
+
+#[test]
+fn onsets_are_a_valid_event_list_inside_the_sound() -> Outcome {
+    let source = click_sound(&CLICKS, 0.01)?;
+    let bundle = Bundle {
+        duration: Some(source.duration()),
+        events: [("onsets".to_owned(), source.onsets()?)].into(),
+        ..Bundle::default()
+    };
+    bundle.to_json()?;
+    Ok(())
+}
+
+#[test]
+fn cutting_then_measuring_is_measuring_then_shifting() -> Outcome {
+    let whole = click_sound(&CLICKS, 0.01)?;
+    let cut = whole.cut(1.2, 3.2)?.onsets()?;
+    let shifted: Vec<f64> = times(&whole.onsets()?)
+        .iter()
+        .filter(|&&t| t > 1.2 && t < 3.2)
+        .map(|t| t - 1.2)
+        .collect();
+    assert_eq!(shifted.len(), 3);
+    assert_eq!(
+        first_time_mismatch(&times(&cut), &shifted, 0.01),
+        None,
+        "{:?}",
+        times(&cut)
+    );
+    Ok(())
+}
+
+#[test]
+fn stereo_is_its_mixdown_and_repeats_are_identical() -> Outcome {
+    let one = clicks(&CLICKS, RATE, 3.5);
+    let other = clicks(&CLICKS[..3], RATE, 3.5);
+    let stereo = sound(vec![one, other], RATE)?;
+    let (a, b) = (stereo.onsets()?, stereo.mono().onsets()?);
+    assert_eq!(a.len(), CLICKS.len());
+    assert_eq!(first_time_mismatch(&times(&a), &times(&b), 0.0), None);
+    assert_eq!(first_time_mismatch(&strengths(&a), &strengths(&b), 0.0), None);
+    assert_eq!(a, stereo.onsets()?);
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(8))]
+    #[test]
+    fn clicks_at_least_150_ms_apart_are_all_found(gaps in prop::collection::vec(0.15_f64..0.6, 4)) {
+        let mut at = Vec::new();
+        let mut time = 0.3;
+        for gap in gaps {
+            at.push((time, 0.5));
+            time += gap;
+        }
+        let events = click_sound(&at, 0.01).and_then(|s| s.onsets()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        let expected: Vec<f64> = at.iter().map(|click| click.0).collect();
+        prop_assert_eq!(first_time_mismatch(&times(&events), &expected, 0.01), None, "{:?}", times(&events));
+    }
+}
+
+fn click_events(at: &[(f64, f64)], min_gap: f64, relative_height: f64) -> Result<Vec<Event>, Error> {
+    let analysis = Analysis::new(DEFAULT_WINDOW, 0.01, 0.03, min_gap, relative_height, FLOOR)?;
+    sound(vec![clicks(at, RATE, 3.5)], RATE)?
+        .with_analysis(analysis)
+        .onsets()
+}
+
+#[test]
+fn a_click_far_below_the_strongest_counts_only_when_the_relative_height_lets_it() -> Outcome {
+    // the second click is 43 dB below the first: its rise is a small share of the first's, above the 0.1 dB minimum
+    let at = [(0.5, 0.5), (1.5, 0.0035)];
+    assert_eq!(times(&click_events(&at, 0.05, 0.0)?).len(), 2);
+    let kept = click_events(&at, 0.05, 0.1)?;
+    assert_eq!(
+        first_time_mismatch(&times(&kept), &[0.5], 0.01),
+        None,
+        "{:?}",
+        times(&kept)
+    );
+    Ok(())
+}
+
+#[test]
+fn of_two_identical_peaks_within_the_gap_the_earlier_wins() -> Outcome {
+    // identical clicks on the same frame grid have identical flux; a min_gap of 1 s spans both
+    let events = click_events(&[(0.5, 0.5), (1.0, 0.5)], 1.0, 0.1)?;
+    assert_eq!(
+        first_time_mismatch(&times(&events), &[0.5], 0.01),
+        None,
+        "{:?}",
+        times(&events)
+    );
+    Ok(())
+}
