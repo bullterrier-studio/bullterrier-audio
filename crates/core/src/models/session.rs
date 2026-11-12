@@ -14,9 +14,10 @@ use crate::{Error, Infer, Tensor};
 /// the one session. [`open`](Self::open) keeps the session it loads, so the next call for the same model and library
 /// gets it back.
 ///
-/// Determinism: the session runs one thread inside operators and one across them, and applies only the basic graph
-/// rewrites (level 1: constant folding and removal of redundant nodes), which do not depend on the processor. The same
-/// input then gives the same output on the same machine and library.
+/// Determinism: the session runs one thread inside operators and one across them, and applies no graph rewrites
+/// (optimisation level `Disable`), so what runs does not depend on the processor. The same input then gives the same
+/// output on the same machine and library. Rewrites are off for memory: with the basic ones, the six-source Demucs
+/// model peaked at 3.7 to 5.2 GB resident for one segment, and without them at 1.9 GB.
 #[derive(Clone)]
 pub struct OrtInfer(Arc<Loaded>);
 
@@ -47,7 +48,7 @@ impl OrtInfer {
             let mut builder = OrtSession::builder(environment)?
                 .with_intra_threads(1)?
                 .with_inter_threads(1)?
-                .with_optimization_level(GraphOptimizationLevel::Level1)?;
+                .with_optimization_level(GraphOptimizationLevel::Disable)?;
             builder.commit_from_file(file)
         };
         let session = load().map_err(|error| unavailable(&error))?;

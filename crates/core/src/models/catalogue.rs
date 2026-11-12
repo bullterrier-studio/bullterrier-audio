@@ -46,8 +46,8 @@ pub struct Model {
 ///   issue 327); the export is MIT. 258 159 781 bytes, SHA-256 re-derived by streaming the file. Verified with ONNX Runtime
 ///   1.23.2 on the CPU: one input `mix`, f32 `(1, 2, 343980)` (7.8 s of stereo at 44 100 Hz, normalised as Demucs does);
 ///   one f32 output `stems`, `(1, 6, 2, 343980)`: sources in the order drums, bass, other, vocals, guitar, piano. A run
-///   took about 4.8 s on one thread (opening the session 2 s), whatever the input; the process peaked at 3.7 to 5.2 GB
-///   resident.
+///   took about 4.8 s on one thread (opening the session 2 s), whatever the input; the process peaked at 1.9 GB resident
+///   (3.7 to 5.2 GB when the session applies graph rewrites, which it does not).
 #[must_use]
 pub fn models() -> &'static [Model] {
     &[
