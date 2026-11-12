@@ -177,7 +177,7 @@ def test_a_bad_structure_is_refused_naming_the_field(change, field):
         pytest.param("sections", "tempo", id="sections"),
         pytest.param("drops", "tempo", id="drops"),
         pytest.param("key", "pitched", id="key"),
-        pytest.param("bundle", "pitched", id="bundle"),
+        pytest.param("bundle", "pitched|tempo", id="bundle"),
         pytest.param("summary", "tempo", id="summary"),
     ],
 )

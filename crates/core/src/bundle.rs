@@ -2,48 +2,22 @@
 
 use std::collections::BTreeMap;
 
-use crate::formats::{Bundle, Event};
-use crate::{Band, Error, Sound};
+use crate::formats::Bundle;
+use crate::measure::Measurement;
+use crate::{Error, Registry, Sound};
 
-/// The bundle name of each band's energy series, in [`Band::ALL`] order.
-const BAND_NAMES: [&str; 6] = ["sub", "bass", "low_mid", "mid", "high", "air"];
-
-pub(crate) fn bundle(sound: &Sound) -> Result<Bundle, Error> {
-    let mut series = BTreeMap::new();
-    for (band, name) in Band::ALL.into_iter().zip(BAND_NAMES) {
-        series.insert(format!("energy.{name}"), sound.energy(band)?);
+pub(crate) fn bundle(sound: &Sound, registry: &Registry) -> Result<Bundle, Error> {
+    let (mut series, mut events) = (BTreeMap::new(), BTreeMap::new());
+    for name in registry.names() {
+        match sound.measure_with(registry, name)? {
+            Measurement::Series(found) => {
+                series.insert(name.to_owned(), found);
+            }
+            Measurement::Events(found) => {
+                events.insert(name.to_owned(), found);
+            }
+        }
     }
-    series.insert("loudness".to_owned(), sound.loudness()?);
-    series.insert("brightness".to_owned(), sound.brightness()?);
-
-    let duration = sound.duration();
-    let key = sound.key()?;
-    let sections = sound
-        .sections()?
-        .into_iter()
-        .map(|section| Event {
-            t: section.start,
-            strength: section.confidence,
-            duration: Some(section.end - section.start),
-            label: Some(section.label),
-            pitch: None,
-        })
-        .collect();
-    let events = BTreeMap::from([
-        ("onsets".to_owned(), sound.onsets()?),
-        ("sections".to_owned(), sections),
-        ("drops".to_owned(), sound.drops()?),
-        (
-            "key".to_owned(),
-            vec![Event {
-                t: 0.0,
-                strength: key.confidence,
-                duration: Some(duration),
-                label: Some(key.label()),
-                pitch: None,
-            }],
-        ),
-    ]);
 
     let mut source = format!("bullterrier-audio {}", env!("CARGO_PKG_VERSION"));
     if let Some(file) = sound.origin().source.as_ref().and_then(|path| path.file_name()) {
@@ -51,12 +25,12 @@ pub(crate) fn bundle(sound: &Sound) -> Result<Bundle, Error> {
     }
     let bundle = Bundle {
         source: Some(source),
-        duration: Some(duration),
+        duration: Some(sound.duration()),
         grid: Some(sound.grid()?),
         series,
         events,
     };
-    // the writer is the one place the format's rules live: a bundle it refuses is a bug here
+    // the writer is the one place the format's rules live: a bundle it refuses is a bug here, or a plugin's result
     bundle.to_json()?;
     Ok(bundle)
 }

@@ -16,9 +16,11 @@ use crate::hits_params::Hits;
 use crate::infer::Infer;
 use crate::key::{self, Key};
 use crate::loudness;
+use crate::measure::Measurement;
 use crate::notes;
 use crate::notes_params::Notes;
 use crate::onsets;
+use crate::registry::Registry;
 use crate::resample::resample;
 use crate::sections::{self, Section};
 use crate::separation::Separation;
@@ -953,11 +955,63 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// The first error of the measures, unchanged: [`Error::Invalid`] naming `duration` for a sound under 3 s, and
+    /// The error of the first measure that fails, in name order, unchanged: [`Error::Invalid`] naming `duration` for a sound
+    /// under 3 s, and
     /// otherwise as [`Sound::grid`], [`Sound::key`] and [`Sound::energy`]. [`Error::Invalid`] listing the broken
     /// rules if the bundle breaks one of the format (a bug).
     pub fn bundle(&self) -> Result<Bundle, Error> {
-        bundle::bundle(self)
+        self.bundle_with(Registry::builtin())
+    }
+
+    /// [`Sound::bundle`] with the measures of `registry` instead of the built-ins: every registered measure goes under
+    /// `series` or `events` by what it returns, the grid, `duration` and `source` as in [`Sound::bundle`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::measure_with`] for the first measure that fails, and [`Error::Invalid`] listing the broken rules
+    /// when a result breaks the bundle format, for example events outside the sound or a NaN.
+    pub fn bundle_with(&self, registry: &Registry) -> Result<Bundle, Error> {
+        bundle::bundle(self, registry)
+    }
+
+    /// The built-in measure `name` (see [`Registry::builtin`]) of the sound.
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::measure_with`].
+    pub fn measure(&self, name: &str) -> Result<Measurement, Error> {
+        self.measure_with(Registry::builtin(), name)
+    }
+
+    /// The measure registered in `registry` under `name`, run on this sound.
+    ///
+    /// Promises: a built-in is computed once per sound, like its typed method. A plugin's measure is run on every
+    /// call.
+    ///
+    // shortcut: plugin results are not memoised, so asking twice runs the plugin twice; upgrade when a consumer asks.
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `name` and listing the available names when there is none; the measure's own error
+    /// unchanged; [`Error::Invalid`] naming the measure when it returned a series for a measure declared to give
+    /// events (or the reverse), a unit other than the declared one, or a fraction series without a scaling.
+    pub fn measure_with(&self, registry: &Registry, name: &str) -> Result<Measurement, Error> {
+        let measure = registry.get(name)?;
+        let result = measure.measure(self)?;
+        let declared = measure.unit();
+        let kept = match &result {
+            Measurement::Series(series) => {
+                declared == Some(series.unit)
+                    && (series.unit != Unit::Fraction || series.scaling.as_deref().is_some_and(|s| !s.is_empty()))
+            }
+            Measurement::Events(_) => declared.is_none(),
+        };
+        if kept {
+            Ok(result)
+        } else {
+            Err(Error::Invalid(format!(
+                "measure '{name}' returned a result that breaks its declaration (unit {declared:?}, scaling)"
+            )))
+        }
     }
 
     /// The measures of the sound as text, one fact per line, UTF-8 without escape codes. The layout is stable:

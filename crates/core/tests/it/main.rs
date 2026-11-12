@@ -16,6 +16,7 @@ mod measures;
 #[cfg(feature = "onnx")]
 mod models;
 mod notes;
+mod registry;
 mod sections;
 mod sound;
 mod stems;

@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod analysis;
+mod builtin;
 mod bundle;
 mod decode;
 mod drops;
@@ -17,11 +18,13 @@ mod hits_params;
 mod infer;
 mod key;
 mod loudness;
+mod measure;
 #[cfg(feature = "onnx")]
 pub mod models;
 mod notes;
 mod notes_params;
 mod onsets;
+mod registry;
 mod resample;
 mod sections;
 mod separation;
@@ -39,7 +42,9 @@ pub use hits::Hit;
 pub use hits_params::{Hits, HitsParts};
 pub use infer::{Infer, Tensor};
 pub use key::{Key, Mode, PitchClass};
+pub use measure::{Measure, Measurement};
 pub use notes_params::{Notes, NotesParts};
+pub use registry::Registry;
 pub use sections::Section;
 pub use separation::{Separation, SeparationParts};
 pub use sound::{Origin, Sound};

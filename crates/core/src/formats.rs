@@ -288,6 +288,15 @@ impl Grid {
     }
 }
 
+/// Whether `name` matches `^[a-z0-9][a-z0-9_.-]*$`, the pattern of every series and event list name.
+pub(crate) fn is_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '-'))
+}
+
 /// The problems found so far: the first [`MAX_LISTED`] as text, and the count of all.
 #[derive(Default)]
 struct Problems {
@@ -313,12 +322,7 @@ impl Problems {
 
     /// `name` must match `^[a-z0-9][a-z0-9_.-]*$`.
     fn name(&mut self, path: &str, name: &str) {
-        let mut chars = name.chars();
-        let start = chars
-            .next()
-            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-        let rest = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '_' | '.' | '-'));
-        self.add_if(!(start && rest), || {
+        self.add_if(!is_name(name), || {
             format!("{path}: the name must match ^[a-z0-9][a-z0-9_.-]*$")
         });
     }
