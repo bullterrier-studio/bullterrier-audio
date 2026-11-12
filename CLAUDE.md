@@ -16,8 +16,8 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: A5 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes and stems, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (next: A6, drum hits). Much of the analysis exists in earlier
+**State: A6 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+before it starts: `docs/roadmap.md` (next: A7, measures by name and the API review). Much of the analysis exists in earlier
 experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
 and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
 never commit or cite them.
@@ -79,7 +79,7 @@ Rust (`crates/core`, pure: no PyO3, no numpy): `sound` (`Sound`, `Origin`, the e
 (rubato), `write` (hound, flacenc), `formats` (control's bundle v1 written from plain types; the writer enforces the rules the
 schema cannot), `analysis` (`Analysis`: the parameters of every measure, declared once), `spectrum` (the one STFT and the
 bands), `loudness` (EBU R128 through `ebur128`), `onsets`, `structure` (`Structure`: the parameters of the A3 measures), `grid`, `sections`, `key`, `drops`, `bundle`, `models/` (the
-ONNX runtime, verified downloads, the catalogue; feature `onnx`), `infer` (the `Infer` seam), `notes` (`Notes` parameters), `stems` / `separation` / `stem_cache` (Demucs separation, `Separation`, the disk cache), `error`. A
+ONNX runtime, verified downloads, the catalogue; feature `onnx`), `infer` (the `Infer` seam), `notes` (`Notes` parameters), `stems` / `separation` / `stem_cache` (Demucs separation, `Separation`, the disk cache), `hits` / `hits_params` (ADTOF drum hits), `error`. A
 `Sound` memoises its measures (an edit starts empty).
 `crates/python` maps calls and errors only. Errors: `Decode` and `Write` are also `OSError`,
 `Invalid` is also `ValueError`.

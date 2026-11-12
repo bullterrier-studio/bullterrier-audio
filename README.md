@@ -14,7 +14,7 @@ Pre-alpha. A `Sound` can be loaded (wav, flac, mp3, ogg, m4a), cut, faded, mixed
 flac), measured (energy per frequency band, brightness, EBU R128 loudness, onsets, the beat grid with downbeats, labelled sections,
 key, drops) and normalised to a loudness. `bt-audio info FILE` prints its rate, channels and duration and `bt-audio analyse FILE
 -o BUNDLE` writes everything in bullterrier-control's bundle format. `notes()` finds polyphonic notes with Basic Pitch (after `bt-audio install`). `stems()` separates a song into drums, bass, vocals, other, guitar and piano (htdemucs, after `bt-audio install`), each a `Sound`
-you can measure, cut or write (`bt-audio stems`). Drum hits come next, in
+you can measure, cut or write (`bt-audio stems`). `hits()` finds kicks, snares and hats (ADTOF). Measures by name and the API review come next, in
 batches ([docs/roadmap.md](docs/roadmap.md)).
 
 ```bash

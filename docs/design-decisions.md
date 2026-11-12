@@ -161,6 +161,17 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   folder is recomputed, never migrated. A hit needs no ONNX Runtime. This is the disk cache deferred from A2/A4: separation is the
   first producer that takes minutes.
 
+- **Drum hits: ADTOF over a DSP detector, decided by a rule fixed before measuring** (2026-11-12). The rule: ship ADTOF if its
+  macro F (kick, snare, hat, ±30 ms) is at least 0.85 on synthesised drum parts with no class under 0.75, and it beats a three-band
+  DSP baseline by 0.05 on parts with bleed or agrees (F at least 0.85) with the prototype's PyTorch ADTOF on a real drum stem.
+  Measured: ADTOF clean 0.910 (kick 0.759, snare 0.996, hat 0.975) against DSP 0.671; with a −20 dB bed ADTOF 0.994 against DSP
+  0.740; real stem agreement 0.993 macro F on one 134 s drum stem (0.93–0.95 on two older 25–30 s stems). The export is the
+  `thebluescreen/adtof-drums-onnx` model pinned by revision and sha256 (the spectrogram front-end is inside the graph, so no
+  Rust feature extraction). Kick precision on synthetic kicks is 0.6: it also fires on the kick's tail. Peak picking is ADTOF's
+  own (`post_processing.py`): thresholds 0.22/0.24/0.22 applied to the activation minus a moving average, local maxima,
+  merge within 20 ms; the prototype's one-song snare threshold 0.14 is not used. *Cost:* the weights are CC BY-NC-SA 4.0
+  (recorded, not gating until a commercial release); memory is about 5 MB per second of audio, so a sound over 650 s is refused.
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI

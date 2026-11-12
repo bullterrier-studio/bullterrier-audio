@@ -44,6 +44,10 @@ let kicks = song.hits(Hit::Kick)?;         // Vec<Event>
 let bass = song.energy(Band::Bass)?;       // Series
 ```
 
+`hits(Hit)` finds the song's drums itself (separating them once, cached) and runs the ADTOF transcriber on them; on a drums stem
+it runs directly. Events are labelled "kick", "snare" or "hat", `strength` is the model's activation at the peak, and the
+thresholds and picker windows are ADTOF's published ones (`with_hits(kick_threshold=...)`). Needs `bt-audio install`.
+
 ## 2. List what is in a song
 
 ```python
