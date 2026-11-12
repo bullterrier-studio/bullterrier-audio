@@ -120,7 +120,10 @@ def test_install_that_is_declined_downloads_nothing_and_exits_1(tmp_path, capsys
     cache = tmp_path / "cache"
     assert main(["install", "--cache", str(cache)]) == 1
     captured = capsys.readouterr()
-    assert re.search(r"download ONNX Runtime \S+ \(\d+ MB\) and basic-pitch \(\d+ MB\) into .*\? \[y/N\]", captured.out)
+    assert re.search(
+        r"download ONNX Runtime \S+ \(\d+ MB\) and basic-pitch \(\d+ MB\) and htdemucs-6s \(\d+ MB\) into .*\? \[y/N\]",
+        captured.out,
+    )
     assert "nothing downloaded" in captured.err
     assert not cache.exists()
 
