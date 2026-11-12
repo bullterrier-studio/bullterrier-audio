@@ -84,14 +84,20 @@ impl Spectrogram {
 }
 
 /// The spectrogram of `signal` (mono, at [`RATE`]) under `analysis`.
+pub(crate) fn spectrogram(signal: &[f32], analysis: &Analysis) -> Result<Spectrogram, Error> {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a window of at most 1 s
+    let n = (analysis.window() * f64::from(RATE)).round() as usize;
+    stft(signal, n, analysis.hop())
+}
+
+/// The spectrogram of `signal` (mono, at [`RATE`]) with a Hann window of `n` samples and a frame every `hop` seconds.
 #[allow(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss
 )] // sample counts are far below 2^52
-pub(crate) fn spectrogram(signal: &[f32], analysis: &Analysis) -> Result<Spectrogram, Error> {
+pub(crate) fn stft(signal: &[f32], n: usize, hop: f64) -> Result<Spectrogram, Error> {
     let rate = f64::from(RATE);
-    let n = (analysis.window() * rate).round() as usize;
     // periodic Hann window, w[i] = 0.5 - 0.5 cos(2 pi i / N) (Harris 1978)
     let window: Vec<f32> = (0..n)
         .map(|i| (0.5 - 0.5 * (TAU * i as f64 / n as f64).cos()) as f32)
@@ -102,19 +108,19 @@ pub(crate) fn spectrogram(signal: &[f32], analysis: &Analysis) -> Result<Spectro
     let fft = RealFftPlanner::<f32>::new().plan_fft_forward(n);
     let (mut input, mut output, mut scratch) = (fft.make_input_vec(), fft.make_output_vec(), fft.make_scratch_vec());
     let bins = output.len();
-    let frames = (signal.len() as f64 / (analysis.hop() * rate)).ceil() as usize;
+    let frames = (signal.len() as f64 / (hop * rate)).ceil() as usize;
     if frames * bins > MAX_CELLS {
         return Err(Error::Invalid(format!(
             "window {} s and hop {} s on a sound of {:.1} s need {} cells of spectrum, more than the {MAX_CELLS} allowed: \
              use a longer hop or a shorter window",
-            analysis.window(),
-            analysis.hop(),
+            n as f64 / rate,
+            hop,
             signal.len() as f64 / rate,
             frames * bins,
         )));
     }
     let centres = (0..)
-        .map(|i| (f64::from(i) * analysis.hop() * rate).round() as usize)
+        .map(|i| (f64::from(i) * hop * rate).round() as usize)
         .take_while(|&centre| centre < signal.len());
 
     let mut power = Vec::with_capacity(frames * bins);

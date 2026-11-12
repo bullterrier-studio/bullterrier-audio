@@ -10,6 +10,7 @@ mod decode;
 mod error;
 pub mod formats;
 mod grid;
+mod key;
 mod loudness;
 mod onsets;
 mod resample;
@@ -21,6 +22,7 @@ mod write;
 
 pub use analysis::Analysis;
 pub use error::Error;
+pub use key::{Key, Mode, PitchClass};
 pub use sections::Section;
 pub use sound::{Origin, Sound};
 pub use spectrum::Band;

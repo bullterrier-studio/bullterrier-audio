@@ -180,6 +180,8 @@ fn structure(
         label_spread,
         phrase_bars,
         novelty_floor,
+        100.0,
+        5000.0,
     )
     .unwrap_or_else(|e| unreachable!("{e}"))
 }
@@ -279,7 +281,7 @@ fn forty_distinct_materials_get_forty_distinct_names_past_z() -> Outcome {
     ];
     let parts: Vec<(usize, Vec<Tone>)> = CODES.iter().map(|&code| (2, tones(code))).collect();
     // 180 beats per minute lies at the edge of the default range, where the fit's rounding can fold it to 90: a range to 200 does not
-    let wanted = Structure::new(70.0, 200.0, 0.03, 0.0, 0.1, 2, 0.05, 3.0, None, 1.0)?;
+    let wanted = Structure::new(70.0, 200.0, 0.03, 0.0, 0.1, 2, 0.05, 3.0, None, 1.0, 100.0, 5000.0)?;
     let sound = arrangement(180.0, 0.0, 0.0, &parts)?.with_structure(wanted);
     let sections = sound.sections()?;
     assert_eq!(sections.len(), 40, "{:?}", starts(&sections));
@@ -410,14 +412,32 @@ fn a_structure_is_checked_once_at_construction() {
         ("novelty_floor NaN", 4, 0.3, 3.0, None, f64::NAN, "novelty_floor"),
     ];
     for (id, bars, share, spread, phrase, floor, refusal) in rows {
-        let result = Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, bars, share, spread, phrase, floor);
+        let result = Structure::new(
+            70.0, 180.0, 0.03, 0.2, 0.1, bars, share, spread, phrase, floor, 100.0, 5000.0,
+        );
         assert!(
             matches!(&result, Err(Error::Invalid(text)) if text.contains("Structure") && text.contains(refusal)),
             "{id}: {result:?}"
         );
     }
-    assert!(Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 1, 0.0, 0.0, Some(1), 0.01).is_ok());
-    assert!(Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 99, 1.0, 40.0, Some(99), 40.0).is_ok());
+    assert!(Structure::new(70.0, 180.0, 0.03, 0.2, 0.1, 1, 0.0, 0.0, Some(1), 0.01, 100.0, 5000.0).is_ok());
+    assert!(
+        Structure::new(
+            70.0,
+            180.0,
+            0.03,
+            0.2,
+            0.1,
+            99,
+            1.0,
+            40.0,
+            Some(99),
+            40.0,
+            100.0,
+            5000.0
+        )
+        .is_ok()
+    );
 }
 
 proptest! {

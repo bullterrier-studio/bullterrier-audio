@@ -1,4 +1,4 @@
-//! `Structure`: the parameters of the musical measures (grid, sections, and later key and drops), declared once.
+//! `Structure`: the parameters of the musical measures (grid, sections, key, and later drops), declared once.
 
 use crate::Error;
 use crate::analysis::within;
@@ -18,6 +18,8 @@ use crate::analysis::within;
 /// | `label_spread` | decibels | 0 to 40 | 3 |
 /// | `phrase_bars` | count | none, or 1 and up | none |
 /// | `novelty_floor` | decibels | 0.01 to 40 | 1 |
+/// | `chroma_low` | hertz | 20 to 20000, below `chroma_high` | 100 |
+/// | `chroma_high` | hertz | 20 to 20000, above `chroma_low` | 5000 |
 ///
 /// `tempo_min` and `tempo_max` bound the tempo [`Sound::grid`](crate::Sound::grid) reports: a tempo found outside
 /// them is halved or doubled (and 3:2 related) into them. The default range is the usual one of dance music: a stated
@@ -51,6 +53,11 @@ use crate::analysis::within;
 /// by, so a flat band is not blown up into noise; a band that varies by under 1 dB over a whole song is flat (the
 /// energy of a steady tone ripples by under 0.1 dB). Decibels convert to the energy scale by `1 / |floor|` of the
 /// sound's [`Analysis`](crate::Analysis).
+///
+/// `chroma_low` and `chroma_high` bound the frequencies [`Sound::key`](crate::Sound::key) counts as pitch. Below about
+/// 100 Hz a semitone (6 Hz at 100 Hz) is narrower than the frequency resolution of any practical window, so the
+/// pitch class of a bin is wrong; above about 5 kHz the energy is overtones and noise, not the pitch of notes. Lowering
+/// `chroma_low` lengthens the key's analysis window (it is derived from it, see [`Sound::key`](crate::Sound::key)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Structure {
     tempo_min: f64,
@@ -63,6 +70,8 @@ pub struct Structure {
     label_spread: f64,
     phrase_bars: Option<u32>,
     novelty_floor: f64,
+    chroma_low: f64,
+    chroma_high: f64,
 }
 
 impl Default for Structure {
@@ -78,6 +87,8 @@ impl Default for Structure {
             label_spread: 3.0,
             phrase_bars: None,
             novelty_floor: 1.0,
+            chroma_low: 100.0,
+            chroma_high: 5000.0,
         }
     }
 }
@@ -88,7 +99,7 @@ impl Structure {
     /// # Errors
     ///
     /// [`Error::Invalid`] naming `Structure`, the field, its range and the value when a value lies outside its range
-    /// or is NaN, or naming `tempo_min` and `tempo_max` when `tempo_min` is not below `tempo_max`.
+    /// or is NaN, or naming `tempo_min` and `tempo_max` (`chroma_low` and `chroma_high`) when the first is not below the second.
     #[allow(clippy::too_many_arguments)] // one argument per documented field, as `Analysis::new`
     pub fn new(
         tempo_min: f64,
@@ -101,6 +112,8 @@ impl Structure {
         label_spread: f64,
         phrase_bars: Option<u32>,
         novelty_floor: f64,
+        chroma_low: f64,
+        chroma_high: f64,
     ) -> Result<Self, Error> {
         within("Structure", "tempo_min", tempo_min, 30.0..=300.0, "beats per minute")?;
         within("Structure", "tempo_max", tempo_max, 30.0..=300.0, "beats per minute")?;
@@ -110,6 +123,8 @@ impl Structure {
         within("Structure", "novelty_share", novelty_share, 0.0..=1.0, "a fraction")?;
         within("Structure", "label_spread", label_spread, 0.0..=40.0, "decibels")?;
         within("Structure", "novelty_floor", novelty_floor, 0.01..=40.0, "decibels")?;
+        within("Structure", "chroma_low", chroma_low, 20.0..=20000.0, "hertz")?;
+        within("Structure", "chroma_high", chroma_high, 20.0..=20000.0, "hertz")?;
         if min_section_bars == 0 {
             return Err(Error::Invalid(
                 "Structure min_section_bars must be a count of bars from 1, got 0".into(),
@@ -125,6 +140,11 @@ impl Structure {
                 "Structure tempo_min must be below tempo_max, got tempo_min {tempo_min} and tempo_max {tempo_max}"
             )));
         }
+        if chroma_low >= chroma_high {
+            return Err(Error::Invalid(format!(
+                "Structure chroma_low must be below chroma_high, got chroma_low {chroma_low} and chroma_high {chroma_high}"
+            )));
+        }
         Ok(Self {
             tempo_min,
             tempo_max,
@@ -136,6 +156,8 @@ impl Structure {
             label_spread,
             phrase_bars,
             novelty_floor,
+            chroma_low,
+            chroma_high,
         })
     }
 
@@ -198,6 +220,18 @@ impl Structure {
     #[must_use]
     pub fn novelty_floor(&self) -> f64 {
         self.novelty_floor
+    }
+
+    /// The lowest frequency in hertz that counts as pitch.
+    #[must_use]
+    pub fn chroma_low(&self) -> f64 {
+        self.chroma_low
+    }
+
+    /// The highest frequency in hertz that counts as pitch.
+    #[must_use]
+    pub fn chroma_high(&self) -> f64 {
+        self.chroma_high
     }
 
     /// The tolerance in use under a `hop` of the analysis: `max(tolerance, 1.5 * hop)`.

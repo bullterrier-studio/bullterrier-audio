@@ -8,6 +8,7 @@ mod architecture;
 mod edits;
 mod formats;
 mod grid;
+mod key;
 mod measures;
 mod sections;
 mod sound;

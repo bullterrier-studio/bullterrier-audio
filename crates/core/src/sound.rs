@@ -9,6 +9,7 @@ use crate::analysis::Analysis;
 use crate::decode::decode;
 use crate::formats::{Event, Grid, Series, Unit};
 use crate::grid;
+use crate::key::{self, Key};
 use crate::loudness;
 use crate::onsets;
 use crate::resample::resample;
@@ -39,6 +40,7 @@ struct Measured {
     onsets: OnceLock<Vec<Event>>,
     grid: OnceLock<Result<Grid, Error>>,
     sections: OnceLock<Result<Vec<Section>, Error>>,
+    key: OnceLock<Result<Key, Error>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -496,6 +498,38 @@ impl Sound {
         self.cut(section.start, section.end)
     }
 
+    /// The key of the sound: the tonic and mode whose Krumhansl-Kessler profile best matches the pitch classes it
+    /// sounds.
+    ///
+    /// Method: a Hann-windowed spectrogram of the 44.1 kHz mono mixdown with its own window, long enough that the
+    /// main lobe (4 bins) spans two semitones at `chroma_low` of the [`Structure`]: `N >= 2 * 44100 / (chroma_low *
+    /// (2^(1/12) - 1))` rounded up to a power of two (16384 samples, 0.37 s, at the default 100 Hz), and a hop of
+    /// half a window. Each bin from `chroma_low` to `chroma_high` adds its power to the pitch class of its centre
+    /// frequency, `(round(12 log2(f / 440)) + 69) mod 12` (0 is C). The powers are summed over the whole sound, not
+    /// normalised per frame, so loud notes outweigh quiet noise. The Pearson correlation of that 12-value chroma with
+    /// each of the 24 rotated profiles (Krumhansl 1990) is the score of a key.
+    ///
+    /// Promises: `confidence` is the best score, in 0 to 1 (the 12 rotations of a profile correlate with any chroma to
+    /// a sum of 0, so the best is never negative): near 1 for a chroma shaped like a key, near 0 for noise.
+    /// `margin` is the best score minus the second best, in 0 to 1; a small margin means two keys are near ties,
+    /// as a major key and its relative minor are for music that avoids the notes that tell them apart. The result is
+    /// computed once per sound.
+    ///
+    /// Limits: harmonics of a note leak into other pitch classes and blur the profile; a tuning offset of more than
+    /// about 30 cents is not corrected; one key per sound, so a modulation is read as a blend.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming the duration and "no pitched energy" when no pitch class sounds, as in silence or
+    /// when `chroma_low` to `chroma_high` holds nothing. Otherwise as [`Sound::energy`].
+    pub fn key(&self) -> Result<Key, Error> {
+        self.memo
+            .0
+            .key
+            .get_or_init(|| key::key(&self.signal()?.samples[0], &self.structure, self.duration()))
+            .clone()
+    }
+
     /// The short-term loudness over time, in LUFS, measured by EBU R128 on the sound's own channels and rate.
     ///
     /// Promises: a series of unit decibels (unscaled) with `start` 3 s and `rate` 1 / `hop`; value `i` is the loudness
@@ -582,19 +616,22 @@ impl Sound {
         })
     }
 
+    /// The analysis signal: this sound at 44.1 kHz in one channel, made on first use.
+    fn signal(&self) -> Result<&Sound, Error> {
+        self.memo
+            .0
+            .signal
+            .get_or_init(|| Ok(self.resampled(spectrum::RATE)?.mono()))
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+
     /// The one spectrogram of this sound, made on first use from the analysis signal.
     fn spectrogram(&self) -> Result<&Spectrogram, Error> {
-        let measured = &*self.memo.0;
-        measured
+        self.memo
+            .0
             .spectrogram
-            .get_or_init(|| {
-                let signal = measured
-                    .signal
-                    .get_or_init(|| Ok(self.resampled(spectrum::RATE)?.mono()))
-                    .as_ref()
-                    .map_err(Clone::clone)?;
-                spectrum::spectrogram(&signal.samples[0], &self.analysis)
-            })
+            .get_or_init(|| spectrum::spectrogram(&self.signal()?.samples[0], &self.analysis))
             .as_ref()
             .map_err(Clone::clone)
     }
