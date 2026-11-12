@@ -4,7 +4,7 @@
 tested in `tests/test_sound.py` and `crates/core/tests/it/`), and so do `energy(band)`, `brightness()`, `loudness()`,
 `onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`), and `grid()`, `sections()`, `section(i)`,
 `key()`, `drops()`, `bundle()`, `summary()`, `with_structure(...)` and `bt-audio analyse` (A3, `tests/test_structure_measures.py`),
-and `notes()`, `with_notes(...)`, `bt-audio install | models | doctor` (A4); stems are design.
+`notes()`, `with_notes(...)`, `bt-audio install | models | doctor` (A4), and `stems()`, `Stems`, `with_separation(...)`, `bt-audio stems` (A5).
 Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
@@ -83,8 +83,15 @@ stems[bta.Stem.VOCALS].sections()
 
 ```rust
 let stems = song.stems()?;
-let sub = stems[Stem::Bass].energy(Band::Sub)?;
+let sub = stems.get(Stem::Bass).energy(Band::Sub)?;
 ```
+
+`stems()` needs the htdemucs-6s model (`bt-audio install`; `--ensemble` adds the four fine-tuned models, about 5x slower). The six
+stems (drums, bass, other, vocals, guitar, piano) are stereo `Sound`s at 44.1 kHz and carry `stem`; everything asked of a song
+can be asked of one. As Demucs does, the mix's mean is added to every stem, so the six sum to the mix plus 5 times its mean
+(zero for audio without a DC offset). `without(...)` mixes the rest down; `parts(sections)` gives each stem's share of the energy
+per section. The result is cached on disk (`Separation(cache=False)` or `--no-cache` turns that off); `Separation` also sets
+`shifts`, `ensemble`, `seed` and `threads`. A sound longer than about 17 minutes is refused: cut it first.
 
 ## 4. The notes of a part
 

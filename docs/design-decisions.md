@@ -136,6 +136,29 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   the entry. Dependencies of the libraries themselves stay permissive or MPL (`deny.toml`). Drum hits are chosen by measured
   quality on synthesised drum parts (band-onset DSP against a transcriber), not by licence.
 
+- **Stems by the published Demucs algorithm on ready-made ONNX exports** (2026-11-12). The htdemucs-6s and htdemucs-ft exports (STFT
+  and iSTFT inside the graph; MIT-labelled; pinned URL, size and sha256) run through the same `Infer` seam as notes. The wrapper
+  reimplements Demucs `apply_model` exactly: mean and (N-1) standard deviation normalisation, 7.8 s segments with a stride of 0.75
+  of a segment and a triangular blend, the last short segment centred with real neighbouring audio, seeded random shifts (`shifts`
+  keeps Demucs' meaning: 1 is one shifted pass). ONNX graph optimisation is off: the default rewrites needed 3.7–5.2 GB for one
+  segment, the unoptimised graph 1.9 GB at the same speed. Segments run one at a time and a sound longer than 2^29 output floats
+  (about 17 minutes of six stems) is refused. Stems are 44.1 kHz stereo; as Demucs does, the mix's mean is added to each stem.
+  *Cost:* the weights are science-only per their author (recorded in the catalogue, not gating until a commercial release).
+- **The ensemble is the prototype's recipe, off by default** (2026-11-12): htdemucs-6s plus the four fine-tuned models, combined in
+  the normalised domain (drums, bass, vocals averaged; `other` is the mean of the 6s `other` and the ft `other` minus 6s guitar and
+  piano), the ft sessions run one after another so peak memory stays near 2.7 GB. It is about 5x slower; on a synthetic
+  mix the bass SDR rose from 27.5 to 32.6 dB and the drums SDR fell from 18.2 to 6.5 dB (the fine-tuned drums model barely answers
+  synthetic clicks); the prototype measured +5 dB on bass and lead and +1 dB on drums on real music. Hence the default stays single.
+- **Separation threads: default 4** (2026-11-12). Two runs and 1, 2, 4 and 8 ONNX threads gave bit-identical stems on one Mac
+  (20 s in 19.0, 10.8, 7.9 and 7.8 s), so the thread count is not part of the cache key and the default is 4. One machine, one
+  input and one ONNX Runtime build: an ignored real-model test pins 1 against 4; the constant is one line if another CPU
+  disagrees.
+- **Stems are cached on disk, keyed by the sound and the producer** (2026-11-12). The key is the sha256 of the crate version, the
+  sound's rate, channels and samples, the options that change the result (shifts, ensemble, seed, the optimisation level) and the
+  model hashes; one float WAV per stem under `<cache>/stems/<key>/`, written to a temporary name and renamed; an incomplete or damaged
+  folder is recomputed, never migrated. A hit needs no ONNX Runtime. This is the disk cache deferred from A2/A4: separation is the
+  first producer that takes minutes.
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI

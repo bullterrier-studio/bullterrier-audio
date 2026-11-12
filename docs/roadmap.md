@@ -16,7 +16,7 @@ into one of those seams.
 | A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | done |
 | A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | done |
 | A4 | Models, and notes | M | an ONNX model behind a method | done |
-| A5 | Stems | L | a stem is a `Sound` | |
+| A5 | Stems | L | a stem is a `Sound` | done |
 | A6 | Drum hits | M | labelled events from a part | |
 | A7 | Measures by name, API review, first release | M | the extension point | |
 
@@ -96,7 +96,16 @@ are `#[ignore]`d and run by `poe rust-test-models` (in `poe full` and in the CI 
 - `ModelUnavailableError` names the install command.
 - Oracles: synthesised melodies and chords with known pitches and times; long digital silence gives no notes.
 
-## A5 Stems
+## A5 Stems (done)
+
+Built: `Sound::stems()` / `stems_with(&Infer)` (Demucs' `apply_model`: normalisation, 7.8 s segments with a triangular blend,
+seeded shifts), `Stems` (`get`, `without`, `parts`), `Sound::stem()`, `Separation` (shifts, ensemble, seed, cache, threads), the
+htdemucs-6s and htdemucs-ft pins, the ensemble recipe of the prototype, the disk cache (one WAV per stem under the `bt-audio`
+cache folder, keyed by the sound's samples and the producer), `bt-audio stems`, `bt-audio install --ensemble`. Parts per
+section is a measurement (each stem's share of the energy per section), not a role guess. `drops()` from the stems was not
+needed: A3's beat-level drops cover bass steps. Measured on one Mac (10 cores): 20 s of stereo in 7.8 s with 4 threads (about
+2 minutes for a 5-minute song), 2.2 GB peak; the ensemble about 5x slower and 2.7 GB. The model files are 258 MB (6s) and
+4 x 316 MB (ft).
 
 - **Model choice (owner decision 2026-11-12):** the best separator, with licences not yet gating the choice (no paid product
   exists yet). Demucs (HTDemucs) is the candidate; its weights are science-only per its author, so the catalogue's `licence`
