@@ -767,7 +767,7 @@ mod installed_model {
 
     /// What the model may be off from the tone that was synthesised, a property of Basic Pitch and not of this code:
     /// measured on these tones, starts within 2.6 frames of the sine's and 2.1 of the harmonic tone's on macOS arm64 and
-    /// up to 3.13 frames (a harmonic tone found at 0.9636 s for 1.0 s) on Linux x86_64, lengths within 8%: ONNX Runtime's
+    /// up to 3.13 frames (a harmonic tone found at 0.9636 s for 1.0 s) on Linux `x86_64`, lengths within 8%: ONNX Runtime's
     /// CPU kernels differ by platform, so the bound has a margin above both. This code's own mapping of frames to time is not what these bounds test: it is exact, and proved without
     /// the model by `windows::a_note_across_the_seam_of_two_windows_is_one_note_at_the_right_frames`,
     /// `windows::a_note_that_starts_at_the_first_frame_after_the_seam_is_on_that_frame` and
