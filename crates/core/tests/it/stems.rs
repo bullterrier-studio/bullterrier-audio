@@ -1051,6 +1051,26 @@ mod cache {
     }
 
     #[test]
+    fn a_whole_stem_file_is_never_replaced_by_a_store() -> Outcome {
+        // on Windows a rename over a file another thread has open fails: a whole file must stay untouched
+        let dir = tempfile::tempdir()?;
+        let sound = base()?;
+        run(&sound, dir.path(), &[SIX])?;
+        let [key] = keys(dir.path()).try_into().map_err(|_| "one key folder")?;
+        let long_ago = std::time::SystemTime::now() - std::time::Duration::from_hours(25);
+        fs::File::options()
+            .write(true)
+            .open(key.join("drums.wav"))?
+            .set_modified(long_ago)?;
+        let before = fs::metadata(key.join("drums.wav"))?.modified()?;
+        fs::remove_file(key.join("bass.wav"))?;
+        assert_eq!(run(&sound, dir.path(), &[SIX])?.1, 1);
+        assert_eq!(fs::metadata(key.join("drums.wav"))?.modified()?, before);
+        assert_eq!(run(&sound, dir.path(), &[SIX])?.1, 0);
+        Ok(())
+    }
+
+    #[test]
     fn two_writers_of_one_key_end_with_a_whole_folder() -> Outcome {
         let dir = tempfile::tempdir()?;
         let sound = base()?;

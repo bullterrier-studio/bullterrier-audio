@@ -2,6 +2,7 @@
 //! `<cache>/stems/`, one 32-bit float wav per stem in it, written to a temporary name and renamed into place.
 
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
@@ -77,22 +78,26 @@ fn file_of(folder: &Path, stem: Stem) -> PathBuf {
 fn load(folder: &Path, frames: usize) -> Option<Vec<Vec<f32>>> {
     let mut rows = Vec::with_capacity(Stem::ALL.len() * CHANNELS);
     for stem in Stem::ALL {
-        let mut reader = WavReader::open(file_of(folder, stem)).ok()?;
-        let spec = reader.spec();
-        if (
-            spec.channels,
-            spec.sample_rate,
-            spec.sample_format,
-            spec.bits_per_sample,
-        ) != (2, RATE, SampleFormat::Float, 32)
-            || reader.len() as usize != CHANNELS * frames
-        {
-            return None;
-        }
-        let interleaved: Vec<f32> = reader.samples::<f32>().collect::<Result<_, _>>().ok()?;
+        let interleaved = read_whole(&file_of(folder, stem), frames)?;
         rows.extend((0..CHANNELS).map(|c| interleaved.iter().skip(c).step_by(CHANNELS).copied().collect()));
     }
     Some(rows)
+}
+
+/// The interleaved samples of the stem file at `path`, when it is whole: 32-bit float, two channels, 44.1 kHz,
+/// `frames` long, every sample readable.
+fn read_whole(path: &Path, frames: usize) -> Option<Vec<f32>> {
+    let mut reader = WavReader::open(path).ok()?;
+    let spec = reader.spec();
+    ((
+        spec.channels,
+        spec.sample_rate,
+        spec.sample_format,
+        spec.bits_per_sample,
+    ) == (2, RATE, SampleFormat::Float, 32)
+        && reader.len() as usize == CHANNELS * frames)
+        .then(|| reader.samples::<f32>().collect::<Result<_, _>>().ok())
+        .flatten()
 }
 
 fn failed(path: &Path, reason: String) -> Error {
@@ -138,19 +143,32 @@ fn prepare(root: &Path, folder: &Path) -> Result<(), Error> {
         .map_err(|error| failed(folder, error.to_string()))
 }
 
-/// Writes each stem to a temporary file in `folder` and renames it to its name: a reader sees a whole file or none.
+/// Writes each stem that is not already whole in `folder` to a temporary file and renames it to its name: a reader sees
+/// a whole file or none. A whole file is never replaced (the key fixes the bytes, and on Windows a rename over a file
+/// another thread or process has open fails); a damaged one is removed first, and if another writer puts a whole one
+/// there meanwhile, that one stays.
 fn store(folder: &Path, stems: &Stems) -> Result<(), Error> {
     for (stem, sound) in stems.iter() {
         let target = file_of(folder, stem);
+        let frames = sound.samples()[0].len();
+        if read_whole(&target, frames).is_some() {
+            continue;
+        }
+        match fs::remove_file(&target) {
+            Err(error) if error.kind() != ErrorKind::NotFound => return Err(failed(&target, error.to_string())),
+            _ => {}
+        }
         let temporary = tempfile::Builder::new()
             .prefix(".tmp-")
             .suffix(".wav")
             .tempfile_in(folder)
             .map_err(|error| failed(&target, error.to_string()))?;
         write(temporary.path(), sound.samples(), RATE)?;
-        temporary
-            .persist(&target)
-            .map_err(|error| failed(&target, error.to_string()))?;
+        match temporary.persist_noclobber(&target) {
+            Err(error) if error.error.kind() == ErrorKind::AlreadyExists && read_whole(&target, frames).is_some() => {}
+            Err(error) => return Err(failed(&target, error.to_string())),
+            Ok(_) => {}
+        }
     }
     Ok(())
 }
