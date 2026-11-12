@@ -12,6 +12,8 @@
 use bullterrier_audio::{Analysis, Band, Error, Sound};
 use proptest::prelude::*;
 
+use bullterrier_audio::formats::Unit;
+
 use crate::common::{Outcome, first_difference, sine};
 
 const RATE: u32 = 44100;
@@ -320,5 +322,181 @@ fn the_default_analysis_is_valid() -> Outcome {
         default.floor(),
     )?;
     assert_eq!(built, default);
+    Ok(())
+}
+
+// ---- loudness (EBU R128) ----
+
+/// Linear amplitude of a 997 Hz sine that reads `lufs` on identical channels: K-weighting is +0.691 dB at 997 Hz and the
+/// BS.1770 offset is -0.691 dB, so each identical channel of peak `A` reads `20 log10(A)`.
+fn amplitude_for(lufs: f64) -> f64 {
+    10.0_f64.powf(lufs / 20.0)
+}
+
+fn stereo_tone(lufs: f64, seconds: usize) -> Result<Sound, Error> {
+    let tone = sine(997.0, amplitude_for(lufs), RATE, seconds * RATE as usize);
+    sound(vec![tone.clone(), tone], RATE)
+}
+
+fn within_all(values: &[f64], expected: f64, tolerance: f64) -> bool {
+    values.iter().all(|value| (value - expected).abs() <= tolerance)
+}
+
+#[test]
+fn a_calibrated_stereo_tone_reads_its_level_in_every_value() -> Outcome {
+    let loudness = stereo_tone(-23.0, 10)?.loudness()?;
+    assert_eq!(loudness.unit, Unit::Decibels);
+    assert!(loudness.scaling.is_none());
+    assert!(within_all(&loudness.values, -23.0, 0.05), "{:?}", &loudness.values[..3]);
+    Ok(())
+}
+
+#[test]
+fn a_mono_sound_reads_like_the_same_tone_on_both_channels() -> Outcome {
+    let tone = sine(997.0, amplitude_for(-23.0), RATE, 5 * RATE as usize);
+    let mono = sound(vec![tone], RATE)?.loudness()?.values;
+    let stereo = stereo_tone(-23.0, 5)?.loudness()?.values;
+    assert!(mono.iter().zip(&stereo).all(|(a, b)| (a - b).abs() < 1e-6));
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(12))]
+
+    #[test]
+    fn scaling_by_a_gain_shifts_every_value_by_its_decibels(gain in 0.05_f64..4.0) {
+        let (left, right) = (sine(997.0, 0.07, RATE, 157_500), sine(440.0, 0.03, RATE, 157_500));
+        let louder = vec![
+            left.iter().map(|v| (f64::from(*v) * gain) as f32).collect(),
+            right.iter().map(|v| (f64::from(*v) * gain) as f32).collect(),
+        ];
+        let base = sound(vec![left, right], RATE)?.loudness()?.values;
+        let scaled_up = sound(louder, RATE)?.loudness()?.values;
+        for (base, scaled_up) in base.iter().zip(&scaled_up) {
+            prop_assert!((scaled_up - base - level(gain)).abs() < 1e-3);
+        }
+    }
+}
+
+#[test]
+fn the_series_starts_at_three_seconds_and_has_one_value_per_hop() -> Outcome {
+    // hand computed for a 5 s sound: the last window ends at 5 s, so values = floor((5 - 3) / hop) + 1
+    for (hop, values) in [(0.5, 5), (0.3, 7), (0.01, 201)] {
+        let measured = stereo_tone(-23.0, 5)?
+            .with_analysis(Analysis::new(DEFAULT_WINDOW, hop, 0.03, 0.05, 0.1, FLOOR)?)
+            .loudness()?;
+        assert_eq!(measured.start, 3.0, "hop {hop}");
+        assert!((measured.rate - 1.0 / hop).abs() < 1e-9, "hop {hop}");
+        assert_eq!(measured.values.len(), values, "hop {hop}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_window_ends_on_the_sample_nearest_its_time() -> Outcome {
+    // 22.05 kHz and a 1.3 ms hop: window i ends at frame round((3 + i 0.0013) 22050) = 66150 + round(28.665 i), so
+    // windows 0..=2 end at 66150, 66179, 66207 and window 3 at 66236. One loud sample at frame 66235 lies inside window 3
+    // only if the end is rounded (truncating would end it at 66235, before the sample).
+    let mut samples = vec![0.0_f32; 5 * 22050];
+    samples[66235] = 1.0;
+    let measured = sound(vec![samples], 22050)?
+        .with_analysis(Analysis::new(DEFAULT_WINDOW, 0.0013, 0.03, 0.05, 0.1, FLOOR)?)
+        .loudness()?;
+    assert!(
+        measured.values[..3].iter().all(|&v| v == -70.0),
+        "{:?}",
+        &measured.values[..4]
+    );
+    assert!(
+        measured.values[3..].iter().all(|&v| v > -60.0),
+        "{:?}",
+        &measured.values[..4]
+    );
+    Ok(())
+}
+
+#[test]
+fn silence_reads_the_absolute_gate_and_a_short_sound_is_refused() -> Outcome {
+    let silent = sound(vec![vec![0.0; 4 * RATE as usize]; 2], RATE)?.loudness()?;
+    assert!(silent.values.iter().all(|&v| v == -70.0));
+    let single = stereo_tone(0.0, 3)?.loudness()?;
+    assert_eq!(single.values.len(), 1);
+    assert!(within_all(&single.values, 0.0, 0.05));
+    let short = sound(vec![sine(997.0, 0.5, RATE, (2.99 * f64::from(RATE)) as usize)], RATE)?;
+    let Err(Error::Invalid(message)) = short.loudness() else {
+        unreachable!("2.99 s must be refused");
+    };
+    assert!(message.contains("duration") && message.contains("2.99"), "{message}");
+    Ok(())
+}
+
+#[test]
+fn a_step_in_level_shows_as_a_blend_of_the_powers_in_the_window() -> Outcome {
+    let quiet = sine(997.0, amplitude_for(-30.0), RATE, 5 * RATE as usize);
+    let loud = sine(997.0, amplitude_for(-20.0), RATE, 5 * RATE as usize);
+    let step: Vec<f32> = quiet.into_iter().chain(loud).collect();
+    let values = sound(vec![step.clone(), step], RATE)?.loudness()?.values;
+    assert!((values[0] + 30.0).abs() < 0.05);
+    assert!((values[values.len() - 1] + 20.0).abs() < 0.05);
+    // window 350 ends at 6.5 s, so it spans 3.5 to 6.5 s: half at -30, half at -20 LUFS; mean power (1e-3 + 1e-2) / 2
+    assert!((values[350] - 10.0 * 0.0055_f64.log10()).abs() < 0.1, "{}", values[350]);
+    Ok(())
+}
+
+#[test]
+fn normalising_sets_the_loudness_and_keeps_everything_else() -> Outcome {
+    let analysis = Analysis::new(0.1, 0.02, 0.03, 0.05, 0.1, FLOOR)?;
+    let original = stereo_tone(-23.0, 11)?.cut(0.5, 10.5)?.with_analysis(analysis);
+    let louder = original.normalised(-14.0)?;
+    assert!(within_all(&louder.loudness()?.values, -14.0, 0.05));
+    assert_eq!(
+        (louder.rate(), louder.channels(), louder.origin(), louder.analysis()),
+        (
+            original.rate(),
+            original.channels(),
+            original.origin(),
+            original.analysis()
+        )
+    );
+    // the gain is +9 dB
+    let gain = f64::from(louder.samples()[0][1000]) / f64::from(original.samples()[0][1000]);
+    assert!((gain - 10.0_f64.powf(9.0 / 20.0)).abs() < 1e-3, "{gain}");
+    // already at the target: the gain is 1
+    let again = louder.normalised(-14.0)?;
+    let worst = louder.samples()[0]
+        .iter()
+        .zip(&again.samples()[0])
+        .map(|(a, b)| f64::from(a - b).abs())
+        .fold(0.0, f64::max);
+    assert!(worst < 1e-5, "{worst}");
+    Ok(())
+}
+
+#[test]
+fn normalising_refuses_what_has_no_loudness_or_cannot_hold_it() -> Outcome {
+    let quiet = stereo_tone(-69.0, 2)?; // above the -70 gate, so it has a loudness
+    let rows = [
+        ("nan", stereo_tone(-23.0, 2)?, f64::NAN, "lufs"),
+        ("infinite", stereo_tone(-23.0, 2)?, f64::INFINITY, "lufs"),
+        (
+            "silence",
+            sound(vec![vec![0.0; 2 * RATE as usize]], RATE)?,
+            -23.0,
+            "400 ms",
+        ),
+        (
+            "under 400 ms",
+            sound(vec![sine(997.0, 0.5, RATE, 13_000)], RATE)?,
+            -23.0,
+            "400 ms",
+        ),
+        ("overflow", quiet, 1000.0, "lufs"),
+    ];
+    for (id, input, lufs, named) in rows {
+        let Err(Error::Invalid(message)) = input.normalised(lufs) else {
+            unreachable!("{id} must be refused");
+        };
+        assert!(message.contains(named), "{id}: {message}");
+    }
     Ok(())
 }

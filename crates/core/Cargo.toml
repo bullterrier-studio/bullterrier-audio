@@ -16,6 +16,7 @@ name = "bullterrier_audio"
 doctest = false
 
 [dependencies]
+ebur128 = "0.1.11"
 flacenc.workspace = true
 hound.workspace = true
 realfft.workspace = true

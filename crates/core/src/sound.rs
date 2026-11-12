@@ -7,7 +7,8 @@ use std::sync::{Arc, OnceLock};
 use crate::Error;
 use crate::analysis::Analysis;
 use crate::decode::decode;
-use crate::formats::Series;
+use crate::formats::{Series, Unit};
+use crate::loudness;
 use crate::resample::resample;
 use crate::spectrum::{self, Band, Spectrogram};
 use crate::write::write;
@@ -30,6 +31,7 @@ struct Measured {
     /// Indexed by position in [`Band::ALL`].
     energy: [OnceLock<Series>; 6],
     brightness: OnceLock<Series>,
+    loudness: OnceLock<Series>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -342,6 +344,88 @@ impl Sound {
             .brightness
             .get_or_init(|| spectrum::brightness(spectrogram, &self.analysis))
             .clone())
+    }
+
+    /// The short-term loudness over time, in LUFS, measured by EBU R128 on the sound's own channels and rate.
+    ///
+    /// Promises: a series of unit decibels (unscaled) with `start` 3 s and `rate` 1 / `hop`; value `i` is the loudness
+    /// of the 3 s window that ends at `3 + i * hop` seconds, rounded to the nearest sample (`round(t * rate)`), and
+    /// there is one for every window that ends inside the sound. A mono sound counts as dual mono, so it reads like
+    /// the same samples on two channels. A window quieter than -70 LUFS (the standard's absolute gate), digital silence
+    /// included, reads -70. The result is computed once per sound.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `duration` and its value when the sound is shorter than 3 s, or naming the rate
+    /// when the meter cannot take it (below 16 Hz).
+    pub fn loudness(&self) -> Result<Series, Error> {
+        if let Some(series) = self.memo.0.loudness.get() {
+            return Ok(series.clone());
+        }
+        if self.duration() < loudness::WINDOW {
+            return Err(Error::Invalid(format!(
+                "duration must be at least {} s for a short-term loudness, got {}",
+                loudness::WINDOW,
+                self.duration()
+            )));
+        }
+        let values = loudness::short_term(&self.samples, self.rate, self.analysis.hop())?;
+        Ok(self
+            .memo
+            .0
+            .loudness
+            .get_or_init(|| Series {
+                start: loudness::WINDOW,
+                rate: 1.0 / self.analysis.hop(),
+                values,
+                unit: Unit::Decibels,
+                scaling: None,
+            })
+            .clone())
+    }
+
+    /// This sound scaled so that its integrated loudness (EBU R128, gated) is `lufs`.
+    ///
+    /// Promises: every sample is multiplied by `10^((lufs - I) / 20)`, `I` being the sound's integrated loudness; rate,
+    /// origin and analysis are kept. Nothing is clamped, so samples may exceed full scale (a wav holds them; a flac
+    /// write refuses them).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `lufs` and its value when it is NaN or infinite, when the sound has no integrated
+    /// loudness (silent, quieter than -70 LUFS, or shorter than 400 ms), or when the scaled samples would not fit `f32`.
+    #[allow(clippy::cast_possible_truncation)] // the scaled sample is checked for overflow below
+    pub fn normalised(&self, lufs: f64) -> Result<Self, Error> {
+        if !lufs.is_finite() {
+            return Err(Error::Invalid(format!("lufs must be a finite number, got {lufs}")));
+        }
+        let current = loudness::integrated(&self.samples, self.rate)?;
+        if !current.is_finite() {
+            return Err(Error::Invalid(format!(
+                "cannot normalise to lufs {lufs}: the sound is silent, quieter than -70 LUFS or shorter than 400 ms"
+            )));
+        }
+        let gain = 10.0_f64.powf((lufs - current) / 20.0);
+        let samples: Vec<Vec<f32>> = self
+            .samples
+            .iter()
+            .map(|channel| {
+                channel
+                    .iter()
+                    .map(|&sample| (f64::from(sample) * gain) as f32)
+                    .collect()
+            })
+            .collect();
+        if samples.iter().flatten().any(|sample| !sample.is_finite()) {
+            return Err(Error::Invalid(format!(
+                "lufs {lufs} would scale the samples beyond what f32 holds (gain {gain})"
+            )));
+        }
+        Ok(Self {
+            samples,
+            memo: Memo::default(),
+            ..self.clone()
+        })
     }
 
     /// The one spectrogram of this sound, made on first use from the analysis signal.
