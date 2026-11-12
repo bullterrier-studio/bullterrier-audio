@@ -14,7 +14,9 @@ const FRAME_RATE: f64 = RATE as f64 / HOP as f64;
 /// Classes the model gives, in column order: kick, snare, tom, hat, cymbal and ride together.
 const COLUMNS: usize = 5;
 
-/// The longest sound `hits` runs on, in seconds. The model's memory is linear in the length (the recurrent layer runs
+/// The longest sound the transcriber runs on, in seconds: the limit of `Sound::hits_with` and of `Sound::hits` on a drums
+/// stem. `Sound::hits` on any other sound separates it first and meets the separator's shorter limit (440 s, 250 s for the
+/// ensemble) before this one, so this one is not reached through it. The transcriber's memory is linear in the length (the recurrent layer runs
 /// over the whole sound): measured peak resident 0.21 GB at 30 s and 1.57 GB at 300 s, so `(1.57 - 0.21) / 270 = 5.04
 /// MB` per second of sound and a base of `0.21 - 30 * 5.04 MB = 0.059 GB`. A budget of 3.5 GB (that of separation) is
 /// reached at `(3.5 - 0.059) / 0.00504 = 683` s; 650 s (projected peak 3.34 GB) keeps a margin.

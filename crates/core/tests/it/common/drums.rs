@@ -7,6 +7,7 @@
 //! - closed hat: noise high-passed at 7 kHz (second order), 30 ms; open hat: the same, 80 ms.
 //!
 //! Every voice has a hard attack and an exponential decay that falls to 0.7 % (-43 dB) at its end.
+//! Limit: a kick rings for 200 ms, longer than a sixteenth above 75 BPM, so at fast tempos a voice overlaps the next hit.
 
 use std::f64::consts::TAU;
 

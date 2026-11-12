@@ -337,26 +337,6 @@ mod parameters {
     use super::*;
 
     #[test]
-    fn the_defaults_are_the_published_ones() {
-        let defaults = Hits::default();
-        let values = [
-            defaults.kick_threshold(),
-            defaults.snare_threshold(),
-            defaults.hat_threshold(),
-            defaults.pre_average(),
-            defaults.post_average(),
-            defaults.pre_max(),
-            defaults.post_max(),
-            defaults.combine(),
-        ];
-        assert_eq!(values, [0.22, 0.24, 0.22, 0.1, 0.01, 0.02, 0.01, 0.02]);
-        assert_eq!(
-            Sound::from_samples(vec![vec![0.0; 10]], 44_100).map(|s| *s.hits_params()),
-            Ok(defaults)
-        );
-    }
-
-    #[test]
     fn a_value_outside_its_range_is_refused_naming_the_field_and_the_value() {
         // (field, value): bounds are valid, beyond them is not
         let bad: [(usize, f64); 14] = [

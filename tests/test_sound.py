@@ -293,6 +293,11 @@ def test_a_bad_hit_parameter_is_refused_naming_the_field(change, field):
     assert isinstance(raised.value, ValueError)
 
 
+def recall(expected: list[float], events: list[Any], tolerance: float = 0.05) -> float:
+    """The share of `expected` times that some event lies within `tolerance` seconds of."""
+    return sum(any(abs(e - event.t) <= tolerance for event in events) for e in expected) / len(expected)
+
+
 @pytest.mark.models
 def test_the_hits_of_a_drum_song_are_labelled_sorted_and_find_the_kicks(drum_song, kept_stems_cache):
     samples, truth = drum_song
@@ -301,23 +306,24 @@ def test_the_hits_of_a_drum_song_are_labelled_sorted_and_find_the_kicks(drum_son
     assert {event.label for event in kicks} == {"kick"}
     assert [event.t for event in kicks] == sorted(event.t for event in kicks)
     assert all(0.0 <= event.strength <= 1.0 for event in kicks)
-    found = [event.t for event in kicks]
-    recalled = sum(any(abs(t - f) <= 0.05 for f in found) for t in truth["kick"])
-    assert recalled / len(truth["kick"]) >= 0.8
+    assert recall(truth["kick"], kicks) >= 0.8
 
 
 @pytest.mark.models
 @pytest.mark.parametrize(("hit", "label"), [(Hit.SNARE, "snare"), (Hit.HAT, "hat")])
 def test_a_drum_song_has_snares_and_hats(drum_song, hit, label, kept_stems_cache):
-    events = Sound.from_samples(drum_song[0], 44100).hits(hit)
-    assert events
+    samples, truth = drum_song
+    events = Sound.from_samples(samples, 44100).hits(hit)
     assert {event.label for event in events} == {label}
+    assert recall(truth[label], events) >= 0.8
 
 
 @pytest.mark.models
 def test_a_higher_threshold_finds_fewer_kicks(drum_song, kept_stems_cache):
     sound = Sound.from_samples(drum_song[0], 44100)
-    assert len(sound.with_hits(kick_threshold=0.99).hits(Hit.KICK)) < len(sound.hits(Hit.KICK))
+    default = [event.t for event in sound.hits(Hit.KICK)]
+    strict = [event.t for event in sound.with_hits(kick_threshold=0.99).hits(Hit.KICK)]
+    assert set(strict) < set(default)
 
 
 # --- stems: the separation parameters and the sounds that need the model ---------------------------------------------
