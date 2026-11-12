@@ -6,7 +6,7 @@ use pyo3::prelude::*;
 
 use bullterrier_audio::Error;
 use bullterrier_audio::models::{
-    Options, RUNTIME_VERSION, Status, install_model, install_runtime, model_status, models as catalogue,
+    Options, RUNTIME_VERSION, Status, install_model, install_runtime, load_runtime, model_status, models as catalogue,
     runtime_status, runtimes,
 };
 
@@ -15,6 +15,7 @@ use crate::error;
 /// A piece the models need, with what is on this computer for it: `kind` is `notes` for a model and `runtime` for the
 /// ONNX Runtime library (its `url`, `sha256` and `size` are those of the archive it comes in, it has no `licence`
 /// here). `status` is `installed`, `not installed` or `damaged: <why>`; `path` is the file it is or would be kept as.
+/// `provided` is true for a runtime library the user names (`BT_AUDIO_ONNX_LIB`): it is theirs, `install` leaves it alone.
 #[pyclass(frozen, get_all, module = "bullterrier_audio")]
 pub(crate) struct ModelInfo {
     name: String,
@@ -25,6 +26,7 @@ pub(crate) struct ModelInfo {
     licence: Option<String>,
     status: String,
     path: PathBuf,
+    provided: bool,
 }
 
 impl ModelInfo {
@@ -60,6 +62,7 @@ pub(crate) fn models(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<Vec<Mod
                 licence: Some(model.licence.to_owned()),
                 status: String::new(),
                 path: PathBuf::new(),
+                provided: false,
             };
             Ok(info.with_status(model_status(model, &options)?))
         })
@@ -72,50 +75,48 @@ pub(crate) fn models(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<Vec<Mod
 #[pyo3(signature = (cache=None))]
 pub(crate) fn onnx_runtime_status(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<ModelInfo> {
     let options = options(cache);
+    let status = runtime_status(&options).map_err(|error| error::raised(py, &error))?;
+    // a platform with no pinned release can still run a library the user names: no archive to describe
     let release = runtimes()
         .iter()
         .find(|runtime| runtime.os == std::env::consts::OS && runtime.arch == std::env::consts::ARCH);
-    let Some(release) = release else {
-        let error = Error::ModelUnavailable(format!(
-            "no ONNX Runtime release is pinned for {} {}: set BT_AUDIO_ONNX_LIB to a library file",
-            std::env::consts::OS,
-            std::env::consts::ARCH
-        ));
-        return Err(error::raised(py, &error));
-    };
     let info = ModelInfo {
         name: format!("ONNX Runtime {RUNTIME_VERSION}"),
         kind: "runtime".to_owned(),
-        url: release.url.to_owned(),
-        sha256: release.sha256.to_owned(),
-        size: release.size,
+        url: release.map_or_else(String::new, |release| release.url.to_owned()),
+        sha256: release.map_or_else(String::new, |release| release.sha256.to_owned()),
+        size: release.map_or(0, |release| release.size),
         licence: None,
         status: String::new(),
         path: PathBuf::new(),
+        provided: options.library().is_some(),
     };
-    runtime_status(&options)
-        .map(|status| info.with_status(status))
+    Ok(info.with_status(status))
+}
+
+/// Loads the installed ONNX Runtime library (the one `onnx_runtime_status` finds) and returns what it reports about
+/// itself. Raises `ModelUnavailableError` if it is not installed or cannot be loaded.
+#[pyfunction]
+#[pyo3(signature = (cache=None))]
+pub(crate) fn onnx_runtime_load(py: Python<'_>, cache: Option<PathBuf>) -> PyResult<String> {
+    let options = options(cache);
+    py.detach(|| load_runtime(&options))
         .map_err(|error| error::raised(py, &error))
 }
 
-/// Downloads what is missing (the ONNX Runtime library and the models; `runtime_only` or `models_only` leaves one out)
-/// into `cache` and returns the files kept. This is the explicit download: it happens whatever `BT_AUDIO_ALLOW_DOWNLOAD`
-/// says. Ask the user before calling it.
+/// Downloads the ONNX Runtime library (`runtime`) and the models (`models`) that are missing into `cache` and returns
+/// the files kept. This is the explicit download: it happens whatever `BT_AUDIO_ALLOW_DOWNLOAD` says, so ask the user
+/// first, and pass exactly what they agreed to (`runtime=False` when the library is `provided`).
 #[pyfunction]
-#[pyo3(signature = (cache=None, runtime_only=false, models_only=false))]
-pub(crate) fn install(
-    py: Python<'_>,
-    cache: Option<PathBuf>,
-    runtime_only: bool,
-    models_only: bool,
-) -> PyResult<Vec<PathBuf>> {
+#[pyo3(signature = (cache=None, runtime=true, models=true))]
+pub(crate) fn install(py: Python<'_>, cache: Option<PathBuf>, runtime: bool, models: bool) -> PyResult<Vec<PathBuf>> {
     let options = options(cache).allow_download(true);
     py.detach(|| {
         let mut kept = Vec::new();
-        if !models_only {
+        if runtime {
             kept.push(install_runtime(&options)?);
         }
-        if !runtime_only {
+        if models {
             for model in catalogue() {
                 kept.push(install_model(model, &options)?);
             }

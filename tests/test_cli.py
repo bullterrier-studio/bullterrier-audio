@@ -125,6 +125,65 @@ def test_install_that_is_declined_downloads_nothing_and_exits_1(tmp_path, capsys
     assert not cache.exists()
 
 
+def test_doctor_does_not_call_a_file_that_is_not_a_library_working(tmp_path, capsys, monkeypatch):
+    junk = tmp_path / "libonnxruntime.dylib"
+    junk.write_bytes(b"not a library")
+    monkeypatch.setenv("BT_AUDIO_ONNX_LIB", str(junk))
+    assert main(["doctor", "--cache", str(tmp_path / "cache")]) == 1
+    captured = capsys.readouterr()
+    assert "ONNX Runtime: not available: " in captured.out
+    assert str(junk) in captured.out
+    assert "works" not in captured.out
+    assert captured.err.startswith("error: ")
+
+
+class Installs(list):
+    """The downloads `install` asks for, which the tests must not make: a `download` for `main` that records the
+    (runtime, models) of each call and fetches nothing."""
+
+    def __call__(self, cache, runtime, models):
+        self.append((runtime, models))
+        return []
+
+
+@pytest.fixture
+def installs():
+    return Installs()
+
+
+def test_install_with_a_named_runtime_downloads_the_models_it_lists_and_not_the_runtime(
+    tmp_path, capsys, monkeypatch, installs
+):
+    library = tmp_path / "libonnxruntime.dylib"
+    library.write_bytes(b"the user's own")
+    monkeypatch.setenv("BT_AUDIO_ONNX_LIB", str(library))
+    assert main(["install", "--yes", "--cache", str(tmp_path / "cache")], download=installs) == 0
+    out = capsys.readouterr().out
+    assert installs == [(False, True)]
+    assert "downloading basic-pitch" in out
+    assert "downloading ONNX Runtime" not in out
+    assert "BT_AUDIO_ONNX_LIB" in out
+
+
+def test_install_with_a_named_runtime_that_is_missing_says_doctor_fails_until_it_exists(
+    tmp_path, capsys, monkeypatch, installs
+):
+    missing = tmp_path / "gone.dylib"
+    monkeypatch.setenv("BT_AUDIO_ONNX_LIB", str(missing))
+    assert main(["install", "--yes", "--cache", str(tmp_path / "cache")], download=installs) == 1
+    captured = capsys.readouterr()
+    assert installs == [(False, True)]
+    assert str(missing) in captured.err
+    assert "doctor" in captured.err
+
+
+def test_install_downloads_exactly_the_pieces_it_listed(tmp_path, capsys, monkeypatch, installs):
+    monkeypatch.delenv("BT_AUDIO_ONNX_LIB", raising=False)
+    main(["install", "--yes", "--runtime-only", "--cache", str(tmp_path)], download=installs)
+    main(["install", "--yes", "--cache", str(tmp_path)], download=installs)
+    assert installs == [(True, False), (True, True)]
+
+
 @pytest.mark.parametrize("command", ["install", "models", "doctor"])
 def test_a_model_command_without_its_cache_folder_is_a_usage_error(command, capsys):
     with pytest.raises(SystemExit) as stop:
@@ -144,7 +203,7 @@ def test_only_install_takes_runtime_only(capsys):
 def test_the_installed_runtime_and_model_pass_the_doctor_and_install_has_nothing_to_do(capsys):
     assert main(["doctor"]) == 0
     out = capsys.readouterr().out
-    assert "ONNX Runtime: works: " in out
+    assert re.search(r"ONNX Runtime: works: \S+ \(ONNX Runtime build: git-", out)
     assert re.search(r"basic-pitch: .*, installed", out)
     assert out.strip().splitlines()[-1].startswith("ok:")
     assert main(["install"]) == 0

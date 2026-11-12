@@ -17,7 +17,7 @@ use bullterrier_audio::Error;
 #[pymodule]
 mod _core {
     #[pymodule_export]
-    use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_status};
+    use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_load, onnx_runtime_status};
     #[pymodule_export]
     use super::{
         Analysis, Band, Bundle, Event, Grid, Key, Mode, Notes, Origin, Section, Series, Sound, Structure, load,
@@ -584,7 +584,7 @@ impl Sound {
 
     /// The notes, as events (`t` the start, `duration`, `pitch` the MIDI number), found by the Basic Pitch model. It needs
     /// the ONNX Runtime library and the model: without them a `ModelUnavailableError` says to run `bt-audio install`. It
-    /// downloads them only if the environment variable `BT_AUDIO_ALLOW_DOWNLOAD` is set to `1`.
+    /// downloads them only if the environment variable `BT_AUDIO_ALLOW_DOWNLOAD` is `1`, `true` or `yes`.
     fn notes(&self, py: Python<'_>) -> PyResult<Vec<Event>> {
         py.detach(|| self.0.notes())
             .map(|events| events.into_iter().map(Event::from).collect())
