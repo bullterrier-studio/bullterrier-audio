@@ -48,13 +48,14 @@ fn key(sound: &Sound, models: &[&str], revision: u32) -> String {
     models.sort_unstable();
     let mut hash = Sha256::new();
     hash.update(format!(
-        "bt-audio stems v1\nversion={}\nrevision={revision}\nrate={}\nchannels={}\nshifts={}\nensemble={}\nseed={}\noptimisation={GRAPH_OPTIMISATION}\nmodels={}\nsamples\n",
+        "bt-audio stems v1\nversion={}\nrevision={revision}\nrate={}\nchannels={}\nshifts={}\nensemble={}\nseed={}\noptimisation={}\nmodels={}\nsamples\n",
         env!("CARGO_PKG_VERSION"),
         sound.rate(),
         sound.channels(),
         separation.shifts(),
         separation.ensemble(),
         separation.seed(),
+        GRAPH_OPTIMISATION.name(),
         models.join(","),
     ));
     for sample in sound.samples().iter().flatten() {

@@ -8,6 +8,7 @@ use ort::session::builder::GraphOptimizationLevel;
 use ort::value::Tensor as OrtTensor;
 
 use super::{Model, Options, Status, model_file, runtime_library, runtime_status};
+use crate::infer::{GRAPH_OPTIMISATION, GraphOptimisation};
 use crate::{Error, Infer, Tensor};
 
 /// A model file loaded into ONNX Runtime on the CPU (loading takes a moment). A handle is cheap to clone; clones are
@@ -50,7 +51,9 @@ impl OrtInfer {
             let mut builder = OrtSession::builder(environment)?
                 .with_intra_threads(threads)?
                 .with_inter_threads(1)?
-                .with_optimization_level(GraphOptimizationLevel::Disable)?;
+                .with_optimization_level(match GRAPH_OPTIMISATION {
+                    GraphOptimisation::Disable => GraphOptimizationLevel::Disable,
+                })?;
             builder.commit_from_file(file)
         };
         let session = load().map_err(|error| unavailable(&error))?;

@@ -49,7 +49,23 @@ pub trait Infer: Send + Sync {
     fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error>;
 }
 
-/// The graph optimisation the models run under, as the key of the stems on disk names it: the optimised graph can
-/// change the numbers, so a change here must change the key. `models::OrtInfer` opens its sessions with the level of
-/// this name.
-pub(crate) const GRAPH_OPTIMISATION: &str = "disable";
+/// A graph optimisation level of the runtime. The one the models run under is [`GRAPH_OPTIMISATION`]: one decision, read by
+/// `models::OrtInfer` (which opens its sessions with it) and by the key of the stems on disk (the optimised graph can
+/// change the numbers, so a change here must change the key).
+#[derive(Clone, Copy)]
+pub(crate) enum GraphOptimisation {
+    /// No rewrite of the graph.
+    Disable,
+}
+
+impl GraphOptimisation {
+    /// The name in the key of the stems on disk.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Disable => "disable",
+        }
+    }
+}
+
+/// The graph optimisation the models run under.
+pub(crate) const GRAPH_OPTIMISATION: GraphOptimisation = GraphOptimisation::Disable;
