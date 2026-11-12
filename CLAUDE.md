@@ -1,7 +1,8 @@
 # CLAUDE.md: bullterrier-audio
 
-Python library and CLI that **finds what is in a sound and writes it down as time-aligned data**: tempo, beats, bars,
-sections, onsets, energy per band, stems, drum hits and notes. The field is music information retrieval (MIR). See `README.md`
+Rust library with a Python interface and a CLI that **understands and changes single sounds**: it measures what is in a
+sound (tempo, beats, sections, onsets, energy per band, notes, drum hits) and writes it down as time-aligned data, and it
+takes sound apart (cut, fade, separate into stems, convert, write). The field is music information retrieval (MIR). See `README.md`
 (usage), `docs/design-decisions.md` (why), `docs/ecosystem.md` (the five packages and their rules).
 
 **Write docs tersely.** This file, the README, `docs/`, docstrings, reports and briefs: state the rule or fact, drop preamble,
@@ -35,9 +36,15 @@ video knows the others.
 | Energy and loudness per frequency band | Changing the sound (effects, mixing) → out of scope |
 | Spectral character: brightness, noisiness | Trimming or fading the soundtrack → video |
 | Structure: sections, builds, drops | Frame rates, pictures, video → video |
-| Separating instruments into stems, for per-instrument signals | Synthesis, fitting a synth to a song → the rebuild app |
-| Pitch, notes and key | |
-| Measured modulation (sidechain dip, wobble rate, envelope shape), in audio's own terms | Turning a measurement into a control source → app or video |
+| Separating instruments into stems, as signals and as sound | Synthesis, composing, generating music → out of scope (a separate project) |
+| Pitch, notes and key | Combining several sounds over time: joining, layering, crossfading, soundtrack mixing → video or a later mixing package |
+| Measured modulation (sidechain dip, wobble rate), in audio's own terms | Turning a measurement into a control source → app or video |
+| Editing one sound: cut, trim, fade, loudness normalisation, mixdown, resampling, conversion, writing files | Deciding what a cut or a stem is for → video or the app |
+| Creative effects (filters, reverb): allowed by the boundary, not planned yet | |
+
+**One sound in, one sound out (or measurements).** A cut, a stem, a faded clip and a whole song are each a `Sound`, and
+everything asked of one can be asked of the others. Separation is one in, several out; recombining stems ("all but the
+vocals") is isolation, so it is audio's. Anything that places several sounds on a timeline is not.
 
 **Measures vs shapes:** audio *measures* ("a kick at 1.20 s, bass at 0.8"); control *shapes* ("on each kick, jump to 1 and
 release over 0.3 s"). Test for where a number belongs: would it change if the look changed? If yes, it is not audio's. A feature
@@ -66,11 +73,9 @@ app        __main__, cli
 errors     BullterrierAudioError and its subclasses     (imports nothing from bullterrier_audio)
 ```
 
-Planned, each arriving with its first consumer (`vulture` fails on unused code): one deep entry point, `analyse(path) ->
-Analysis` (grid, sections, events by kind, series by name), over a workspace that caches every artifact of a song by input
-fingerprint and producer version; analysers registered by name; output writers for control's formats at the bottom. Stems
-are an internal detail of better beats and per-instrument signals, never a second stage that rewrites the first one's output.
-Heavy models (Demucs, ADTOF, Basic Pitch) are optional and run isolated, on first use.
+Planned (`docs/api.md`, `docs/roadmap.md`; A1 rewrites this section for the Rust layout): one object, `Sound`, with a
+method per measure and per edit, lazy and cached by input fingerprint and producer identity; results are immutable
+artifacts; models run as ONNX from the core; measures registered by name; writers for control's formats at the bottom.
 
 ## Rules
 
@@ -95,8 +100,8 @@ where they are stricter. This file is the project's: an update never changes it.
 ## Audio's standards
 
 - Runtime dependencies: none yet; each is declared with the first code that imports it (`deptry` fails on a dependency
-  nothing imports). The core analysis needs librosa, numpy, scipy, soundfile; models with their own torch or TensorFlow
-  stay optional and isolated (`docs/design-decisions.md`).
+  nothing imports). Models run as ONNX from the Rust core, each after its weights' licence is verified
+  (`docs/design-decisions.md`).
 - Third-party audio never enters the repository: inputs and outputs live in git-ignored folders; tests use synthesised
   signals (clicks at a known tempo, tones at known pitches), whose truth is known by construction.
 - One heavy job at a time on the machine (separation and transcription use every core).

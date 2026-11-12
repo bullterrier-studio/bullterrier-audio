@@ -6,10 +6,11 @@ bullterrier-control's `docs/api.md`. Changing a call here is a design change: up
 
 ## Principles
 
-1. **One object, asked questions.** A `Sound` is a decoded file or a stem. Every measure is a method on it, computed on
-   first ask and cached. There is no second way to get a measure; the export (`bundle`) and the command collect the same
-   methods.
-2. **A stem is a `Sound`.** Everything asked of a song can be asked of its bass stem.
+1. **One object, asked questions.** A `Sound` is a decoded file, a clip or a stem. Every measure and every edit is a
+   method on it, computed on first ask and cached. There is no second way to get a measure; the export (`bundle`) and the
+   command collect the same methods.
+2. **One sound in, one sound out.** An edit (cut, fade, separation) returns a `Sound`, so everything asked of a song can be
+   asked of its bass stem or of a ten-second clip. Placing several sounds on a timeline is not here: that is video's.
 3. **Deep calls.** A measure that needs a part (drum hits, bass notes) finds the part itself: `song.hits()` separates the
    drums when it must. The caller never orders steps.
 4. **Seconds everywhere.** Beats appear only next to the `Grid` that converts them.
@@ -85,7 +86,26 @@ song.bundle()?.write("song.bundle.json")?;
 `bt-audio analyse song.wav -o song.bundle.json` does the same. A `Bundle` read by bullterrier-control's `Bundle.load`
 needs no conversion.
 
-## 6. An app calls audio in-process (Rust)
+## 6. Cut, isolate and write sound
+
+```python
+drop = song.cut(start=64.0, end=80.0)        # Sound: the clip, measured like a song
+drop.energy(bta.Band.BASS)
+song.section(2).fade(in_=0.5, out=2.0).write("section-c.wav")
+stems[bta.Stem.BASS].write("bass.flac")
+stems.without(bta.Stem.VOCALS).write("instrumental.wav")
+song.normalised(lufs=-14.0).write("song-14.wav")
+```
+
+```rust
+let drop = song.cut(64.0, 80.0)?;
+stems.without(&[Stem::Vocals])?.write("instrumental.wav")?;
+```
+
+Times in an edit are seconds of the sound it is called on; a clip's measures are in the clip's own seconds and say where it
+came from (`drop.origin`: the source and its offset), so a caller can map them back.
+
+## 7. An app calls audio in-process (Rust)
 
 ```rust
 // a video renderer or a server: no files, no subprocess
@@ -93,7 +113,7 @@ let song = Sound::from_samples(&samples, sample_rate)?;
 for beat in song.grid()?.beats() { /* ... */ }
 ```
 
-## 7. A new measure plugs in
+## 8. A new measure plugs in
 
 ```python
 @bta.measure("pumping", unit="decibels")
@@ -112,6 +132,7 @@ measures are registered too, so `bundle()` and the command list them all; the ty
 | Entry point | `load(path)` / `from_samples(samples, rate)` give a `Sound`; nothing is measured until asked | A caller that wants kicks pays for kicks only |
 | Cache | Per `Sound` in memory, and on disk by input fingerprint (whole file) and producer identity (core version + model hash); a stale artifact is recomputed, never migrated | Analysis is minutes, asking is milliseconds; image caches maps the same way |
 | Artifacts | Immutable: no measure rewrites another's result; refined tempo is a different producer, not an overwrite | A step that rewrote another's output is the main recorded failure of the prototypes |
+| Writing | wav and flac (lossless), at the sound's rate and channels; a lossy format only if a consumer asks | Writing mp3 or aac needs an encoder with its own licence |
 | Analysis rate | Decode at the file's rate; DSP at 44.1 kHz mono; each model resamples to its own rate inside | The prototypes' 22.05 kHz could not see above 11 kHz, so `Band.AIR` would mean nothing |
 | Bands | `SUB` 20-60, `BASS` 60-250, `LOW_MID` 250-500, `MID` 500-2k, `HIGH` 2k-6k, `AIR` 6k-20k Hz, one owner (`spectrum`) | The prototypes had five band sets in five places |
 | Units | control's: `fraction`, `decibels`, `hertz`, `midi`, `seconds`, `beats` | Bundles read without conversion |

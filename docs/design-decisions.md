@@ -12,8 +12,18 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   mixing them makes every tweak re-run the analysis (the pulse experiment smoothed and normalised inside its analysis).
 - **Time is in seconds.** No frame numbers, no fps: frames exist only in video. *Reason:* one analysis serves any frame rate
   and any consumer. *Consequence:* a feature curve is a Series with its own rate.
-- **No sound processing.** Filters, effects and mixing are out of scope; if wanted, they are a separate package.
-- **Measured modulation is reported in audio's own terms.** A measured sidechain dip, wobble rate or envelope shape is a
+- **One sound in, one sound out (or measurements)** (2026-11-12; replaces "no sound processing"). Audio measures a sound
+  and edits it: cut, trim, fade, loudness normalisation, mixdown, resampling, conversion, separation into stems, writing
+  files. Each edit returns a `Sound`, so a clip or a stem is measured like a song. *Reason:* the same object, decoder and
+  cache serve both; bullterrier-image does the same for one picture (it changes and understands it).
+  - Separation (one in, several out) and recombining stems ("all but the vocals") are isolation: audio's.
+  - Combining several sounds over time (joining, layering, crossfading between tracks, soundtrack mixing) is arrangement:
+    video's, or a later mixing package's, as scene composes pictures for image.
+  - Creative effects (filters, reverb, distortion) fit the rule, as image's effects do; not planned until the owner
+    decides. A driven effect would take a control signal's values as its parameter over time.
+  - Synthesis, composing and generating music are out of scope: a separate project, which may use this package.
+  - What a cut or a stem is for is decided by video or the app.
+- **Measured modulation is reported in audio's own terms.** A measured sidechain dip or wobble rate is a
   measurement (dB, beats, cycles per beat), not a control source. *Reason:* naming control's sources here would make audio
   depend on control's vocabulary; the app or video turns a measurement into a source.
 

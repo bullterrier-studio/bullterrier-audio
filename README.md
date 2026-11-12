@@ -1,10 +1,11 @@
 # bullterrier-audio
 
-Music analysis for Python: give it a song, get back what is in it as time-aligned data. Tempo, beats, bars and downbeats,
-labelled sections, builds and drops, onsets, energy per frequency band, separated stems, drum hits and notes, all in
-seconds.
+Understand and take apart a sound, from Rust or Python: give it a song, get back what is in it as time-aligned data
+(tempo, beats and downbeats, labelled sections, drops, onsets, energy per frequency band, drum hits and notes, all in
+seconds), and cut it, fade it, separate it into stems and write the parts as audio files.
 
-It measures; it never decides what a measurement should drive and never changes the sound. The field is known as music
+It measures and edits one sound at a time; it never decides what a measurement or a cut should drive, and it does not
+compose or synthesise music. The field is known as music
 information retrieval (MIR).
 
 ## Status
