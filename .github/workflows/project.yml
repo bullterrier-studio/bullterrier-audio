@@ -10,10 +10,30 @@ permissions:
   contents: read
 
 jobs:
-  none:
-    name: No project jobs yet
+  # The Rust tests that need the ONNX Runtime library and the Basic Pitch model (`#[ignore]`d in `check`). The first run
+  # downloads both (BT_AUDIO_ALLOW_DOWNLOAD, verified against the pinned SHA-256); the cache keeps them under the
+  # catalogue's and the runtime's source, which pin the files.
+  models:
+    name: Tests with the installed models
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
     steps:
-      - name: Nothing to run
-        run: echo "No CI jobs of this project's own yet (.github/workflows/project.yml)"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+      - name: Install the pinned Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install --no-self-update && cargo --version
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/bt-audio
+          key: bt-audio-${{ hashFiles('crates/core/src/models/catalogue.rs', 'crates/core/src/models/runtime.rs') }}
+      - name: Install the locked dependencies (builds the Rust extension)
+        run: uv sync --locked
+      - name: Rust tests that need the models
+        env:
+          BT_AUDIO_ALLOW_DOWNLOAD: "1"
+        run: uv run --locked poe rust-test-models
