@@ -320,6 +320,8 @@ known_first_party = ["bullterrier_audio", "check_release"]
 [tool.deptry.per_rule_ignores]
 # packaging (PEP 440 versions) is used by tools/release.py, a developer command that runs in the dev environment
 DEP004 = ["packaging"]
+# numpy: imported by the compiled extension (crates/python), which deptry cannot read
+DEP002 = ["numpy"]
 
 # The layering rules of CLAUDE.md, checked by `uv run lint-imports` (tests/test_layering.py runs it, and proves each
 # contract fails on a forbidden import). Imports flow downward only.
