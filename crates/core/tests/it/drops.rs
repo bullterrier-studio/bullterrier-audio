@@ -17,7 +17,7 @@ use crate::common::Outcome;
 use crate::common::arrangement::{
     BAR, Bass, BassFadeIn, HalfTimeKick, Hats, Kick, Pad, Part, RATE, Riser, arrangement, full, top,
 };
-use crate::common::sine;
+use crate::common::{clicks, sine};
 
 /// A sound and the bars (of `BAR` seconds) at which its drops are.
 struct Case {
@@ -204,7 +204,7 @@ fn each_drop_parameter_changes_what_is_found() -> Outcome {
     let rows = [
         ("p1", structure(4, 0.8, 120.0), 0), // the span of the song is under the least a drop needs
         ("p1", structure(16, 0.8, 10.0), 0), // 8 quiet bars are fewer than 16
-        ("n2", structure(4, 0.5, 10.0), 1),  // a fade-in reaches half the span in its first bar
+        ("n2", structure(4, 0.51, 10.0), 1), // a fade-in reaches half the span in its first bar
         ("n6b", structure(2, 0.8, 10.0), 1), // a 3-bar silence is a stretch without bass for 2 bars
         ("n8", structure(4, 0.8, 0.0), 1),   // leaked hats are a step of their own with no least span
     ];
@@ -226,6 +226,30 @@ fn a_three_bar_stab_is_a_drop_only_when_three_bars_are_enough() -> Outcome {
 }
 
 #[test]
+fn a_flat_low_end_has_no_drops_even_without_a_least_span() -> Outcome {
+    // a click train at 120 beats per minute has a tempo and nothing in Sub and Bass: a span of zero is no drop
+    let at: Vec<(f64, f64)> = (0..40).map(|k| (0.1 + f64::from(k) * 0.5, 0.5)).collect();
+    let flat = Sound::from_samples(vec![clicks(&at, RATE, 20.0)], RATE)?.with_structure(structure(4, 0.8, 0.0));
+    assert_eq!(flat.drops()?.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn a_rise_beyond_the_span_is_as_strong_as_it_gets() -> Outcome {
+    // 40 bars, 31 of them without bass, 8 with a faint one (the 90th percentile) and one bar of bass and kick, far
+    // above it, after a bar without: that step is wider than the span between the percentiles, so it saturates
+    let mut parts = top(40);
+    parts.push((12, 20, Bass(0.02)));
+    parts.extend(full(30, 31));
+    let sound = arrangement(40, &parts).with_structure(structure(1, 0.8, 10.0));
+    let drops = sound.drops()?;
+    let strengths: Vec<(f64, f64)> = drops.iter().map(|d| (d.t / BAR, d.strength)).collect();
+    assert_eq!(drops.len(), 2, "{strengths:?}");
+    assert!((strengths[1].0 - 30.0).abs() < 0.1 && strengths[1].1 == 1.0, "{strengths:?}");
+    Ok(())
+}
+
+#[test]
 fn a_structure_is_checked_once_at_construction() {
     let build = |bars, share, span| {
         Structure::new(
@@ -235,6 +259,7 @@ fn a_structure_is_checked_once_at_construction() {
     let rows = [
         ("drop_bars", build(0, 0.8, 10.0)),
         ("drop_share", build(4, 0.49, 10.0)),
+        ("drop_share", build(4, 0.5, 10.0)), // at half, a bar on the midpoint is both quiet and loud
         ("drop_share", build(4, 1.01, 10.0)),
         ("drop_share", build(4, f64::NAN, 10.0)),
         ("drop_min_span", build(4, 0.8, -0.1)),
@@ -246,6 +271,6 @@ fn a_structure_is_checked_once_at_construction() {
             "{field}: {result:?}"
         );
     }
-    assert!(build(1, 0.5, 0.0).is_ok());
+    assert!(build(1, 0.51, 0.0).is_ok());
     assert!(build(1000, 1.0, 120.0).is_ok());
 }

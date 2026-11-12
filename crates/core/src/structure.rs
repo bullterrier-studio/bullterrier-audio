@@ -21,7 +21,7 @@ use crate::analysis::within;
 /// | `chroma_low` | hertz | 20 to 20000, below `chroma_high` | 100 |
 /// | `chroma_high` | hertz | 20 to 20000, above `chroma_low` | 5000 |
 /// | `drop_bars` | count | 1 and up | 4 |
-/// | `drop_share` | fraction | 0.5 to 1 | 0.8 |
+/// | `drop_share` | fraction | above 0.5, up to 1 | 0.8 |
 /// | `drop_min_span` | decibels | 0 to 120 | 10 |
 ///
 /// `tempo_min` and `tempo_max` bound the tempo [`Sound::grid`](crate::Sound::grid) reports: a tempo found outside
@@ -67,9 +67,9 @@ use crate::analysis::within;
 /// many bars before the drop must be quiet and after it loud. Evidence: a gap of 3 silent bars in a bass line must not
 /// read as a stretch without bass, which `drop_bars` of 4 settles and 2 does not. `drop_share`: the song's levels span
 /// from its 10th to its 90th percentile; the bars before lie in the lowest `1 - drop_share` of that span, the bars after
-/// in the highest. Evidence: the first bar of a bass fading in over 8 bars sits at 0.62 of the span (the level is in
+/// in the highest (above half, so no bar is both). Evidence: the first bar of a bass fading in over 8 bars sits at 0.62 of the span (the level is in
 /// decibels, so a linear gain jumps up at once), bass and kick entering sit at 0.99, so any share between about 0.65
-/// and 0.98 separates them. `drop_min_span`: a song whose span is under this has no drop, however sharp the step.
+/// and 0.98 separates them. `drop_min_span`: a song whose span is not above this has no drop (so with 0, a span of exactly 0 has none), however sharp the step.
 /// Evidence: the Sub and Bass level of hi-hats leaking into the bands rose by 1.6 dB, a kick on a sounding bass line by
 /// 0.6 dB, and bass entering rises by over 60 dB; 10 dB is the rise heard as twice as loud.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -148,7 +148,11 @@ impl Structure {
         within("Structure", "novelty_floor", novelty_floor, 0.01..=40.0, "decibels")?;
         within("Structure", "chroma_low", chroma_low, 20.0..=20000.0, "hertz")?;
         within("Structure", "chroma_high", chroma_high, 20.0..=20000.0, "hertz")?;
-        within("Structure", "drop_share", drop_share, 0.5..=1.0, "a fraction")?;
+        if !(drop_share > 0.5 && drop_share <= 1.0) {
+            return Err(Error::Invalid(format!(
+                "Structure drop_share must be a fraction above 0.5 and up to 1, got {drop_share}"
+            )));
+        }
         within("Structure", "drop_min_span", drop_min_span, 0.0..=120.0, "decibels")?;
         if drop_bars == 0 {
             return Err(Error::Invalid(

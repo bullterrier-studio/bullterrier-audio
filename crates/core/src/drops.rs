@@ -24,7 +24,7 @@ pub(crate) fn drops(sound: &Sound) -> Result<Vec<Event>, Error> {
     let percentile = |q: f64| sorted[((sorted.len() - 1) as f64 * q).round() as usize];
     let (low, high) = (percentile(LOW), percentile(HIGH));
     let span = high - low;
-    if span < structure.drop_min_span() / sound.analysis().floor().abs() {
+    if span <= structure.drop_min_span() / sound.analysis().floor().abs() {
         return Ok(Vec::new());
     }
     let quiet = low + (1.0 - structure.drop_share()) * span;
@@ -37,6 +37,7 @@ pub(crate) fn drops(sound: &Sound) -> Result<Vec<Event>, Error> {
             let after = level[i..i + n].iter().copied().fold(f64::MAX, f64::min);
             Event {
                 t: edges[i],
+                // saturating by definition: a rise beyond the span still means as strong as it gets
                 strength: ((after - before) / span).min(1.0),
                 duration: None,
                 label: None,
