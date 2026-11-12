@@ -24,6 +24,10 @@ pub enum Error {
         /// What went wrong.
         reason: String,
     },
+    /// A model or the ONNX Runtime library is not there or cannot be used; the message says how to get it, naming
+    /// `bt-audio install`.
+    #[error("{0}")]
+    ModelUnavailable(String),
     /// An argument has a value the call cannot use; the message names the argument and its value.
     #[error("{0}")]
     Invalid(String),

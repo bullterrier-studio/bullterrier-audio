@@ -140,7 +140,12 @@ rust-test-layout = { cmd = "python tools/check_rust_test_layout.py", help = "Che
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
 # The project's own gates and the steps only `full` runs: the template ships these two lines as no-ops and never changes
 # them again, so a project replaces each with a sequence of its tasks without a conflict at the next update
-project-gates = { cmd = "python -c pass", help = "The project's own gates, run last by check and full (none yet)" }
+# The `onnx` feature of the core (models/) is off in the workspace-wide Rust gates above (the core's default has no features):
+# these run clippy, rustdoc and the tests again with it on.
+rust-lint-onnx = { cmd = "cargo clippy --workspace --all-targets --features bullterrier-audio/onnx --locked --quiet -- -D warnings", help = "Lint the Rust code with the core's onnx feature on" }
+rust-doc-onnx = { cmd = "cargo doc --workspace --no-deps --features bullterrier-audio/onnx --locked --quiet", env = { RUSTDOCFLAGS = "-D warnings" }, help = "Build the Rust documentation with the core's onnx feature on" }
+rust-test-onnx = { cmd = "python tools/run_capped.py -- cargo test --workspace --features bullterrier-audio/onnx --locked --quiet --no-fail-fast", help = "Run the Rust tests under the memory cap with the core's onnx feature on" }
+project-gates = { sequence = [{ ref = "rust-lint-onnx" }, { ref = "rust-doc-onnx" }, { ref = "rust-test-onnx" }], help = "The project's own gates, run last by check and full: the Rust gates with the onnx feature on" }
 project-full = { cmd = "python -c pass", help = "The project's own steps that only full runs (none yet)" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
 gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, docs, dependencies, types, tests, the project's own)" }

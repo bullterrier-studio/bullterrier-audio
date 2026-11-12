@@ -15,6 +15,15 @@ publish = false
 
 [workspace.dependencies]
 bullterrier-audio = { path = "crates/core" }
+# the optional `onnx` feature of the core (models/): ONNX Runtime is loaded at run time from a downloaded library (none is bundled);
+# the download is https via rustls, verified with sha256, unpacked from tar.gz (macOS, Linux) or zip (Windows); `dirs` finds the cache folder
+dirs = "6"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"] }
+sha2 = { version = "0.10", default-features = false, features = ["std"] }
+tar = { version = "0.4", default-features = false }
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 # writing: hound for wav; flacenc is pure Rust (Apache-2.0), default features off (no threads, no serde)
 flacenc = { version = "0.5", default-features = false }
 hound = "3.5"

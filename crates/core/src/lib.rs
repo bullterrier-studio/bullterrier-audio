@@ -14,6 +14,8 @@ pub mod formats;
 mod grid;
 mod key;
 mod loudness;
+#[cfg(feature = "onnx")]
+pub mod models;
 mod onsets;
 mod resample;
 mod sections;

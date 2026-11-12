@@ -12,5 +12,7 @@ mod formats;
 mod grid;
 mod key;
 mod measures;
+#[cfg(feature = "onnx")]
+mod models;
 mod sections;
 mod sound;

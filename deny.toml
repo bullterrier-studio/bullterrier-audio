@@ -15,6 +15,10 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "Unicode-3.0",
     "BSD-2-Clause",  # numpy (the crate that exchanges arrays with Python)
+    "ISC",  # libloading (loads the ONNX Runtime library), ring and untrusted, rustls-webpki (model and runtime downloads)
+    "Zlib",  # zlib-rs (unpacks the runtime archive), foldhash
+    "BSD-3-Clause",  # subtle, through rustls (feature onnx)
+    "CDLA-Permissive-2.0",  # webpki-roots: Mozilla's CA list as data (feature onnx)
     "MPL-2.0",  # symphonia (the decoder), owner-accepted: file-level copyleft, no change to our own licence
 ]
 confidence-threshold = 0.93

@@ -15,16 +15,28 @@ name = "bullterrier_audio"
 # Set it to true only for a public item whose docs need a runnable bullterrier-audio.
 doctest = false
 
+[features]
+# Running models through ONNX Runtime (`models`): the library is loaded at run time, none is bundled. Off by default; the
+# project gates (`project-gates` in pyproject.toml) build and test it, and the bindings will enable it.
+onnx = ["dep:dirs", "dep:flate2", "dep:ort", "dep:sha2", "dep:tar", "dep:ureq", "dep:zip"]
+
 [dependencies]
+dirs = { workspace = true, optional = true }
 ebur128 = "0.1.11"
 flacenc.workspace = true
+flate2 = { workspace = true, optional = true }
 hound.workspace = true
+ort = { workspace = true, optional = true }
 realfft.workspace = true
 rubato.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = { workspace = true, optional = true }
 symphonia.workspace = true
+tar = { workspace = true, optional = true }
 thiserror.workspace = true
+ureq = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
 
 [dev-dependencies]
 jsonschema.workspace = true
