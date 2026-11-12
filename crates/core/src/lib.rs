@@ -5,12 +5,16 @@
 
 #![forbid(unsafe_code)]
 
+mod analysis;
 mod decode;
 mod error;
 pub mod formats;
 mod resample;
 mod sound;
+mod spectrum;
 mod write;
 
+pub use analysis::Analysis;
 pub use error::Error;
 pub use sound::{Origin, Sound};
+pub use spectrum::Band;

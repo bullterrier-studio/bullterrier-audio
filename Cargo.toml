@@ -23,6 +23,8 @@ jsonschema = { version = "0.61", default-features = false }
 # numpy arrays in and out of the bindings; its version follows pyo3's
 numpy = "0.30"
 proptest = "1.12"
+# the real FFT of the spectrum (a thin layer over rustfft, which plans any length)
+realfft = "3.5"
 # abi3-py312: one wheel per platform serves every Python from 3.12 (the oldest the package supports)
 pyo3 = { version = "0.30", features = ["abi3-py312"] }
 # sample-rate conversion: only the sinc resampler (`Async`), not the FFT one

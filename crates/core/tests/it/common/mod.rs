@@ -21,9 +21,9 @@ pub(crate) fn rust_files(dir: &Path) -> Vec<PathBuf> {
 /// The result type of a test: `?` instead of `unwrap`.
 pub(crate) type Outcome = Result<(), Box<dyn std::error::Error>>;
 
-/// The index of the first sample where `a` and `b` differ (or where one ends), `None` when they are the same. Tests
+/// The index of the first value where `a` and `b` differ (or where one ends), `None` when they are the same. Tests
 /// compare buffers with this, never with `assert_eq!`, which builds a diff of the whole value on a mismatch.
-pub(crate) fn first_difference(a: &[f32], b: &[f32]) -> Option<usize> {
+pub(crate) fn first_difference<T: PartialEq>(a: &[T], b: &[T]) -> Option<usize> {
     (0..a.len().max(b.len())).find(|&index| a.get(index) != b.get(index))
 }
 

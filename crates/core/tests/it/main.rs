@@ -7,4 +7,5 @@ mod common;
 mod architecture;
 mod edits;
 mod formats;
+mod measures;
 mod sound;

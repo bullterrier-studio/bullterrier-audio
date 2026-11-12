@@ -1,10 +1,15 @@
 //! `Sound`: samples with a rate, and where they came from.
 
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use crate::Error;
+use crate::analysis::Analysis;
 use crate::decode::decode;
+use crate::formats::Series;
 use crate::resample::resample;
+use crate::spectrum::{self, Band, Spectrogram};
 use crate::write::write;
 
 /// Where a sound came from: the file and the time in it at which this sound starts.
@@ -16,15 +21,45 @@ pub struct Origin {
     pub offset: f64,
 }
 
+/// What a sound has measured so far, filled on first use. Clones of a sound share it; every other sound starts empty.
+#[derive(Default)]
+struct Measured {
+    /// The sound at the analysis rate, one channel.
+    signal: OnceLock<Result<Sound, Error>>,
+    spectrogram: OnceLock<Result<Spectrogram, Error>>,
+    /// Indexed by position in [`Band::ALL`].
+    energy: [OnceLock<Series>; 6],
+    brightness: OnceLock<Series>,
+}
+
+/// The memo of a sound: not part of its value, so it is never compared and prints nothing.
+#[derive(Clone, Default)]
+struct Memo(Arc<Measured>);
+
+impl PartialEq for Memo {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl fmt::Debug for Memo {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("..")
+    }
+}
+
 /// A sound: one or more channels of `f32` samples at one sample rate.
 ///
 /// Promises: at least one channel, every channel has the same non-zero length, the rate is above 0, and every
-/// sample is finite. A `Sound` never changes after it is made.
+/// sample is finite. A `Sound` never changes after it is made. It carries an [`Analysis`] that its measures read;
+/// edits keep it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sound {
     samples: Vec<Vec<f32>>,
     rate: u32,
     origin: Origin,
+    analysis: Analysis,
+    memo: Memo,
 }
 
 impl Sound {
@@ -90,6 +125,8 @@ impl Sound {
                 source: None,
                 offset: 0.0,
             },
+            analysis: Analysis::default(),
+            memo: Memo::default(),
         })
     }
 
@@ -155,6 +192,8 @@ impl Sound {
                 source: self.origin.source.clone(),
                 offset: self.origin.offset + from as f64 / f64::from(self.rate),
             },
+            analysis: self.analysis,
+            memo: Memo::default(),
         })
     }
 
@@ -192,6 +231,8 @@ impl Sound {
             samples,
             rate: self.rate,
             origin: self.origin.clone(),
+            analysis: self.analysis,
+            memo: Memo::default(),
         })
     }
 
@@ -214,6 +255,8 @@ impl Sound {
             samples: vec![mean],
             rate: self.rate,
             origin: self.origin.clone(),
+            analysis: self.analysis,
+            memo: Memo::default(),
         }
     }
 
@@ -235,7 +278,87 @@ impl Sound {
         }
         let mut sound = Self::from_samples(resample(&self.samples, self.rate, rate)?, rate)?;
         sound.origin = self.origin.clone();
+        sound.analysis = self.analysis;
         Ok(sound)
+    }
+
+    /// The analysis this sound's measures read.
+    #[must_use]
+    pub fn analysis(&self) -> &Analysis {
+        &self.analysis
+    }
+
+    /// This sound measured under `analysis` instead; nothing measured so far is carried over.
+    #[must_use]
+    pub fn with_analysis(&self, analysis: Analysis) -> Self {
+        Self {
+            analysis,
+            memo: Memo::default(),
+            ..self.clone()
+        }
+    }
+
+    /// The level of `band` over time, from the sound's one-channel mixdown at 44.1 kHz.
+    ///
+    /// Promises: a series of unit fraction with `start` 0 and `rate` 1 / `hop`; value `i` belongs to the frame
+    /// centred at `i * hop` seconds, and there is one for every such time inside the sound (that is, whose sample
+    /// `round(i * hop * 44100)` exists). The value maps the band level in dBFS, where a sine of amplitude `A`
+    /// inside the band reads `20 log10(A)` and a full-scale sine 0 dB, linearly from `floor` (reads 0) to 0 dB
+    /// (reads 1). The scale is fixed and saturates at both ends: a level below `floor`, silence included, reads 0
+    /// and a level above 0 dB reads 1. The series states this in `scaling`. The window is Hann; see [`Analysis`].
+    /// The result is computed once per sound.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    pub fn energy(&self, band: Band) -> Result<Series, Error> {
+        let cell = &self.memo.0.energy[band as usize];
+        if let Some(series) = cell.get() {
+            return Ok(series.clone());
+        }
+        let spectrogram = self.spectrogram()?;
+        Ok(cell
+            .get_or_init(|| spectrum::energy(spectrogram, band, &self.analysis))
+            .clone())
+    }
+
+    /// The spectral centroid over time, from the same frames as [`Sound::energy`].
+    ///
+    /// Promises: a series of unit hertz with the timing of [`Sound::energy`]; each value is the power-weighted mean
+    /// frequency of the frame, `sum(f P) / sum(P)` over the bin centres, so a pure tone reads its frequency. A silent
+    /// frame is defined as 0 Hz. The result is computed once per sound.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    pub fn brightness(&self) -> Result<Series, Error> {
+        if let Some(series) = self.memo.0.brightness.get() {
+            return Ok(series.clone());
+        }
+        let spectrogram = self.spectrogram()?;
+        Ok(self
+            .memo
+            .0
+            .brightness
+            .get_or_init(|| spectrum::brightness(spectrogram, &self.analysis))
+            .clone())
+    }
+
+    /// The one spectrogram of this sound, made on first use from the analysis signal.
+    fn spectrogram(&self) -> Result<&Spectrogram, Error> {
+        let measured = &*self.memo.0;
+        measured
+            .spectrogram
+            .get_or_init(|| {
+                let signal = measured
+                    .signal
+                    .get_or_init(|| Ok(self.resampled(spectrum::RATE)?.mono()))
+                    .as_ref()
+                    .map_err(Clone::clone)?;
+                spectrum::spectrogram(&signal.samples[0], &self.analysis)
+            })
+            .as_ref()
+            .map_err(Clone::clone)
     }
 
     /// Writes this sound to `path`; the extension picks the format, `.wav` or `.flac` (any case).
