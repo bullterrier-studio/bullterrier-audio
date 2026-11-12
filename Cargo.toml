@@ -17,7 +17,7 @@ publish = false
 bullterrier-audio = { path = "crates/core" }
 # the optional `onnx` feature of the core (models/): ONNX Runtime is loaded at run time from a downloaded library (none is bundled);
 # the download is https via rustls, verified with sha256, unpacked from tar.gz (macOS, Linux) or zip (Windows); `dirs` finds the cache folder
-dirs = "6"
+dirs = "7"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 ort = { version = "=2.0.0-rc.15", default-features = false, features = ["load-dynamic", "std"] }
 sha2 = { version = "0.10", default-features = false, features = ["std"] }
