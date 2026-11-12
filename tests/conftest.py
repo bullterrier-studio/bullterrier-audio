@@ -4,6 +4,7 @@ gives a command. A helper one file uses stays in that file."""
 import os
 import shutil
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -118,3 +119,49 @@ def no_models(tmp_path, monkeypatch):
     for name in ("HOME", "XDG_CACHE_HOME", "LOCALAPPDATA"):
         monkeypatch.setenv(name, str(tmp_path / "home"))
     return tmp_path / "home"
+
+
+CLICK_PERIOD = 0.5
+CLICK_LENGTH = 0.005
+
+
+@pytest.fixture(scope="session")
+def song_mix():
+    """15 s of stereo at 44.1 kHz, known by construction: a 2 kHz drum click every half second, a 55 Hz bass tone and
+    a 440 Hz lead with harmonics, as a float32 array (2, frames). For the tests that run the real separation."""
+    import numpy as np
+
+    t = np.arange(15 * RATE) / RATE
+    clicks = np.zeros_like(t)
+    n = round(CLICK_LENGTH * RATE)
+    burst = np.hanning(n) * np.sin(2 * np.pi * 2000.0 * np.arange(n) / RATE)
+    for k in range(30):
+        clicks[round(k * CLICK_PERIOD * RATE) :][:n] += 0.8 * burst
+    bass = 0.3 * np.sin(2 * np.pi * 55.0 * t)
+    lead = 0.1 * sum(np.sin(2 * np.pi * 440.0 * h * t) / h for h in (1, 2, 3, 4))
+    return np.stack([clicks + bass + lead, 0.9 * clicks + bass + 0.9 * lead]).astype(np.float32)
+
+
+@pytest.fixture(scope="session")
+def click_energy():
+    """`click_energy(samples)`: the energy of `samples` (channels, frames) in the first 10 ms of each click."""
+
+    def energy(samples) -> float:
+        window = round(0.01 * RATE)
+        starts = [round(k * CLICK_PERIOD * RATE) for k in range(30)]
+        return float(sum((samples[:, a : a + window] ** 2).sum() for a in starts))
+
+    return energy
+
+
+@pytest.fixture(scope="session")
+def kept_stems_cache() -> Iterator[None]:
+    """For the tests that separate with the real models and the default cache: removes at the end of the session the
+    stems folders they made, so the user's cache keeps only what was there."""
+    from bullterrier_audio.cli import cache_dir
+
+    folder = cache_dir() / "stems"
+    before = set(folder.iterdir()) if folder.exists() else set()
+    yield
+    for path in (set(folder.iterdir()) if folder.exists() else set()) - before:
+        shutil.rmtree(path)

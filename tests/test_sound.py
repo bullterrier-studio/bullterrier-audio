@@ -1,4 +1,6 @@
 import math
+import time
+from typing import Any
 
 import numpy as np
 import pytest
@@ -12,6 +14,7 @@ from bullterrier_audio import (
     ModelUnavailableError,
     Notes,
     Sound,
+    Stem,
     WriteError,
     load,
 )
@@ -229,6 +232,67 @@ def test_a_bad_note_parameter_is_refused_naming_the_field(change, field):
     assert isinstance(raised.value, ValueError)
 
 
+# --- stems: the separation parameters and the sounds that need the model ---------------------------------------------
+
+SEPARATION_FIELDS: dict[str, Any] = {"shifts": 3, "ensemble": True, "seed": 7, "cache": False, "threads": 2}
+
+
+def test_stem_has_the_six_members_named_in_lowercase():
+    names = ["drums", "bass", "other", "vocals", "guitar", "piano"]
+    members = [getattr(Stem, name.upper()) for name in names]
+    assert [member.name for member in members] == names
+    assert len(set(members)) == 6
+
+
+def test_stems_without_the_library_or_the_models_say_to_install_them(no_models):
+    with pytest.raises(ModelUnavailableError, match="bt-audio install") as raised:
+        tone(channels=2, frames=44100, rate=44100).stems()
+    assert isinstance(raised.value, NotImplementedError)
+    assert not no_models.exists()  # nothing was downloaded or created
+
+
+def test_a_sound_that_is_not_a_stem_has_none():
+    assert tone().stem is None
+
+
+def test_with_separation_changes_every_field_and_keeps_the_original():
+    sound = tone()
+    changed = sound.with_separation(**SEPARATION_FIELDS)
+    assert {name: getattr(changed.separation, name) for name in SEPARATION_FIELDS} == SEPARATION_FIELDS
+    assert all(getattr(sound.separation, name) != value for name, value in SEPARATION_FIELDS.items())
+
+
+@pytest.mark.parametrize("field", SEPARATION_FIELDS)
+def test_with_separation_keeps_the_fields_left_out(field):
+    base = tone().with_separation(**SEPARATION_FIELDS)
+    kept = base.with_separation(**{field: None}).separation
+    assert {name: getattr(kept, name) for name in SEPARATION_FIELDS} == SEPARATION_FIELDS
+
+
+@pytest.mark.parametrize("field", SEPARATION_FIELDS)
+def test_every_separation_field_can_be_set_back_to_its_first_value(field):
+    """`cache=False` is a value, not 'left out': what was set can be set back, including to a falsy value."""
+    original = tone().separation
+    changed = tone().with_separation(**SEPARATION_FIELDS)
+    back = changed.with_separation(**{field: getattr(original, field)}).separation
+    assert getattr(back, field) == getattr(original, field)
+    assert all(getattr(back, name) == value for name, value in SEPARATION_FIELDS.items() if name != field)
+
+
+@pytest.mark.parametrize(
+    ("change", "field"),
+    [
+        pytest.param({"shifts": 33}, "shifts", id="shifts above the limit"),
+        pytest.param({"threads": 0}, "threads", id="no threads"),
+        pytest.param({"threads": 65}, "threads", id="threads above the limit"),
+    ],
+)
+def test_a_bad_separation_parameter_is_refused_naming_the_field(change, field):
+    with pytest.raises(InvalidError, match=field) as raised:
+        tone().with_separation(**change)
+    assert isinstance(raised.value, ValueError)
+
+
 @pytest.mark.models
 def test_notes_find_the_pitches_and_times_of_a_synthesised_melody():
     rate, melody = 22050, [(60, 0.3), (64, 0.9), (67, 1.5)]  # (MIDI pitch, start in seconds), each 0.5 s long
@@ -243,3 +307,73 @@ def test_notes_find_the_pitches_and_times_of_a_synthesised_melody():
     assert [event.pitch for event in notes] == [midi for midi, _ in melody]
     for event, (_, start) in zip(notes, melody, strict=True):
         assert event.t == pytest.approx(start, abs=4 * 256 / 22050)
+
+
+# --- stems with the real model (poe rust-test-models) -----------------------------------------------------------------
+
+STEM_ORDER = [Stem.DRUMS, Stem.BASS, Stem.OTHER, Stem.VOCALS, Stem.GUITAR, Stem.PIANO]
+
+
+@pytest.fixture(scope="module")
+def song_stems(song_mix, kept_stems_cache):
+    """The stems of the song mix, separated once with the cache off."""
+    return Sound.from_samples(song_mix, 44100).with_separation(cache=False).stems()
+
+
+@pytest.mark.models
+def test_the_stems_of_a_mix_are_six_sounds_in_the_models_order(song_mix, song_stems):
+    assert len(song_stems) == 6
+    assert list(song_stems) == STEM_ORDER
+    assert [(stem, part.stem) for stem, part in song_stems.items()] == [(stem, stem) for stem in STEM_ORDER]
+    for stem in STEM_ORDER:
+        part = song_stems[stem]
+        assert part.stem == stem
+        assert part.samples.shape == song_mix.shape
+        assert part.rate == 44100
+    assert song_stems.get(Stem.BASS).stem == Stem.BASS
+    assert Sound.from_samples(song_mix, 44100).stem is None
+
+
+@pytest.mark.models
+def test_the_stems_add_up_to_the_mix(song_mix, song_stems):
+    total = sum(song_stems[stem].samples for stem in STEM_ORDER)
+    assert ((total - song_mix) ** 2).sum() / (song_mix**2).sum() < 0.1  # measured: 0.015
+
+
+@pytest.mark.models
+def test_without_the_drums_the_clicks_lose_energy_and_the_rest_is_the_sum_of_the_other_stems(
+    song_mix, song_stems, click_energy
+):
+    without = song_stems.without(Stem.DRUMS)
+    assert click_energy(without.samples) < 0.6 * click_energy(song_mix)  # measured: 0.44
+    others = sum(song_stems[stem].samples for stem in STEM_ORDER if stem != Stem.DRUMS)
+    assert np.allclose(without.samples, others, atol=1e-6)
+    assert without.stem is None
+    with pytest.raises(InvalidError, match="stem"):
+        song_stems.without(*STEM_ORDER)
+
+
+@pytest.mark.models
+def test_the_parts_of_every_section_add_up_to_1(song_mix, song_stems):
+    sections = Sound.from_samples(song_mix, 44100).sections()
+    rows = song_stems.parts(sections)
+    assert len(rows) == len(sections)
+    for row in rows:
+        assert [stem for stem, _ in row] == STEM_ORDER
+        assert sum(share for _, share in row) == pytest.approx(1.0)
+    assert max(rows[0], key=lambda pair: pair[1])[0] == Stem.BASS
+
+
+@pytest.mark.models
+def test_the_second_separation_of_an_equal_sound_is_read_from_the_cache(song_mix, kept_stems_cache):
+    def timed(cache: bool):
+        sound = Sound.from_samples(song_mix, 44100).with_separation(cache=cache)
+        start = time.perf_counter()
+        stems = sound.stems()
+        return stems, time.perf_counter() - start
+
+    uncached, computed = timed(False)
+    timed(True)  # computes and stores, or reads what an earlier run left
+    again, read = timed(True)
+    assert read < computed / 2
+    assert all(np.array_equal(again[stem].samples, uncached[stem].samples) for stem in STEM_ORDER)
