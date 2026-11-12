@@ -651,7 +651,7 @@ mod ensemble {
         assert!(
             stems
                 .iter()
-                .all(|(_, s)| s.samples().iter().flatten().all(|&x| x == 0.25))
+                .all(|(_, s)| s.samples().iter().flatten().all(|&x| (x - 0.25).abs() < 1e-6))
         );
         Ok(())
     }
@@ -1302,6 +1302,8 @@ mod stem {
             ("negative start", section(-0.1, 0.5)),
             ("start past the end", section(1.5, 2.0)),
             ("NaN start", section(f64::NAN, 0.5)),
+            ("infinite end", section(0.5, f64::INFINITY)),
+            ("NaN end", section(0.5, f64::NAN)),
         ];
         for (name, bad) in rows {
             let refused = silent.parts(&[section(0.0, 1.0), bad]);

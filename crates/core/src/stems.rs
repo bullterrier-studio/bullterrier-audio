@@ -149,7 +149,7 @@ impl Stems {
             .map(|(index, section)| {
                 let at = |seconds: f64| (seconds * f64::from(RATE)).round();
                 let (from, to) = (at(section.start), at(section.end).min(frames as f64));
-                if !(from >= 0.0 && from < to) {
+                if !(section.start.is_finite() && section.end.is_finite() && from >= 0.0 && from < to) {
                     return Err(Error::Invalid(format!(
                         "sections[{index}] must span at least one sample inside the stems, got {} to {} s",
                         section.start, section.end
