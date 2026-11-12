@@ -8,8 +8,9 @@ use std::path::{Path, PathBuf};
 use std::thread;
 
 use bullterrier_audio::models::{
-    Archive, Model, ModelKind, Options, OrtInfer, Runtime, Status, ensemble_models, fetch, install_model,
-    install_runtime_release, load_runtime, model_file, model_status, models, runtime_library, runtime_status, runtimes,
+    ADTOF_FRAME_RNN, Archive, BASIC_PITCH, HTDEMUCS_6S, HTDEMUCS_FT_DRUMS, Model, ModelKind, Options, OrtInfer,
+    Runtime, Status, ensemble_models, fetch, install_model, install_runtime_release, load_runtime, model_file,
+    model_status, models, runtime_library, runtime_status, runtimes,
 };
 use bullterrier_audio::{Error, Infer, Tensor};
 use sha2::{Digest, Sha256};
@@ -416,17 +417,17 @@ mod where_things_are {
     #[test]
     fn a_missing_model_is_an_error_that_names_the_fix_unless_downloading_is_allowed() -> Outcome {
         let (dir, options) = options_in_tempdir()?;
-        let missing = model_file(&models()[0], &options);
+        let missing = model_file(&BASIC_PITCH, &options);
         assert!(
             matches!(&missing, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install`") && m.contains("basic-pitch") && m.contains("BT_AUDIO_ALLOW_DOWNLOAD=1")),
             "{missing:?}"
         );
-        let ft = model_file(&bullterrier_audio::models::ensemble_models()[0], &options);
+        let ft = model_file(&HTDEMUCS_FT_DRUMS, &options);
         assert!(
             matches!(&ft, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install --ensemble`")),
             "{ft:?}"
         );
-        let six = model_file(&models()[1], &options);
+        let six = model_file(&HTDEMUCS_6S, &options);
         assert!(
             matches!(&six, Err(Error::ModelUnavailable(m)) if m.contains("`bt-audio install`") && !m.contains("--ensemble")),
             "{six:?}"
@@ -464,9 +465,7 @@ mod where_things_are {
 
     #[test]
     fn the_catalogue_pins_each_model() {
-        let [pitch, demucs, _ft @ .., adtof] = models() else {
-            unreachable!("at least two models")
-        };
+        let (pitch, demucs, adtof) = (BASIC_PITCH, HTDEMUCS_6S, ADTOF_FRAME_RNN);
         assert_eq!(
             (pitch.name, pitch.licence, pitch.kind),
             ("basic-pitch", "Apache-2.0", ModelKind::Notes)
@@ -489,6 +488,23 @@ mod where_things_are {
         assert!(
             adtof.licence.contains("CC BY-NC-SA 4.0"),
             "the licence says the weights are non-commercial"
+        );
+    }
+
+    #[test]
+    fn the_catalogue_lists_its_named_entries_in_a_stable_order() {
+        let names: Vec<_> = models().iter().map(|m| m.name).collect();
+        assert_eq!(
+            names,
+            [
+                "basic-pitch",
+                "htdemucs-6s",
+                "htdemucs-ft-drums",
+                "htdemucs-ft-bass",
+                "htdemucs-ft-other",
+                "htdemucs-ft-vocals",
+                "adtof-frame-rnn"
+            ]
         );
     }
 
@@ -609,7 +625,7 @@ mod tensors {
 #[test]
 #[ignore = "needs the installed runtime and model: poe rust-test-models"]
 fn the_real_basic_pitch_has_the_verified_input_and_outputs() -> Outcome {
-    let infer = OrtInfer::open(&models()[0], &Options::from_env(), 1)?;
+    let infer = OrtInfer::open(&BASIC_PITCH, &Options::from_env(), 1)?;
     assert_eq!(infer.input_name(), "serving_default_input_2:0");
     assert_eq!(
         infer.output_names(),
@@ -638,10 +654,10 @@ fn the_real_basic_pitch_has_the_verified_input_and_outputs() -> Outcome {
 fn a_library_that_failed_to_load_does_not_stop_a_good_one_later() -> Outcome {
     let dir = tempfile::tempdir()?;
     let options = Options::from_env();
-    let model = model_file(&models()[0], &options)?;
+    let model = model_file(&BASIC_PITCH, &options)?;
     let failed = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &model, 1);
     assert!(matches!(failed, Err(Error::ModelUnavailable(m)) if m.contains("no-lib.dylib")));
-    let opened = OrtInfer::open(&models()[0], &options, 1)?;
+    let opened = OrtInfer::open(&BASIC_PITCH, &options, 1)?;
     assert_eq!(opened.output_names().len(), 3);
     Ok(())
 }
@@ -651,9 +667,9 @@ fn a_library_that_failed_to_load_does_not_stop_a_good_one_later() -> Outcome {
 #[ignore = "needs the installed runtime and model: poe rust-test-models"]
 fn opening_a_model_again_gives_the_session_already_loaded() -> Outcome {
     let options = Options::from_env();
-    let first = OrtInfer::open(&models()[0], &options, 1)?;
-    assert!(first == OrtInfer::open(&models()[0], &options, 1)?);
-    let own = OrtInfer::from_file(&runtime_library(&options)?, &model_file(&models()[0], &options)?, 1)?;
+    let first = OrtInfer::open(&BASIC_PITCH, &options, 1)?;
+    assert!(first == OrtInfer::open(&BASIC_PITCH, &options, 1)?);
+    let own = OrtInfer::from_file(&runtime_library(&options)?, &model_file(&BASIC_PITCH, &options)?, 1)?;
     assert!(first != own, "from_file always loads a session of its own");
     Ok(())
 }

@@ -584,7 +584,7 @@ impl Sound {
         if let Some(events) = self.memo.0.notes.get() {
             return Ok(events.clone());
         }
-        let model = crate::models::OrtInfer::open(&crate::models::models()[0], &crate::models::Options::from_env(), 1)?;
+        let model = crate::models::OrtInfer::open(&crate::models::BASIC_PITCH, &crate::models::Options::from_env(), 1)?;
         let events = self.notes_with(&model)?;
         Ok(self.memo.0.notes.get_or_init(|| events).clone())
     }
@@ -630,11 +630,7 @@ impl Sound {
             self.stems_memo()?.get(Stem::Drums)
         };
         drums.picked(hit, &self.hits, || {
-            let model = crate::models::models()
-                .iter()
-                .find(|model| model.name == "adtof-frame-rnn")
-                .ok_or_else(|| unreachable!("the catalogue holds the transcriber"))?;
-            crate::models::OrtInfer::open(model, &crate::models::Options::from_env(), 1)
+            crate::models::OrtInfer::open(&crate::models::ADTOF_FRAME_RNN, &crate::models::Options::from_env(), 1)
         })
     }
 

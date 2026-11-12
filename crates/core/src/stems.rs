@@ -248,10 +248,10 @@ pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
     use std::cell::OnceCell;
     use std::path::PathBuf;
 
-    use crate::models::{Model, Options, OrtInfer, ensemble_models, model_file, models, runtime_library};
+    use crate::models::{HTDEMUCS_6S, Model, Options, OrtInfer, ensemble_models, model_file, runtime_library};
 
     let options = Options::from_env();
-    let six = &models()[1];
+    let six = &HTDEMUCS_6S;
     let ensemble = sound.separation().ensemble();
     let used: Vec<&Model> = std::iter::once(six)
         .chain(ensemble_models().iter().filter(|_| ensemble))

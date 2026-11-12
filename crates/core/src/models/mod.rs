@@ -15,7 +15,9 @@ mod session;
 mod status;
 
 pub use catalogue::{
-    Model, ModelKind, ensemble_models, install_ensemble, install_model, model_file, model_status, models,
+    ADTOF_FRAME_RNN, BASIC_PITCH, HTDEMUCS_6S, HTDEMUCS_FT_BASS, HTDEMUCS_FT_DRUMS, HTDEMUCS_FT_OTHER,
+    HTDEMUCS_FT_VOCALS, Model, ModelKind, ensemble_models, install_ensemble, install_model, model_file, model_status,
+    models,
 };
 pub use download::fetch;
 pub use options::{Options, cache_dir};

@@ -67,70 +67,96 @@ pub struct Model {
 #[must_use]
 pub fn models() -> &'static [Model] {
     &[
-        Model {
-            name: "basic-pitch",
-            url: "https://raw.githubusercontent.com/spotify/basic-pitch/v0.4.0/basic_pitch/saved_models/icassp_2022/nmp.onnx",
-            sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
-            size: 230_444,
-            licence: "Apache-2.0",
-            kind: ModelKind::Notes,
-        },
-        Model {
-            name: "htdemucs-6s",
-            url: "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s.onnx",
-            sha256: "48f8e84945579f8ab340e083339e9221e03785dbe733a52c388200b6d3ca779a",
-            size: 258_159_781,
-            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
-            kind: ModelKind::Separator,
-        },
-        Model {
-            name: "htdemucs-ft-drums",
-            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_drums.onnx",
-            sha256: "f76b68af36066e38885b369299b5032a861038f9b49da5aa6cf1c31cfa69cf27",
-            size: 316_446_953,
-            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
-            kind: ModelKind::Separator,
-        },
-        Model {
-            name: "htdemucs-ft-bass",
-            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_bass.onnx",
-            sha256: "2a74d9283fc2336fcc58d50f87a7080aff57aea372f65cfe3f0211ea1ff16182",
-            size: 316_446_953,
-            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
-            kind: ModelKind::Separator,
-        },
-        Model {
-            name: "htdemucs-ft-other",
-            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_other.onnx",
-            sha256: "90e11806c1bb558ca9d9c7e909d28a2854f7f217982e90482dbed6442513daad",
-            size: 316_446_953,
-            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
-            kind: ModelKind::Separator,
-        },
-        Model {
-            name: "htdemucs-ft-vocals",
-            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_vocals.onnx",
-            sha256: "8c5d5e2da1f27050240bb80236673307ee3b40d4b064066d9350f4d64bfd544d",
-            size: 316_446_953,
-            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
-            kind: ModelKind::Separator,
-        },
-        Model {
-            name: "adtof-frame-rnn",
-            url: "https://huggingface.co/thebluescreen/adtof-drums-onnx/resolve/d0e809bb1c1b6fe8a4a00c576852117a0636ab5a/adtof_frame_rnn.onnx",
-            sha256: "189ca3c2bc7339a5f0fdc0bb11069d4bcc4fafabd142e945228c368c379b6227",
-            size: 2_171_762,
-            licence: "CC BY-NC-SA 4.0 (ADTOF code and weights); export by thebluescreen, same terms",
-            kind: ModelKind::Transcriber,
-        },
+        BASIC_PITCH,
+        HTDEMUCS_6S,
+        HTDEMUCS_FT_DRUMS,
+        HTDEMUCS_FT_BASS,
+        HTDEMUCS_FT_OTHER,
+        HTDEMUCS_FT_VOCALS,
+        ADTOF_FRAME_RNN,
     ]
 }
+
+/// The `basic-pitch` entry of [`models`].
+pub const BASIC_PITCH: Model = Model {
+    name: "basic-pitch",
+    url: "https://raw.githubusercontent.com/spotify/basic-pitch/v0.4.0/basic_pitch/saved_models/icassp_2022/nmp.onnx",
+    sha256: "2c3c1d144bfa61ad236e92e169c13535c880469a12a047d4e73451f2c059a0ec",
+    size: 230_444,
+    licence: "Apache-2.0",
+    kind: ModelKind::Notes,
+};
+
+/// The `htdemucs-6s` entry of [`models`].
+pub const HTDEMUCS_6S: Model = Model {
+    name: "htdemucs-6s",
+    url: "https://huggingface.co/StemSplitio/htdemucs-6s-onnx/resolve/main/htdemucs_6s.onnx",
+    sha256: "48f8e84945579f8ab340e083339e9221e03785dbe733a52c388200b6d3ca779a",
+    size: 258_159_781,
+    licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+    kind: ModelKind::Separator,
+};
+
+/// The `htdemucs-ft-drums` entry of [`models`].
+pub const HTDEMUCS_FT_DRUMS: Model = Model {
+    name: "htdemucs-ft-drums",
+    url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_drums.onnx",
+    sha256: "f76b68af36066e38885b369299b5032a861038f9b49da5aa6cf1c31cfa69cf27",
+    size: 316_446_953,
+    licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+    kind: ModelKind::Separator,
+};
+
+/// The `htdemucs-ft-bass` entry of [`models`].
+pub const HTDEMUCS_FT_BASS: Model = Model {
+    name: "htdemucs-ft-bass",
+    url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_bass.onnx",
+    sha256: "2a74d9283fc2336fcc58d50f87a7080aff57aea372f65cfe3f0211ea1ff16182",
+    size: 316_446_953,
+    licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+    kind: ModelKind::Separator,
+};
+
+/// The `htdemucs-ft-other` entry of [`models`].
+pub const HTDEMUCS_FT_OTHER: Model = Model {
+    name: "htdemucs-ft-other",
+    url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_other.onnx",
+    sha256: "90e11806c1bb558ca9d9c7e909d28a2854f7f217982e90482dbed6442513daad",
+    size: 316_446_953,
+    licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+    kind: ModelKind::Separator,
+};
+
+/// The `htdemucs-ft-vocals` entry of [`models`].
+pub const HTDEMUCS_FT_VOCALS: Model = Model {
+    name: "htdemucs-ft-vocals",
+    url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_vocals.onnx",
+    sha256: "8c5d5e2da1f27050240bb80236673307ee3b40d4b064066d9350f4d64bfd544d",
+    size: 316_446_953,
+    licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+    kind: ModelKind::Separator,
+};
+
+/// The `adtof-frame-rnn` entry of [`models`].
+pub const ADTOF_FRAME_RNN: Model = Model {
+    name: "adtof-frame-rnn",
+    url: "https://huggingface.co/thebluescreen/adtof-drums-onnx/resolve/d0e809bb1c1b6fe8a4a00c576852117a0636ab5a/adtof_frame_rnn.onnx",
+    sha256: "189ca3c2bc7339a5f0fdc0bb11069d4bcc4fafabd142e945228c368c379b6227",
+    size: 2_171_762,
+    licence: "CC BY-NC-SA 4.0 (ADTOF code and weights); export by thebluescreen, same terms",
+    kind: ModelKind::Transcriber,
+};
 
 /// The four models of the ensemble recipe (`Separation::ensemble`), in the order drums, bass, other, vocals: the
 /// fine-tuned `htdemucs-ft-*` entries of [`models`]. They are installed only when asked for ([`install_ensemble`]).
 #[must_use]
 pub fn ensemble_models() -> &'static [Model] {
-    &models()[2..6]
+    &[
+        HTDEMUCS_FT_DRUMS,
+        HTDEMUCS_FT_BASS,
+        HTDEMUCS_FT_OTHER,
+        HTDEMUCS_FT_VOCALS,
+    ]
 }
 
 /// Downloads the [`ensemble_models`] that are missing (see [`install_model`]) and returns their paths.

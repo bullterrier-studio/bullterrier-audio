@@ -504,7 +504,7 @@ mod refusals {
 
 #[cfg(feature = "onnx")]
 mod installed_model {
-    use bullterrier_audio::models::{Options, OrtInfer, models};
+    use bullterrier_audio::models::{ADTOF_FRAME_RNN, Options, OrtInfer};
     use bullterrier_audio::{Separation, Stem};
 
     use super::*;
@@ -512,11 +512,7 @@ mod installed_model {
 
     /// The installed transcriber.
     fn adtof() -> Result<OrtInfer, Error> {
-        let model = models()
-            .iter()
-            .find(|model| model.name == "adtof-frame-rnn")
-            .ok_or_else(|| Error::Invalid("the catalogue has no transcriber".into()))?;
-        OrtInfer::open(model, &Options::from_env(), 1)
+        OrtInfer::open(&ADTOF_FRAME_RNN, &Options::from_env(), 1)
     }
 
     /// Runs the model one at a time: each run takes every core and a gigabyte at worst.
