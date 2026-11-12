@@ -368,25 +368,51 @@ mod demucs_arithmetic {
     }
 
     #[test]
-    fn a_silent_constant_or_single_sample_sound_has_silent_stems_and_no_model_run() -> Outcome {
+    fn a_constant_sound_is_its_mean_in_every_stem_and_runs_no_model() -> Outcome {
+        // the mean of the channels is the constant: silence, a level, a level that f32 holds inexactly, and one sample
+        // (no spread to measure)
         let cases = [
-            ("silence", vec![vec![0.0; 3000]; 2], 3000),
-            ("a constant", vec![vec![0.3; 3000]; 2], 3000),
-            ("one sample", vec![vec![0.3], vec![-0.3]], 1),
+            ("silence", vec![vec![0.0; 3000]; 2], RATE, 3000, 0.0),
+            ("a constant", vec![vec![0.5; 3000]; 2], RATE, 3000, 0.5),
+            ("a constant at full scale", vec![vec![-1.0; 3000]; 2], RATE, 3000, -1.0),
+            (
+                "a long constant of 0.1",
+                vec![vec![0.1; 3_000_000]; 2],
+                RATE,
+                3_000_000,
+                0.1,
+            ),
+            ("one sample", vec![vec![0.3], vec![-0.3]], RATE, 1, 0.0),
         ];
-        for (name, samples, frames) in cases {
+        for (name, samples, rate, frames, level) in cases {
             let model = StandIn::split(SPLIT);
-            let stems = sound(samples, RATE)?.stems_with(&model)?;
+            let stems = sound(samples, rate)?.stems_with(&model)?;
             assert_eq!(model.calls(), 0, "{name}");
             for (stem, part) in stems.iter() {
                 assert!(
-                    part.samples().iter().flatten().all(|&x| x == 0.0)
-                        && part.samples()[0].len() == frames
-                        && part.stem() == Some(stem),
+                    part.samples()[0].len() == frames
+                        && part.stem() == Some(stem)
+                        && part
+                            .samples()
+                            .iter()
+                            .flatten()
+                            .all(|&x| (f64::from(x) - level).abs() < 1e-6),
                     "{name}: {stem:?}"
                 );
             }
         }
+        Ok(())
+    }
+
+    #[test]
+    fn a_tiny_signal_is_not_constant_and_goes_to_the_model() -> Outcome {
+        // 1e-4 is small but is a signal: its spread is far above the machine epsilon of f32
+        let tone = crate::common::sine(441.0, 1e-4, RATE, 3000);
+        let model = StandIn::split(SPLIT);
+        let stems = sound(vec![tone.clone()], RATE)?.stems_with(&model)?;
+        assert_eq!(model.calls(), 1);
+        let error = max_error(&stems.get(Stem::Drums).samples()[0], |i| f64::from(SPLIT[0] * tone[i]));
+        assert!(error <= 1e-9, "{error}");
         Ok(())
     }
 }
@@ -618,14 +644,14 @@ mod ensemble {
     }
 
     #[test]
-    fn a_constant_sound_is_silent_and_opens_no_model() -> Outcome {
+    fn a_constant_sound_is_its_mean_in_every_stem_and_opens_no_model() -> Outcome {
         let log = Log::default();
         let stems = run(&[vec![0.25; 500], vec![0.25; 500]], 1, &log)?;
         assert_eq!(lines(&log), Vec::<String>::new());
         assert!(
             stems
                 .iter()
-                .all(|(_, s)| s.samples().iter().flatten().all(|&x| x == 0.0))
+                .all(|(_, s)| s.samples().iter().flatten().all(|&x| x == 0.25))
         );
         Ok(())
     }

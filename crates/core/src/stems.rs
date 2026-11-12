@@ -321,8 +321,8 @@ pub(crate) fn separate_ensemble<M: Infer>(
 }
 
 /// The stems of `sound` as `recipe` makes them: the sound at the model's rate and in two channels, its statistics, the
-/// recipe's normalised-domain rows (stem by channel) un-normalised, as sounds. A constant sound has no spread to divide
-/// by: its stems are silent, and the recipe is not run.
+/// recipe's normalised-domain rows (stem by channel) un-normalised, as sounds. A constant sound has no spread to
+/// divide by: its stems are its mean, and the recipe is not run.
 #[allow(clippy::cast_possible_truncation)] // f32 samples
 fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>>, Error>) -> Result<Stems, Error> {
     check_length(sound)?;
@@ -342,8 +342,11 @@ fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>
     } else {
         0.0
     };
+    // a sound with no spread (the same value everywhere, or one sample) has nothing to separate: every stem is its mean
+    // (Demucs adds the mean to every stem), without a model run. The sums of `f32` samples are exact in `f64` for any
+    // length this package takes, so a constant sound has a spread of exactly 0.
     if std == 0.0 {
-        return finish(&resampled, vec![vec![0.0; frames]; STEMS * CHANNELS]);
+        return finish(&resampled, vec![vec![mean as f32; frames]; STEMS * CHANNELS]);
     }
     let mixture = Mix {
         channels: mix,

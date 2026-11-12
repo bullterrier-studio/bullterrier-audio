@@ -464,7 +464,8 @@ impl Sound {
     /// one), at 44.1 kHz in two channels.
     ///
     /// Promises: see [`Stems`]. The algorithm is that of Demucs' `apply_model` (v4.0.1); [`Separation`] says what its
-    /// shifts do and what is refused.
+    /// shifts do and what is refused. A constant sound (silence, one level, one sample: its mean of channels has
+    /// no spread) has nothing to separate: the model is not run and every stem is that mean (silence for a mean of 0).
     ///
     /// # Errors
     ///
@@ -484,7 +485,8 @@ impl Sound {
     /// Promises: those of [`Sound::stems_with`]. Drums, bass and vocals are the mean of the six-source stem and the ft
     /// stem of that name; `other` is the mean of the six-source `other` and the ft `other` less the six-source guitar and
     /// piano; guitar and piano are the six-source stems. The mean of the sound is added to each stem once, as in
-    /// `stems_with`, so the six still add up to the sound plus five times its mean. A constant sound opens no model.
+    /// `stems_with`, so the six still add up to the sound plus five times its mean. A constant sound
+    /// opens no model.
     ///
     /// # Errors
     ///
