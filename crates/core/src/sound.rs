@@ -455,7 +455,7 @@ impl Sound {
             return Ok(stems.clone());
         }
         // validate the sound before the model is loaded: loading takes seconds and gigabytes
-        stems::check_length(self)?;
+        stems::check_length(self, self.separation().ensemble())?;
         let stems = stems::installed(self)?;
         Ok(self.memo.0.stems.get_or_init(|| stems).clone())
     }
@@ -469,7 +469,7 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// [`Error::Invalid`] naming `duration` when the stems would hold more than 2^29 samples (about 17 minutes);
+    /// [`Error::Invalid`] naming `duration` when the sound is over 440 s (250 s for the ensemble: the memory of a run);
     /// naming `rate` when the sound cannot be resampled to 44.1 kHz; when `model` does not answer as `HTDemucs` does (one
     /// output of shape 1 by 6 by 2 by 343 980) or fails.
     pub fn stems_with(&self, model: &impl Infer) -> Result<Stems, Error> {

@@ -24,10 +24,22 @@ pub(crate) const CHANNELS: usize = 2;
 /// of a sound (the segmenting, normalisation, shifts or blending here, the resampling, the recipe of the ensemble),
 /// as the crate version stays 0.0.0 while the package is in development and so cannot tell old stems from new.
 pub(crate) const ALGORITHM_REVISION: u32 = 2; // 2: each model of the ensemble draws its own shifts
-/// The most samples the stems of one sound may hold (all stems, both channels): 2^29 floats are 2 GiB, about 17
-/// minutes with six stems. A stated limit of this package, from the 4 GB memory budget of a run.
-const MAX_SAMPLES: usize = 1 << 29;
-
+/// The longest sound a separation takes, in seconds, by the peak resident memory of a run (4 GB is the budget; the
+/// bound is 3.5 GB). The peak is a session (about 2 GB, one at a time) plus a slope per second of sound, which is the
+/// stems themselves (12 rows of `f32`: 2.1 MB per second) and the sound and its copies. Measured with 60 s and 300 s of
+/// stereo noise, no cache, 4 threads, 1 shift, ONNX Runtime 1.23.2, Apple silicon (peak resident MB, from Python):
+///
+/// | recipe | 60 s | 300 s | fitted peak |
+/// |---|---|---|---|
+/// | one model | 2 137 to 2 238 | 2 843 to 2 909 | 2 250 + 2.8 s MB |
+/// | ensemble | 2 893 | 3 626 | 2 900 + 3.1 (s - 60) MB |
+///
+/// The fits stay above every measurement (runs differ by up to 100 MB) and give 3.5 GB at 446 s and 253 s; the limits
+/// are those rounded down. The ensemble holds the working set of the sessions of the earlier models longer, which is
+/// its higher base.
+const MAX_SECONDS: f64 = 440.0;
+/// As [`MAX_SECONDS`], for the ensemble recipe.
+const MAX_SECONDS_ENSEMBLE: f64 = 250.0;
 /// An instrument the model separates out. The order is the model's output order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Stem {
@@ -181,12 +193,14 @@ impl Stems {
     }
 }
 
-/// Refuses a sound whose stems would hold more than `MAX_SAMPLES` samples.
-pub(crate) fn check_length(sound: &Sound) -> Result<(), Error> {
-    let seconds = (MAX_SAMPLES / (STEMS * CHANNELS)) as f64 / f64::from(RATE);
+/// Refuses a sound longer than the memory of a separation allows (`MAX_SECONDS`, or `MAX_SECONDS_ENSEMBLE` for the
+/// ensemble).
+pub(crate) fn check_length(sound: &Sound, ensemble: bool) -> Result<(), Error> {
+    let seconds = if ensemble { MAX_SECONDS_ENSEMBLE } else { MAX_SECONDS };
     if sound.duration() > seconds {
+        let recipe = if ensemble { "the ensemble" } else { "separation" };
         return Err(Error::Invalid(format!(
-            "duration must be at most {seconds:.1} s (the stems of a longer sound would hold over 2^29 samples), got {} s: cut it first",
+            "duration must be at most {seconds:.0} s for {recipe} (a longer sound would need over 3.5 GB), got {} s: cut it first",
             sound.duration()
         )));
     }
@@ -262,7 +276,7 @@ pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
 
 /// Separates `sound` with the single model.
 pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error> {
-    separate_with(sound, |mix| {
+    separate_with(sound, false, |mix| {
         run(
             mix,
             sound.separation(),
@@ -286,7 +300,7 @@ pub(crate) fn separate_ensemble<M: Infer>(
     six: impl FnOnce() -> Result<M, Error>,
     ft: impl Fn(Stem) -> Result<M, Error>,
 ) -> Result<Stems, Error> {
-    separate_with(sound, |mix| {
+    separate_with(sound, true, |mix| {
         let separation = sound.separation();
         // one generator for the whole recipe, so that each model draws shifts of its own, as each sub-model of a
         // Demucs bag does
@@ -329,9 +343,20 @@ pub(crate) fn separate_ensemble<M: Infer>(
 /// recipe's normalised-domain rows (stem by channel) un-normalised, as sounds. A constant sound has no spread to
 /// divide by: its stems are its mean, and the recipe is not run.
 #[allow(clippy::cast_possible_truncation)] // f32 samples
-fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>>, Error>) -> Result<Stems, Error> {
-    check_length(sound)?;
-    let resampled = sound.resampled(RATE)?;
+fn separate_with(
+    sound: &Sound,
+    ensemble: bool,
+    recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>>, Error>,
+) -> Result<Stems, Error> {
+    check_length(sound, ensemble)?;
+    // a sound at the model's rate is used as it is: a copy would hold the samples twice for the whole separation
+    let owned;
+    let resampled = if sound.rate() == RATE {
+        sound
+    } else {
+        owned = sound.resampled(RATE)?;
+        &owned
+    };
     let samples = resampled.samples();
     // a mono sound is both channels; of more than two, the model gets the first two (`convert_audio` of Demucs)
     let mix = [samples[0].as_slice(), samples.get(1).unwrap_or(&samples[0]).as_slice()];
@@ -351,7 +376,7 @@ fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>
     // (Demucs adds the mean to every stem), without a model run. The sums of `f32` samples are exact in `f64` for any
     // length this package takes, so a constant sound has a spread of exactly 0.
     if std == 0.0 {
-        return finish(&resampled, vec![vec![mean as f32; frames]; STEMS * CHANNELS]);
+        return finish(resampled, vec![vec![mean as f32; frames]; STEMS * CHANNELS]);
     }
     let mixture = Mix {
         channels: mix,
@@ -363,7 +388,7 @@ fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>
     for value in total.iter_mut().flatten() {
         *value = (f64::from(*value) * std + mean) as f32;
     }
-    finish(&resampled, total)
+    finish(resampled, total)
 }
 
 /// The rows `wanted` (source by channel) of a model with `sources` sources, over the whole mixture, in the normalised

@@ -664,7 +664,7 @@ impl Sound {
     /// run `bt-audio install` (`bt-audio install --ensemble` for the fine-tuned ones). It takes minutes for a song;
     /// with `cache` on, the stems are kept on disk and read back for the same sound and parameters: about 127 MB per
     /// minute of audio for each entry, never evicted (clear them with `rm -r <cache folder>/stems`). A sound over
-    /// the length limit (`LIMIT`) is an `InvalidError`.
+    /// 440 s (250 s with `ensemble`, which needs more memory) is an `InvalidError`.
     fn stems(&self, py: Python<'_>) -> PyResult<Stems> {
         py.detach(|| self.0.stems())
             .map(Stems)

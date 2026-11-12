@@ -1093,33 +1093,45 @@ mod cache {
 mod limits {
     use super::*;
 
-    /// 2^29 samples over 6 stems of 2 channels at 44 100 Hz: 1 013.9 s.
-    const LIMIT_SECONDS: f64 = 536_870_912.0 / 12.0 / 44_100.0;
+    // The memory of a run bounds the length: 440 s for one model, 250 s for the ensemble.
+
+    /// A tone `seconds` long at 8 kHz mono: little memory, and at 44.1 kHz in six stems the length that counts.
+    fn long(seconds: usize) -> Result<Sound, Error> {
+        sound(vec![vec![0.5; seconds * 8000]], 8000)
+    }
 
     #[test]
-    fn a_sound_whose_stems_would_pass_2_pow_29_samples_is_refused_naming_its_duration() -> Outcome {
-        // 8 kHz mono, 1 015 s: far under the limit in memory, over it once at 44.1 kHz in six stems
-        let long = sound(vec![vec![0.5; 1_015 * 8000]], 8000)?;
-        assert!(long.duration() > LIMIT_SECONDS);
-        let refused = long.stems_with(&StandIn::split(SPLIT));
+    fn a_sound_over_the_limit_is_refused_naming_its_duration() -> Outcome {
+        let single = long(445)?.stems_with(&StandIn::split(SPLIT));
         assert!(
-            matches!(&refused, Err(Error::Invalid(m)) if m.contains("duration")),
-            "{refused:?}"
+            matches!(&single, Err(Error::Invalid(m)) if m.contains("duration") && m.contains("440")),
+            "{single:?}"
+        );
+        let ensemble = long(255)?.stems_with_ensemble(|| Ok(stop()), |_| Ok(stop()));
+        assert!(
+            matches!(&ensemble, Err(Error::Invalid(m)) if m.contains("duration") && m.contains("250")),
+            "{ensemble:?}"
         );
         Ok(())
     }
 
+    /// A stand-in that fails on its first run, with the wrong shape: it is what a sound that passed the check reaches.
+    fn stop() -> StandIn {
+        StandIn::new(|_, _| Vec::new())
+    }
+
     #[test]
     fn a_sound_just_under_the_limit_reaches_the_model() -> Outcome {
-        let frames = 1_013 * 44_100;
-        assert!(f64::from(1_013_u32) < LIMIT_SECONDS);
-        let samples: Vec<f32> = (0..frames).map(|i| (i % 100) as f32 * 0.001).collect();
-        let stop = StandIn::new(|_, _| Vec::new());
-        let result = sound(vec![samples], RATE)?.stems_with(&stop);
         // the stand-in answers with the wrong shape: that is its refusal, so the sound passed the length check
+        let single = long(435)?.stems_with(&stop());
         assert!(
-            matches!(&result, Err(Error::Invalid(m)) if m.contains("shape")),
-            "{result:?}"
+            matches!(&single, Err(Error::Invalid(m)) if m.contains("shape")),
+            "{single:?}"
+        );
+        let ensemble = long(245)?.stems_with_ensemble(|| Ok(stop()), |_| Ok(stop()));
+        assert!(
+            matches!(&ensemble, Err(Error::Invalid(m)) if m.contains("shape")),
+            "{ensemble:?}"
         );
         Ok(())
     }
