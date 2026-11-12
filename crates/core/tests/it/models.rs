@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 
 use bullterrier_audio::models::{
-    Archive, Model, ModelKind, Options, OrtInfer, Runtime, Status, fetch, install_model, install_runtime_release,
-    load_runtime, model_file, model_status, models, runtime_library, runtime_status, runtimes,
+    Archive, Model, ModelKind, Options, OrtInfer, Runtime, Status, ensemble_models, fetch, install_model,
+    install_runtime_release, load_runtime, model_file, model_status, models, runtime_library, runtime_status, runtimes,
 };
 use bullterrier_audio::{Error, Infer, Tensor};
 use sha2::{Digest, Sha256};
@@ -454,8 +454,8 @@ mod where_things_are {
 
     #[test]
     fn the_catalogue_pins_each_model() {
-        let [pitch, demucs] = models() else {
-            unreachable!("two models")
+        let [pitch, demucs, _ft @ ..] = models() else {
+            unreachable!("at least two models")
         };
         assert_eq!(
             (pitch.name, pitch.licence, pitch.kind),
@@ -470,6 +470,28 @@ mod where_things_are {
             demucs.licence.contains("science-only"),
             "the licence says what the weights allow"
         );
+    }
+
+    #[test]
+    fn the_ensemble_models_are_the_four_ft_entries_in_stem_order() {
+        let ft = ensemble_models();
+        assert_eq!(
+            ft.iter().map(|m| m.name).collect::<Vec<_>>(),
+            [
+                "htdemucs-ft-drums",
+                "htdemucs-ft-bass",
+                "htdemucs-ft-other",
+                "htdemucs-ft-vocals"
+            ]
+        );
+        for (model, stem) in ft.iter().zip(["drums", "bass", "other", "vocals"]) {
+            assert_eq!(model.kind, ModelKind::Separator);
+            assert!(model.url.starts_with("https://") && model.url.ends_with(&format!("htdemucs_ft_{stem}.onnx")));
+            assert_eq!((model.sha256.len(), model.size), (64, 316_446_953));
+            assert!(model.licence.contains("science-only"), "{model:?}");
+        }
+        let hashes: std::collections::HashSet<_> = models().iter().map(|m| m.sha256).collect();
+        assert_eq!(hashes.len(), models().len(), "every model has its own file");
     }
 
     #[test]

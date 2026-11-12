@@ -14,7 +14,9 @@ mod runtime;
 mod session;
 mod status;
 
-pub use catalogue::{Model, ModelKind, install_model, model_file, model_status, models};
+pub use catalogue::{
+    Model, ModelKind, ensemble_models, install_ensemble, install_model, model_file, model_status, models,
+};
 pub use download::fetch;
 pub use options::{Options, cache_dir};
 pub use runtime::{

@@ -48,6 +48,11 @@ pub struct Model {
 ///   one f32 output `stems`, `(1, 6, 2, 343980)`: sources in the order drums, bass, other, vocals, guitar, piano. A run
 ///   took about 4.8 s on one thread (opening the session 2 s), whatever the input; the process peaked at 1.9 GB resident
 ///   (3.7 to 5.2 GB when the session applies graph rewrites, which it does not).
+/// - `htdemucs-ft-drums`, `-bass`, `-other`, `-vocals`: the four fine-tuned `HTDemucs` models of Demucs' `htdemucs_ft` bag, exported
+///   by `StemSplit` like the above (same licence). 316 446 953 bytes each, SHA-256 re-derived by streaming each file. Each:
+///   one input `mix`, f32 `(1, 2, 343980)`; one output `stems`, `(1, 4, 2, 343980)`: drums, bass, other, vocals. The bag
+///   weights every model one-hot (`remote/htdemucs_ft.yaml`), so only the output row of the model's own name is used.
+///   A run took about 5.0 s on one thread (opening the session 9 s); the process peaked at 1.7 GB resident.
 #[must_use]
 pub fn models() -> &'static [Model] {
     &[
@@ -67,7 +72,57 @@ pub fn models() -> &'static [Model] {
             licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
             kind: ModelKind::Separator,
         },
+        Model {
+            name: "htdemucs-ft-drums",
+            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_drums.onnx",
+            sha256: "f76b68af36066e38885b369299b5032a861038f9b49da5aa6cf1c31cfa69cf27",
+            size: 316_446_953,
+            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+            kind: ModelKind::Separator,
+        },
+        Model {
+            name: "htdemucs-ft-bass",
+            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_bass.onnx",
+            sha256: "2a74d9283fc2336fcc58d50f87a7080aff57aea372f65cfe3f0211ea1ff16182",
+            size: 316_446_953,
+            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+            kind: ModelKind::Separator,
+        },
+        Model {
+            name: "htdemucs-ft-other",
+            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_other.onnx",
+            sha256: "90e11806c1bb558ca9d9c7e909d28a2854f7f217982e90482dbed6442513daad",
+            size: 316_446_953,
+            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+            kind: ModelKind::Separator,
+        },
+        Model {
+            name: "htdemucs-ft-vocals",
+            url: "https://huggingface.co/StemSplitio/htdemucs-ft-onnx/resolve/main/htdemucs_ft_vocals.onnx",
+            sha256: "8c5d5e2da1f27050240bb80236673307ee3b40d4b064066d9350f4d64bfd544d",
+            size: 316_446_953,
+            licence: "MIT (code); weights: science-only per their author (facebookresearch/demucs issue 327); export: MIT",
+            kind: ModelKind::Separator,
+        },
     ]
+}
+
+/// The four models of the ensemble recipe (`Separation::ensemble`), in the order drums, bass, other, vocals: the
+/// fine-tuned `htdemucs-ft-*` entries of [`models`]. They are installed only when asked for ([`install_ensemble`]).
+#[must_use]
+pub fn ensemble_models() -> &'static [Model] {
+    &models()[2..6]
+}
+
+/// Downloads the [`ensemble_models`] that are missing (see [`install_model`]) and returns their paths.
+///
+/// # Errors
+/// As [`install_model`].
+pub fn install_ensemble(options: &Options) -> Result<Vec<PathBuf>, Error> {
+    ensemble_models()
+        .iter()
+        .map(|model| install_model(model, options))
+        .collect()
 }
 
 fn file_of(model: &Model, options: &Options) -> Result<PathBuf, Error> {
