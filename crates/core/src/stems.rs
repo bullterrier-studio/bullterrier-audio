@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use crate::{Error, Infer, Section, Sound, Tensor};
+use crate::{Error, Infer, Section, Separation, Sound, Tensor};
 
 /// The rate of the model, and of the stems.
 const RATE: u32 = 44_100;
@@ -17,6 +17,8 @@ const STRIDE: usize = 257_985;
 /// The largest shift: `int(0.5 * samplerate)` (`apply.py:208`).
 const MAX_SHIFT: usize = RATE as usize / 2;
 const STEMS: usize = 6;
+/// The sources of an ft model: drums, bass, other, vocals.
+const FT_STEMS: usize = 4;
 const CHANNELS: usize = 2;
 /// The most samples the stems of one sound may hold (all stems, both channels): 2^29 floats are 2 GiB, about 17
 /// minutes with six stems. A stated limit of this package, from the 4 GB memory budget of a run.
@@ -220,8 +222,71 @@ impl Mix<'_> {
     }
 }
 
-#[allow(clippy::cast_possible_truncation)] // f32 samples
+/// Separates `sound` with the single model.
 pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error> {
+    separate_with(sound, |mix| {
+        run(
+            mix,
+            sound.separation(),
+            model,
+            STEMS,
+            &(0..STEMS * CHANNELS).collect::<Vec<_>>(),
+        )
+    })
+}
+
+/// Separates `sound` with the ensemble recipe: the six-source model and then each ft model, one at a time, each opened
+/// when its turn comes and dropped before the next is opened (a session holds gigabytes). The recipe is that of the
+/// prototype this package ports, done as Demucs does a bag, in the normalised domain and before the one
+/// un-normalisation: drums, bass and vocals are the mean of the two models' stems; `other` is the mean of the
+/// six-source `other` and the ft `other` less the six-source guitar and piano (the ft model has no guitar and piano:
+/// they are in its `other`); guitar and piano are the six-source stems. The ft models see the same normalised
+/// segments as the six-source one. The six stems still add up to the sound, and the mean is added to each once.
+pub(crate) fn separate_ensemble<M: Infer>(
+    sound: &Sound,
+    six: impl FnOnce() -> Result<M, Error>,
+    ft: impl Fn(Stem) -> Result<M, Error>,
+) -> Result<Stems, Error> {
+    separate_with(sound, |mix| {
+        let separation = sound.separation();
+        let mut total = {
+            let model = six()?;
+            run(
+                mix,
+                separation,
+                &model,
+                STEMS,
+                &(0..STEMS * CHANNELS).collect::<Vec<_>>(),
+            )?
+        };
+        for own in [Stem::Drums, Stem::Bass, Stem::Other, Stem::Vocals] {
+            // only the row of the model's own name is used: the weights of Demucs' bag are one-hot
+            let rows = {
+                let model = ft(own)?;
+                let row = own.index() * CHANNELS;
+                run(mix, separation, &model, FT_STEMS, &[row, row + 1])?
+            };
+            for (channel, ft_row) in rows.iter().enumerate() {
+                let at = |stem: Stem| stem.index() * CHANNELS + channel;
+                for (t, &theirs) in ft_row.iter().enumerate() {
+                    let ours = total[at(own)][t];
+                    total[at(own)][t] = if own == Stem::Other {
+                        0.5 * (ours + (theirs - total[at(Stem::Guitar)][t] - total[at(Stem::Piano)][t]))
+                    } else {
+                        0.5 * (ours + theirs)
+                    };
+                }
+            }
+        }
+        Ok(total)
+    })
+}
+
+/// The stems of `sound` as `recipe` makes them: the sound at the model's rate and in two channels, its statistics, the
+/// recipe's normalised-domain rows (stem by channel) un-normalised, as sounds. A constant sound has no spread to divide
+/// by: its stems are silent, and the recipe is not run.
+#[allow(clippy::cast_possible_truncation)] // f32 samples
+fn separate_with(sound: &Sound, recipe: impl FnOnce(&Mix) -> Result<Vec<Vec<f32>>, Error>) -> Result<Stems, Error> {
     check_length(sound)?;
     let resampled = sound.resampled(RATE)?;
     let samples = resampled.samples();
@@ -239,7 +304,6 @@ pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error
     } else {
         0.0
     };
-    // a constant sound (silence included) has no spread to divide by: its stems are silent, and the model is not run
     if std == 0.0 {
         return finish(&resampled, vec![vec![0.0; frames]; STEMS * CHANNELS]);
     }
@@ -248,13 +312,37 @@ pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error
         mean,
         std,
     };
+    let mut total = recipe(&mixture)?;
+    // `sources *= ref.std(); sources += ref.mean()` (separate.py:176-177)
+    for value in total.iter_mut().flatten() {
+        *value = (f64::from(*value) * std + mean) as f32;
+    }
+    finish(&resampled, total)
+}
 
+/// The rows `wanted` (source by channel) of a model with `sources` sources, over the whole mixture, in the normalised
+/// domain: the mean of its passes, one per shift.
+#[allow(clippy::cast_possible_truncation)] // f32 samples
+fn run(
+    mixture: &Mix,
+    separation: &Separation,
+    model: &impl Infer,
+    sources: usize,
+    wanted: &[usize],
+) -> Result<Vec<Vec<f32>>, Error> {
+    let frames = mixture.frames();
     let weight = triangle();
-    let mut total = vec![vec![0.0_f32; frames]; STEMS * CHANNELS];
-    let separation = sound.separation();
+    let mut total = vec![vec![0.0_f32; frames]; wanted.len()];
+    let mut pass = Pass {
+        mix: mixture,
+        weight: &weight,
+        model,
+        sources,
+        wanted,
+    };
     // `if shifts:` (apply.py:206): 0 shifts is one pass over the sound as it is
     if separation.shifts() == 0 {
-        pass(&mixture, 0, 0, frames, &weight, model, &mut total)?;
+        pass.run(0, 0, frames, &mut total)?;
     }
     let mut generator = Generator(separation.seed());
     for _ in 0..separation.shifts() {
@@ -263,22 +351,14 @@ pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error
         let offset = (generator.draw() % (MAX_SHIFT as u64 + 1)) as usize;
         // the sound is padded with `MAX_SHIFT` zeros at both ends; the pass runs on `offset..frames + MAX_SHIFT`
         // of it (apply.py:212-215)
-        pass(
-            &mixture,
-            MAX_SHIFT,
-            offset,
-            frames + MAX_SHIFT - offset,
-            &weight,
-            model,
-            &mut total,
-        )?;
+        pass.run(MAX_SHIFT, offset, frames + MAX_SHIFT - offset, &mut total)?;
     }
-    // `out /= shifts` (apply.py:218); `sources *= ref.std(); sources += ref.mean()` (separate.py:176-177)
-    let (scale, shift) = (std / f64::from(separation.shifts().max(1)), mean);
+    // `out /= shifts` (apply.py:218)
+    let shifts = f64::from(separation.shifts().max(1));
     for value in total.iter_mut().flatten() {
-        *value = (f64::from(*value) * scale + shift) as f32;
+        *value = (f64::from(*value) / shifts) as f32;
     }
-    finish(&resampled, total)
+    Ok(total)
 }
 
 /// The weight of a sample by its place in a segment: a triangle with its peak in the middle, scaled to 1
@@ -290,79 +370,85 @@ fn triangle() -> Vec<f32> {
     rising.chain(falling).map(|w| w as f32 / (SEGMENT / 2) as f32).collect()
 }
 
-/// One pass of the segmenter (`apply.py:221-257`) over `length` samples of the sound padded with `pad` zeros at both
-/// ends, starting at `start` of the padded sound; the output from its sample `pad - start` on is added to `total`.
-/// Segments of the model's length run one at a time. A segment's output is final once the next one has started
-/// (nothing after it reaches back), so each is divided by its summed weights and added to `total` as soon as that
-/// is known, and only one segment's worth of buffers is held.
-#[allow(clippy::too_many_arguments)]
-fn pass(
-    mix: &Mix,
-    pad: usize,
-    start: usize,
-    length: usize,
-    weight: &[f32],
-    model: &impl Infer,
-    total: &mut [Vec<f32>],
-) -> Result<(), Error> {
-    let skip = pad - start;
-    let mut blended = vec![vec![0.0_f32; SEGMENT]; STEMS * CHANNELS];
-    let mut summed = vec![0.0_f32; SEGMENT];
-    for offset in (0..length).step_by(STRIDE) {
-        // a segment shorter than the model's is centred in a run of the model's length cut from the padded sound
-        // around it, zeros beyond the ends, and the output is trimmed to the segment (`TensorChunk.padded`,
-        // apply.py:105-121, and `center_trim`)
-        let kept = (length - offset).min(SEGMENT);
-        let lead = (SEGMENT - kept) / 2;
-        let (first, before) = (start + offset, lead + pad);
-        let mut input = Vec::with_capacity(CHANNELS * SEGMENT);
-        for channel in 0..CHANNELS {
-            input.extend((0..SEGMENT).map(|j| {
-                // the sample of the sound this place holds; the padding and what lies beyond are zeros
-                (first + j)
-                    .checked_sub(before)
-                    .filter(|&real| real < mix.frames())
-                    .map_or(0.0, |real| mix.normalised(channel, real))
-            }));
-        }
-        let answer = model.infer(&Tensor::new(vec![1, CHANNELS, SEGMENT], input)?)?;
-        let [stems] = answer.as_slice() else {
-            return Err(Error::Invalid(format!(
-                "the model must answer as HTDemucs does, with 1 output, got {}",
-                answer.len()
-            )));
-        };
-        if stems.shape() != [1, STEMS, CHANNELS, SEGMENT] {
-            return Err(Error::Invalid(format!(
-                "the model must answer as HTDemucs does, with stems of shape [1, {STEMS}, {CHANNELS}, {SEGMENT}], got {:?}",
-                stems.shape()
-            )));
-        }
-        for (row, out) in blended.iter_mut().zip(stems.values().chunks(SEGMENT)) {
-            for ((cell, &w), &x) in row.iter_mut().zip(weight).zip(&out[lead..lead + kept]) {
-                *cell += w * x;
+/// One model over the mixture: the segmenter of `apply_model` (`apply.py:221-257`).
+struct Pass<'a, M: Infer> {
+    mix: &'a Mix<'a>,
+    weight: &'a [f32],
+    model: &'a M,
+    /// How many sources the model answers with.
+    sources: usize,
+    /// The rows of the answer (source by channel) that are kept.
+    wanted: &'a [usize],
+}
+
+impl<M: Infer> Pass<'_, M> {
+    /// One pass over `length` samples of the sound padded with `pad` zeros at both ends, starting at `start` of the
+    /// padded sound; the output from its sample `pad - start` on is added to `total`. Segments of the model's length
+    /// run one at a time. A segment's output is final once the next one has started (nothing after it reaches back),
+    /// so each is divided by its summed weights and added to `total` as soon as that is known, and only one
+    /// segment's worth of buffers is held.
+    fn run(&self, pad: usize, start: usize, length: usize, total: &mut [Vec<f32>]) -> Result<(), Error> {
+        let skip = pad - start;
+        let mut blended = vec![vec![0.0_f32; SEGMENT]; self.wanted.len()];
+        let mut summed = vec![0.0_f32; SEGMENT];
+        for offset in (0..length).step_by(STRIDE) {
+            // a segment shorter than the model's is centred in a run of the model's length cut from the padded sound
+            // around it, zeros beyond the ends, and the output is trimmed to the segment (`TensorChunk.padded`,
+            // apply.py:105-121, and `center_trim`)
+            let kept = (length - offset).min(SEGMENT);
+            let lead = (SEGMENT - kept) / 2;
+            let (first, before) = (start + offset, lead + pad);
+            let mut input = Vec::with_capacity(CHANNELS * SEGMENT);
+            for channel in 0..CHANNELS {
+                input.extend((0..SEGMENT).map(|j| {
+                    // the sample of the sound this place holds; the padding and what lies beyond are zeros
+                    (first + j)
+                        .checked_sub(before)
+                        .filter(|&real| real < self.mix.frames())
+                        .map_or(0.0, |real| self.mix.normalised(channel, real))
+                }));
             }
-        }
-        for (cell, &w) in summed.iter_mut().zip(&weight[..kept]) {
-            *cell += w;
-        }
-        // frames `offset..offset + done` are final: the next segment starts at `offset + STRIDE`
-        let done = (length - offset).min(STRIDE);
-        for (row, out) in blended.iter_mut().zip(total.iter_mut()) {
-            for f in offset.max(skip)..offset + done {
-                out[f - skip] += row[f - offset] / summed[f - offset];
+            let answer = self.model.infer(&Tensor::new(vec![1, CHANNELS, SEGMENT], input)?)?;
+            let [stems] = answer.as_slice() else {
+                return Err(Error::Invalid(format!(
+                    "the model must answer as HTDemucs does, with 1 output, got {}",
+                    answer.len()
+                )));
+            };
+            let sources = self.sources;
+            if stems.shape() != [1, sources, CHANNELS, SEGMENT] {
+                return Err(Error::Invalid(format!(
+                    "the model must answer as HTDemucs does, with stems of shape [1, {sources}, {CHANNELS}, {SEGMENT}], got {:?}",
+                    stems.shape()
+                )));
             }
-            row.copy_within(STRIDE.., 0);
-            row[SEGMENT - STRIDE..].fill(0.0);
+            for (row, &wanted) in blended.iter_mut().zip(self.wanted) {
+                let out = &stems.values()[wanted * SEGMENT..(wanted + 1) * SEGMENT];
+                for ((cell, &w), &x) in row.iter_mut().zip(self.weight).zip(&out[lead..lead + kept]) {
+                    *cell += w * x;
+                }
+            }
+            for (cell, &w) in summed.iter_mut().zip(&self.weight[..kept]) {
+                *cell += w;
+            }
+            // frames `offset..offset + done` are final: the next segment starts at `offset + STRIDE`
+            let done = (length - offset).min(STRIDE);
+            for (row, out) in blended.iter_mut().zip(total.iter_mut()) {
+                for f in offset.max(skip)..offset + done {
+                    out[f - skip] += row[f - offset] / summed[f - offset];
+                }
+                row.copy_within(STRIDE.., 0);
+                row[SEGMENT - STRIDE..].fill(0.0);
+            }
+            summed.copy_within(STRIDE.., 0);
+            summed[SEGMENT - STRIDE..].fill(0.0);
         }
-        summed.copy_within(STRIDE.., 0);
-        summed[SEGMENT - STRIDE..].fill(0.0);
+        Ok(())
     }
-    Ok(())
 }
 
 /// The stems as sounds, from planar rows in the model's order (stem by channel).
-fn finish(source: &Sound, rows: Vec<Vec<f32>>) -> Result<Stems, Error> {
+pub(crate) fn finish(source: &Sound, rows: Vec<Vec<f32>>) -> Result<Stems, Error> {
     let mut rows = rows.into_iter();
     let mut sounds = Vec::with_capacity(STEMS);
     for stem in Stem::ALL {

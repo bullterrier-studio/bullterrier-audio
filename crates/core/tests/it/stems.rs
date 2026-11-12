@@ -29,6 +29,8 @@ type Answer = Box<dyn Fn(usize, &[f32]) -> Vec<f32> + Send + Sync>;
 /// A stand-in model: `answer(call number, input)` gives the `6 * 2 * SEGMENT` values of the stems.
 struct StandIn {
     answer: Answer,
+    /// How many sources the answer holds: 6 for HTDemucs-6s, 4 for the ft models.
+    sources: usize,
     calls: AtomicUsize,
     /// For each call, how many samples at the start of the first channel of its input are exactly 0.
     zero_runs: Mutex<Vec<usize>>,
@@ -38,6 +40,7 @@ impl StandIn {
     fn new(answer: impl Fn(usize, &[f32]) -> Vec<f32> + Send + Sync + 'static) -> Self {
         Self {
             answer: Box::new(answer),
+            sources: 6,
             calls: AtomicUsize::new(0),
             zero_runs: Mutex::new(Vec::new()),
         }
@@ -51,6 +54,12 @@ impl StandIn {
                 .flat_map(|&w| input.iter().map(move |&x| w * x))
                 .collect()
         })
+    }
+
+    /// The same, answering as an ft model does: `sources` rows.
+    fn with_sources(mut self, sources: usize) -> Self {
+        self.sources = sources;
+        self
     }
 
     /// Every sample of every stem is `value(call number)`.
@@ -77,7 +86,7 @@ impl Infer for StandIn {
             .map_err(|_| Error::Invalid("poisoned".into()))?
             .push(run);
         Ok(vec![Tensor::new(
-            vec![1, 6, 2, SEGMENT],
+            vec![1, self.sources, 2, SEGMENT],
             (self.answer)(call, input.values()),
         )?])
     }
@@ -435,6 +444,220 @@ mod shifts {
             let model = StandIn::constant(|_| 0.0);
             stems_of(&mix(100), shifts, 0, &model)?;
             assert_eq!(model.calls(), calls, "{shifts} shifts");
+        }
+        Ok(())
+    }
+}
+
+mod ensemble {
+    use super::*;
+
+    type Log = Arc<Mutex<Vec<String>>>;
+
+    /// The ft model `m` answers row `j` with `FT[m][j]` times its input; only the row of its own name, `FT[m][m]`,
+    /// counts. The diagonal adds up to 1, as the six weights of `SPLIT` do.
+    const FT: [[f32; 4]; 4] = [
+        [0.4, 0.7, 0.6, 0.5],
+        [0.9, 0.3, 0.8, 0.7],
+        [0.6, 0.5, 0.2, 0.9],
+        [0.8, 0.6, 0.7, 0.1],
+    ];
+    /// By hand from `SPLIT` = [0.1 drums, 0.2 bass, 0.3 other, 0.15 vocals, 0.15 guitar, 0.1 piano] and the diagonal of
+    /// `FT`: drums (0.1 + 0.4) / 2, bass (0.2 + 0.3) / 2, other (0.3 + 0.2 - 0.15 - 0.1) / 2, vocals (0.15 + 0.1) / 2, guitar and piano as they are.
+    /// They add up to 1.
+    const EXPECTED: [f64; 6] = [0.25, 0.25, 0.125, 0.125, 0.15, 0.1];
+
+    /// A stand-in that logs when it runs and when it is dropped.
+    struct Member {
+        name: String,
+        model: StandIn,
+        log: Log,
+    }
+
+    impl Infer for Member {
+        fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error> {
+            self.log
+                .lock()
+                .map_err(|_| Error::Invalid("poisoned".into()))?
+                .push(format!("run {}", self.name));
+            self.model.infer(input)
+        }
+    }
+
+    impl Drop for Member {
+        fn drop(&mut self) {
+            if let Ok(mut log) = self.log.lock() {
+                log.push(format!("drop {}", self.name));
+            }
+        }
+    }
+
+    fn ft_member(stem: Stem, log: &Log) -> Member {
+        let own = Stem::ALL.iter().position(|&s| s == stem).unwrap_or(usize::MAX);
+        Member {
+            name: stem.name().to_owned(),
+            model: StandIn::new(move |_, input| {
+                FT[own]
+                    .iter()
+                    .flat_map(|&w| input.iter().map(move |&x| w * x))
+                    .collect()
+            })
+            .with_sources(4),
+            log: Arc::clone(log),
+        }
+    }
+
+    fn six_member(log: &Log) -> Member {
+        Member {
+            name: "six".into(),
+            model: StandIn::split(SPLIT),
+            log: Arc::clone(log),
+        }
+    }
+
+    fn opened(log: &Log, what: String) {
+        if let Ok(mut log) = log.lock() {
+            log.push(what);
+        }
+    }
+
+    fn run(samples: &[Vec<f32>], shifts: u32, log: &Log) -> Result<Stems, Error> {
+        let (log_six, log_ft) = (Arc::clone(log), Arc::clone(log));
+        sound(samples.to_vec(), RATE)?
+            .with_separation(Separation::new(shifts, true, 0, true)?)
+            .stems_with_ensemble(
+                || {
+                    opened(&log_six, "open six".into());
+                    Ok(six_member(&log_six))
+                },
+                |stem| {
+                    opened(&log_ft, format!("open {}", stem.name()));
+                    Ok(ft_member(stem, &log_ft))
+                },
+            )
+    }
+
+    fn lines(log: &Log) -> Vec<String> {
+        log.lock().map(|log| log.clone()).unwrap_or_default()
+    }
+
+    #[test]
+    fn each_stem_combines_the_two_models_as_the_recipe_says() -> Outcome {
+        let samples = mix(1000);
+        let stems = run(&samples, 0, &Log::default())?;
+        let (mean, _) = reference_stats(&samples);
+        for (stem, coefficient) in Stem::ALL.into_iter().zip(EXPECTED) {
+            for c in 0..2 {
+                let expected = |i: usize| coefficient * (f64::from(samples[c][i]) - mean) + mean;
+                let error = max_error(&stems.get(stem).samples()[c], expected);
+                assert!(error <= 1e-5 * peak(&samples), "{stem:?} channel {c}: {error}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_six_stems_still_add_up_to_the_mix_with_the_mean_five_times() -> Outcome {
+        for frames in [100, SEGMENT + 1, 2 * SEGMENT] {
+            let samples = mix(frames);
+            let stems = run(&samples, 0, &Log::default())?;
+            let error = sum_error(&stems, &samples);
+            assert!(
+                error <= 1e-5 * peak(&samples),
+                "{frames} frames: the sum is off by {error}"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_models_run_one_after_the_other_and_each_is_gone_before_the_next_is_opened() -> Outcome {
+        // 400 000 frames and shifts of at most 22 050: two segments per pass, two passes
+        let log = Log::default();
+        run(&mix(400_000), 2, &log)?;
+        let expected: Vec<String> = ["six", "drums", "bass", "other", "vocals"]
+            .into_iter()
+            .flat_map(|name| {
+                std::iter::once(format!("open {name}"))
+                    .chain(std::iter::repeat_n(format!("run {name}"), 4))
+                    .chain(std::iter::once(format!("drop {name}")))
+            })
+            .collect();
+        assert_eq!(lines(&log), expected);
+        Ok(())
+    }
+
+    #[test]
+    fn a_model_that_cannot_be_opened_stops_the_run_before_the_next_is_opened() -> Outcome {
+        let log = Log::default();
+        let result = sound(mix(100), RATE)?.stems_with_ensemble(
+            || Ok(six_member(&log)),
+            |stem| match stem {
+                Stem::Bass => Err(Error::ModelUnavailable("the bass model is not installed".into())),
+                _ => {
+                    opened(&log, format!("open {}", stem.name()));
+                    Ok(ft_member(stem, &log))
+                }
+            },
+        );
+        assert!(
+            matches!(&result, Err(Error::ModelUnavailable(m)) if m.contains("bass")),
+            "{result:?}"
+        );
+        let log = lines(&log);
+        assert!(
+            log.contains(&"open drums".to_owned()) && !log.iter().any(|l| l.contains("other")),
+            "{log:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_constant_sound_is_silent_and_opens_no_model() -> Outcome {
+        let log = Log::default();
+        let stems = run(&[vec![0.25; 500], vec![0.25; 500]], 1, &log)?;
+        assert!(lines(&log).is_empty());
+        assert!(
+            stems
+                .iter()
+                .all(|(_, s)| s.samples().iter().flatten().all(|&x| x == 0.0))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn an_ft_model_that_answers_with_six_sources_is_refused() -> Outcome {
+        let log = Log::default();
+        let result = sound(mix(100), RATE)?.stems_with_ensemble(
+            || Ok(six_member(&log)),
+            |stem| {
+                Ok(Member {
+                    name: stem.name().to_owned(),
+                    model: StandIn::split(SPLIT),
+                    log: Arc::clone(&log),
+                })
+            },
+        );
+        assert!(
+            matches!(&result, Err(Error::Invalid(m)) if m.contains("shape")),
+            "{result:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn shifts_apply_to_every_model_and_the_average_keeps_the_recipe() -> Outcome {
+        let samples = mix(400_000);
+        let (mean, _) = reference_stats(&samples);
+        let log = Log::default();
+        let stems = run(&samples, 3, &log)?;
+        let runs = lines(&log).iter().filter(|l| l.starts_with("run")).count();
+        assert_eq!(runs, 5 * 3 * 2, "five models, three passes of two segments");
+        for (stem, coefficient) in Stem::ALL.into_iter().zip(EXPECTED) {
+            let error = max_error(&stems.get(stem).samples()[0], |i| {
+                coefficient * (f64::from(samples[0][i]) - mean) + mean
+            });
+            assert!(error <= 1e-5 * peak(&samples), "{stem:?}: {error}");
         }
         Ok(())
     }

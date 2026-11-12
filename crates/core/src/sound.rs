@@ -474,6 +474,29 @@ impl Sound {
         stems::separate(self, model)
     }
 
+    /// The stems of the sound by the ensemble recipe, whatever [`Separation::ensemble`] says (it is
+    /// [`Sound::stems`] that reads the flag). `six` opens the six-source `HTDemucs`, `ft` opens the ft model of the stem
+    /// it is given, called for drums, bass, other and vocals in that order. Each model is opened when its turn comes
+    /// and dropped before the next is opened, so only one is held at a time: a session takes gigabytes. The seam is
+    /// closures, not models, so that this holds and a test can see it.
+    ///
+    /// Promises: those of [`Sound::stems_with`]. Drums, bass and vocals are the mean of the six-source stem and the ft
+    /// stem of that name; `other` is the mean of the six-source `other` and the ft `other` less the six-source guitar and
+    /// piano; guitar and piano are the six-source stems. The mean of the sound is added to each stem once, as in
+    /// `stems_with`, so the six still add up to the sound plus five times its mean. A constant sound opens no model.
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::stems_with`], also for an ft model that does not answer with one output of shape 1 by 4 by 2 by
+    /// 343 980; and what `six` and `ft` return.
+    pub fn stems_with_ensemble<M: Infer>(
+        &self,
+        six: impl FnOnce() -> Result<M, Error>,
+        ft: impl Fn(Stem) -> Result<M, Error>,
+    ) -> Result<Stems, Error> {
+        stems::separate_ensemble(self, six, ft)
+    }
+
     /// The notes of the sound, found by the installed Basic Pitch model and cleaned up; see [`Sound::notes_with`] for
     /// what is promised. The result is computed once per sound. Needs the `onnx` feature, the ONNX Runtime library and
     /// the model (`bt-audio install`).
