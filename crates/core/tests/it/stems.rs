@@ -7,6 +7,9 @@
 //! for `i < H` and `(343 980 - i) / H` after, with `H` 171 990. The mix goes to the model with mean 0 and sample
 //! standard deviation 1 (of the mean of the channels) and the stems get `std` and `mean` back: `stem * std + mean`.
 
+// Casts of counts and samples in test arithmetic; `println!` reports what the real model measured.
+#![allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::print_stdout)]
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -81,7 +84,6 @@ impl Infer for StandIn {
 }
 
 /// A stereo signal of `frames` that is never exactly its mean at its first sample.
-#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
 fn mix(frames: usize) -> Vec<Vec<f32>> {
     let tau = std::f64::consts::TAU;
     let at = |i: usize| i as f64 / f64::from(RATE);
@@ -100,7 +102,6 @@ fn sound(samples: Vec<Vec<f32>>, rate: u32) -> Result<Sound, Error> {
 }
 
 /// The mean and the sample standard deviation (divisor N - 1) of the mean of the channels: Demucs' `ref`.
-#[allow(clippy::cast_precision_loss)]
 fn reference_stats(channels: &[Vec<f32>]) -> (f64, f64) {
     let reference: Vec<f64> = (0..channels[0].len())
         .map(|i| channels.iter().map(|c| f64::from(c[i])).sum::<f64>() / channels.len() as f64)
@@ -249,12 +250,12 @@ mod demucs_arithmetic {
             let lead = (SEGMENT - 100) / 2;
             if let Ok(mut seen) = record.lock() {
                 seen.extend(
-                    (0..100).map(|i| (f64::from(input[lead + i]) + f64::from(input[SEGMENT + lead + i])) / 2.0),
+                    (0..100).map(|i| f64::midpoint(f64::from(input[lead + i]), f64::from(input[SEGMENT + lead + i]))),
                 );
             }
             input
                 .iter()
-                .chain(&[0.0; 10 * SEGMENT][..])
+                .chain(std::iter::repeat(&0.0))
                 .copied()
                 .take(12 * SEGMENT)
                 .collect()
@@ -660,7 +661,6 @@ mod real_model {
     use realfft::RealFftPlanner;
 
     /// 15 s: a drum click every 0.5 s (a 2 kHz burst), a 55 Hz bass tone, a lead of 440 Hz with its harmonics.
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
     fn song() -> Vec<Vec<f32>> {
         let frames = 15 * RATE as usize;
         let clicks = crate::common::clicks(
@@ -692,8 +692,8 @@ mod real_model {
         // the model's sources only approximately add up to the mix: measure how closely, as the share of the mix's
         // energy that the difference holds
         let (mut difference, mut energy) = (0.0_f64, 0.0_f64);
-        for c in 0..2 {
-            for (i, &x) in samples[c].iter().enumerate() {
+        for (c, channel) in samples.iter().enumerate() {
+            for (i, &x) in channel.iter().enumerate() {
                 let sum: f64 = stems.iter().map(|(_, s)| f64::from(s.samples()[c][i])).sum();
                 difference += (sum - f64::from(x)).powi(2);
                 energy += f64::from(x).powi(2);
