@@ -180,7 +180,7 @@ fn the_slower_margin_decides_between_two_beat_levels() -> Outcome {
     // the eighth-note train accented on the beats fits 170 better and 85 almost as well
     let sound = sound_of(&train(85.0, 2, 0.123, |k| k % 2 == 0), SECONDS)?;
     for (margin, expected) in [(0.0, 170.0), (0.2, 85.0)] {
-        let structure = Structure::new(70.0, 180.0, 0.03, margin, 0.1)?;
+        let structure = Structure::new(70.0, 180.0, 0.03, margin, 0.1, 4, 0.3, 3.0, None, 1.0)?;
         let tempo = middle_tempo(&sound.with_structure(structure).grid()?)?;
         assert!((tempo - expected).abs() <= 0.05, "margin {margin}: found {tempo}");
     }
@@ -191,7 +191,7 @@ fn the_slower_margin_decides_between_two_beat_levels() -> Outcome {
 fn the_meter_margin_decides_between_three_and_four() -> Outcome {
     let sound = accented(128.0, 0.123, 3, 0)?;
     for (margin, expected) in [(0.1, 3), (1.0, 4)] {
-        let structure = Structure::new(70.0, 180.0, 0.03, 0.2, margin)?;
+        let structure = Structure::new(70.0, 180.0, 0.03, 0.2, margin, 4, 0.3, 3.0, None, 1.0)?;
         let grid = sound.with_structure(structure).grid()?;
         assert_eq!(grid.meter.get(), expected, "margin {margin}");
     }
@@ -308,7 +308,8 @@ fn the_tempo_range_decides_the_level() -> Outcome {
         (85.0, (70.0, 180.0), 85.0),
     ];
     for (bpm, (min, max), expected) in rows {
-        let sound = plain(bpm, 0.123)?.with_structure(Structure::new(min, max, 0.03, 0.2, 0.1)?);
+        let sound =
+            plain(bpm, 0.123)?.with_structure(Structure::new(min, max, 0.03, 0.2, 0.1, 4, 0.3, 3.0, None, 1.0)?);
         let tempo = middle_tempo(&sound.grid()?)?;
         assert!((tempo - expected).abs() <= 0.05, "{bpm} in {min}..{max}: found {tempo}");
     }
@@ -352,13 +353,13 @@ fn a_structure_is_checked_once_at_construction() {
         ("meter_margin NaN", 70.0, 180.0, 0.03, 0.2, f64::NAN, "meter_margin"),
     ];
     for (id, min, max, tolerance, slower, meter, refusal) in rows {
-        let result = Structure::new(min, max, tolerance, slower, meter);
+        let result = Structure::new(min, max, tolerance, slower, meter, 4, 0.3, 3.0, None, 1.0);
         assert!(
             matches!(&result, Err(Error::Invalid(text)) if text.contains("Structure") && text.contains(refusal)),
             "{id}: {result:?}"
         );
     }
-    assert!(Structure::new(30.0, 300.0, 0.1, 0.0, 1.0).is_ok());
+    assert!(Structure::new(30.0, 300.0, 0.1, 0.0, 1.0, 4, 0.3, 3.0, None, 1.0).is_ok());
 }
 
 #[test]
@@ -370,7 +371,7 @@ fn the_hop_widens_a_tolerance_it_would_leave_narrower_than_the_frames() {
 
 #[test]
 fn every_edit_keeps_the_structure() -> Outcome {
-    let structure = Structure::new(50.0, 160.0, 0.05, 0.3, 0.2)?;
+    let structure = Structure::new(50.0, 160.0, 0.05, 0.3, 0.2, 2, 0.5, 6.0, Some(8), 2.0)?;
     let sound = plain(128.0, 0.0)?.with_structure(structure);
     assert_eq!(*sound.structure(), structure);
     let edits = [

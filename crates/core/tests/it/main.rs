@@ -9,4 +9,5 @@ mod edits;
 mod formats;
 mod grid;
 mod measures;
+mod sections;
 mod sound;

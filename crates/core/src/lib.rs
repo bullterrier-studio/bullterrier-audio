@@ -13,6 +13,7 @@ mod grid;
 mod loudness;
 mod onsets;
 mod resample;
+mod sections;
 mod sound;
 mod spectrum;
 mod structure;
@@ -20,6 +21,7 @@ mod write;
 
 pub use analysis::Analysis;
 pub use error::Error;
+pub use sections::Section;
 pub use sound::{Origin, Sound};
 pub use spectrum::Band;
 pub use structure::Structure;

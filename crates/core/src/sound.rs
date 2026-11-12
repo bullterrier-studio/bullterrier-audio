@@ -12,6 +12,7 @@ use crate::grid;
 use crate::loudness;
 use crate::onsets;
 use crate::resample::resample;
+use crate::sections::{self, Section};
 use crate::spectrum::{self, Band, Spectrogram};
 use crate::structure::Structure;
 use crate::write::write;
@@ -37,6 +38,7 @@ struct Measured {
     loudness: OnceLock<Series>,
     onsets: OnceLock<Vec<Event>>,
     grid: OnceLock<Result<Grid, Error>>,
+    sections: OnceLock<Result<Vec<Section>, Error>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -441,6 +443,57 @@ impl Sound {
     /// [`Sound::energy`].
     pub fn grid(&self) -> Result<Grid, Error> {
         self.memo.0.grid.get_or_init(|| grid::grid(self)).clone()
+    }
+
+    /// The sections of the sound: stretches of bars that sound alike inside and unlike their neighbours, labelled so
+    /// that stretches that sound alike share a label.
+    ///
+    /// Promises: at least one section; they tile the sound exactly (the first starts at 0, each ends where the next
+    /// starts, the last ends at [`Sound::duration`], all longer than 0), and every boundary but the two ends lies on a
+    /// bar start of [`Sound::grid`]. Audio before the first downbeat belongs to the first section; a part bar of under a
+    /// beat at either end is merged into its neighbour. Each section is at least `min_section_bars` bars (a part bar
+    /// counts as one). The result is computed once per sound.
+    ///
+    /// Method: every bar is the mean of the six [`Sound::energy`] bands over it. The novelty at a bar boundary is the
+    /// distance between the mean of the up to 2 bars after it and of the up to 2 before it, each band divided by
+    /// `max(its spread over the song, novelty_floor)`; comparing windows, not neighbours, lets a gradual build register.
+    /// A boundary is a cut when its novelty is a local peak (the earliest of equal ones), reaches `novelty_share` of
+    /// the largest novelty among the boundaries that leave `min_section_bars` bars on both sides, and some band's mean level changes there by at least `novelty_floor`; of cuts
+    /// closer than `min_section_bars` the stronger stays. With `phrase_bars` `Some(n)` the cuts first snap to the `n`-bar
+    /// grid on which the most novelty lies and a cut more than one bar from it is dropped. A section's level is the
+    /// mean of its bars; sections are clustered (complete linkage: all pairs within `label_spread` in every band) and
+    /// labelled `A`, `B`, ... `Z`, `AA`, `AB`, ... in order of first appearance, so equal labels mean alike sections.
+    /// A song with no cut is one section `A`. See [`Structure`] for the parameters.
+    ///
+    /// `confidence` of a section is how strongly it was cut at its start: the novelty there over the largest novelty
+    /// of the song, in 0 to 1; the first section starts at 0 and has confidence 1 by definition.
+    ///
+    /// Limits: bars come from a steady tempo and one meter (a tempo change moves the bar grid off the music); a
+    /// change that does not move the level of a band (a new melody on the same instruments) is not heard; a cut lies
+    /// on a bar, so a change inside a bar is placed on the nearer bar start.
+    ///
+    /// # Errors
+    ///
+    /// As [`Sound::grid`] (no tempo, no sections).
+    pub fn sections(&self) -> Result<Vec<Section>, Error> {
+        self.memo.0.sections.get_or_init(|| sections::sections(self)).clone()
+    }
+
+    /// The `index`th of [`Sound::sections`] as a sound of its own: `cut(start, end)` of it, so it keeps its origin.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `index` and the number of sections when it is out of range; otherwise as
+    /// [`Sound::sections`].
+    pub fn section(&self, index: usize) -> Result<Self, Error> {
+        let sections = self.sections()?;
+        let section = sections.get(index).ok_or_else(|| {
+            Error::Invalid(format!(
+                "index must be below the {} sections of the sound, got {index}",
+                sections.len()
+            ))
+        })?;
+        self.cut(section.start, section.end)
     }
 
     /// The short-term loudness over time, in LUFS, measured by EBU R128 on the sound's own channels and rate.
