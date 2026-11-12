@@ -12,6 +12,8 @@ mod drops;
 mod error;
 pub mod formats;
 mod grid;
+mod hits;
+mod hits_params;
 mod infer;
 mod key;
 mod loudness;
@@ -33,6 +35,8 @@ mod write;
 
 pub use analysis::Analysis;
 pub use error::Error;
+pub use hits::Hit;
+pub use hits_params::Hits;
 pub use infer::{Infer, Tensor};
 pub use key::{Key, Mode, PitchClass};
 pub use notes_params::Notes;

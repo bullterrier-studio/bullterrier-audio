@@ -11,6 +11,8 @@ use crate::decode::decode;
 use crate::drops;
 use crate::formats::{Bundle, Event, Grid, Series, Unit};
 use crate::grid;
+use crate::hits::{self, Hit};
+use crate::hits_params::Hits;
 use crate::infer::Infer;
 use crate::key::{self, Key};
 use crate::loudness;
@@ -57,6 +59,9 @@ struct Measured {
     /// Only `Sound::stems` fills it, and that needs the `onnx` feature.
     #[cfg(feature = "onnx")]
     stems: OnceLock<Stems>,
+    /// The activations of the transcriber on this sound as the drums; only `Sound::hits` fills it.
+    #[cfg(feature = "onnx")]
+    activations: OnceLock<Vec<f32>>,
 }
 
 /// The memo of a sound: not part of its value, so it is never compared and prints nothing.
@@ -88,6 +93,7 @@ pub struct Sound {
     analysis: Analysis,
     structure: Structure,
     notes: Notes,
+    hits: Hits,
     separation: Separation,
     stem: Option<Stem>,
     memo: Memo,
@@ -159,6 +165,7 @@ impl Sound {
             analysis: Analysis::default(),
             structure: Structure::default(),
             notes: Notes::default(),
+            hits: Hits::default(),
             separation: Separation::default(),
             stem: None,
             memo: Memo::default(),
@@ -230,6 +237,7 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -273,6 +281,7 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -301,6 +310,7 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -335,6 +345,7 @@ impl Sound {
         sound.analysis = self.analysis;
         sound.structure = self.structure;
         sound.notes = self.notes;
+        sound.hits = self.hits;
         sound.separation = self.separation;
         Ok(sound)
     }
@@ -355,6 +366,7 @@ impl Sound {
             analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -377,6 +389,7 @@ impl Sound {
             analysis: self.analysis,
             structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -399,6 +412,30 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes,
+            hits: self.hits,
+            separation: self.separation,
+            stem: self.stem,
+            memo: Memo::default(),
+        }
+    }
+
+    /// The drum-hit parameters this sound's `Sound::hits` reads.
+    #[must_use]
+    pub fn hits_params(&self) -> &Hits {
+        &self.hits
+    }
+
+    /// This sound measured under `hits` instead; nothing measured so far is carried over.
+    #[must_use]
+    pub fn with_hits(&self, hits: Hits) -> Self {
+        Self {
+            samples: self.samples.clone(),
+            rate: self.rate,
+            origin: self.origin.clone(),
+            analysis: self.analysis,
+            structure: self.structure,
+            notes: self.notes,
+            hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -421,6 +458,7 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation,
             stem: self.stem,
             memo: Memo::default(),
@@ -562,6 +600,60 @@ impl Sound {
     /// answer as Basic Pitch does (three outputs, the first two of shape 1 by 172 by 88), or as `model` fails.
     pub fn notes_with(&self, model: &impl Infer) -> Result<Vec<Event>, Error> {
         notes::notes(self, model)
+    }
+
+    /// The hits of one drum class in the sound, found by the installed ADTOF model; see [`Sound::hits_with`] for what
+    /// is promised. A sound that is the drums stem ([`Sound::stem`]) is used as it is; any other sound is separated first
+    /// ([`Sound::stems`], cached) and its drums stem is used. The model runs once per drums sound: asking for the kick,
+    /// then the snare, then the hat runs it once. Needs the `onnx` feature, the ONNX Runtime library and the model
+    /// (`bt-audio install`; the separator too for a sound that is not the drums).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ModelUnavailable`] naming `bt-audio install` when the library or a model is not installed (or cannot be
+    /// used); otherwise as [`Sound::hits_with`] and, for a sound that is not the drums, [`Sound::stems`].
+    #[cfg(feature = "onnx")]
+    pub fn hits(&self, hit: Hit) -> Result<Vec<Event>, Error> {
+        let separated;
+        let drums = if self.stem == Some(Stem::Drums) {
+            self
+        } else {
+            separated = self.stems()?.get(Stem::Drums).clone();
+            &separated
+        };
+        let activations = if let Some(activations) = drums.memo.0.activations.get() {
+            activations
+        } else {
+            hits::check_length(drums)?;
+            let model = crate::models::models()
+                .iter()
+                .find(|model| model.name == "adtof-frame-rnn")
+                .ok_or_else(|| unreachable!("the catalogue holds the transcriber"))?;
+            let model = crate::models::OrtInfer::open(model, &crate::models::Options::from_env(), 1)?;
+            let found = hits::activations(drums, &model)?;
+            drums.memo.0.activations.get_or_init(|| found)
+        };
+        Ok(hits::events(activations, hit, &self.hits))
+    }
+
+    /// The hits of one drum class in the sound, found with `model` (ADTOF's `Frame_RNN`: `Sound::hits` passes the
+    /// installed one) and picked under the sound's [`Hits`]. The sound is used as the drums: nothing is separated.
+    ///
+    /// Promises: one event per hit, sorted by `t`; `t` is the instant of the model's frame, `frame / 100` seconds (the
+    /// model gives 100 frames per second, frame `i` standing for the instant `i / 100` s; its peaks lie about 10 ms
+    /// before the true onset of a synthesised hit, the bias is not corrected); `strength` the activation at the peak (0
+    /// to 1); `label` `"kick"`, `"snare"` or `"hat"`; no duration, no pitch. Every hit lies inside the sound: the last
+    /// frame starts before the end. A silent sound has none. The sound is converted to 44.1 kHz in one channel. The
+    /// picking is described at [`Hits`].
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `duration` when the sound is over 650 s (the memory of a run, about 5 MB per second);
+    /// naming `rate` when the sound cannot be resampled to 44.1 kHz; when `model` does not answer as ADTOF does (one
+    /// output of shape 1 by ceil(samples / 441) by 5) or fails.
+    pub fn hits_with(&self, model: &impl Infer, hit: Hit) -> Result<Vec<Event>, Error> {
+        hits::check_length(self)?;
+        Ok(hits::events(&hits::activations(self, model)?, hit, &self.hits))
     }
 
     /// The level of `band` over time, from the sound's one-channel mixdown at 44.1 kHz.
@@ -921,6 +1013,7 @@ impl Sound {
             analysis: self.analysis,
             structure: self.structure,
             notes: self.notes,
+            hits: self.hits,
             separation: self.separation,
             stem: self.stem,
             memo: Memo::default(),

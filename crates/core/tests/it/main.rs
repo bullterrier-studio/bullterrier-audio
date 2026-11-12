@@ -10,6 +10,7 @@ mod drops;
 mod edits;
 mod formats;
 mod grid;
+mod hits;
 mod key;
 mod measures;
 #[cfg(feature = "onnx")]
