@@ -322,6 +322,33 @@ fn analysis_refuses_values_outside_their_range() -> Outcome {
 }
 
 #[test]
+fn an_analysis_whose_spectrogram_would_not_fit_in_memory_is_refused_by_every_measure() -> Outcome {
+    // 60 s at a 1 ms hop and a 1 s window: 60 000 frames of 22 051 bins, 1.3 billion cells (5 GB)
+    let long = sound(vec![vec![0.0; 60 * 44100]], RATE)?.with_analysis(analysis(1.0, 0.001)?);
+    let refusals = [
+        long.energy(Band::Mid).map(drop),
+        long.brightness().map(drop),
+        long.onsets().map(drop),
+    ];
+    for refused in refusals {
+        let Err(Error::Invalid(message)) = refused else {
+            return Err(format!("not refused: {refused:?}").into());
+        };
+        for named in ["window", "hop", "60", "cells"] {
+            assert!(message.contains(named), "{named} missing: {message}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn ten_minutes_at_the_default_analysis_is_not_refused() -> Outcome {
+    let long = sound(vec![sine(440.0, 0.5, RATE, 600 * 44100)], RATE)?;
+    assert_eq!(long.brightness()?.values.len(), 60000);
+    Ok(())
+}
+
+#[test]
 fn the_default_analysis_is_valid() -> Outcome {
     let default = Analysis::default();
     let built = Analysis::new(

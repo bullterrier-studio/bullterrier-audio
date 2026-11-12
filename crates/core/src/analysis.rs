@@ -7,7 +7,8 @@ use crate::Error;
 /// How a sound is measured: window and hop of the spectrum, and the settings of onset detection and of the level scale.
 ///
 /// Every value is checked once, in [`Analysis::new`]; an `Analysis` that exists is valid, and its fields are read
-/// through methods. The default holds every default below.
+/// through methods. The default holds every default below. Valid values can still be too fine for a long sound: the
+/// measures of the spectrum refuse a sound whose frames times bins would exceed 2^27 (512 MB of spectrogram).
 ///
 /// | field | unit | range | default |
 /// |---|---|---|---|

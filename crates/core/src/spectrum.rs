@@ -18,6 +18,11 @@ use crate::formats::{Series, Unit};
 /// (`docs/api.md`, "Analysis rate").
 pub(crate) const RATE: u32 = 44100;
 
+/// The most cells (frames times bins, 4 bytes each) a spectrogram may have: 2^27, 512 MB. Onset detection holds its
+/// levels as `f64`, up to 1 GB more, so a measure peaks near 1.5 GB. The default analysis reaches this at about
+/// 36 minutes of sound; a longer sound needs a longer hop or a shorter window.
+const MAX_CELLS: usize = 1 << 27;
+
 /// A frequency band of the spectrum. A bin belongs to the band when its centre frequency `f` has `lo <= f < hi`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Band {
@@ -96,11 +101,22 @@ pub(crate) fn spectrogram(signal: &[f32], analysis: &Analysis) -> Result<Spectro
     let fft = RealFftPlanner::<f32>::new().plan_fft_forward(n);
     let (mut input, mut output, mut scratch) = (fft.make_input_vec(), fft.make_output_vec(), fft.make_scratch_vec());
     let bins = output.len();
+    let frames = (signal.len() as f64 / (analysis.hop() * rate)).ceil() as usize;
+    if frames * bins > MAX_CELLS {
+        return Err(Error::Invalid(format!(
+            "window {} s and hop {} s on a sound of {:.1} s need {} cells of spectrum, more than the {MAX_CELLS} allowed: \
+             use a longer hop or a shorter window",
+            analysis.window(),
+            analysis.hop(),
+            signal.len() as f64 / rate,
+            frames * bins,
+        )));
+    }
     let centres = (0..)
         .map(|i| (f64::from(i) * analysis.hop() * rate).round() as usize)
         .take_while(|&centre| centre < signal.len());
 
-    let mut power = Vec::new();
+    let mut power = Vec::with_capacity(frames * bins);
     for centre in centres {
         for (j, slot) in input.iter_mut().enumerate() {
             // the frame reaches half a window before and after the signal, where it is zero

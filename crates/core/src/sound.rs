@@ -314,7 +314,9 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz, or naming `window`, `hop`
+    /// and the duration when the spectrogram would exceed 2^27 cells (frames times bins; 512 MB), as a long sound
+    /// with a short hop and a long window does.
     pub fn energy(&self, band: Band) -> Result<Series, Error> {
         let cell = &self.memo.0.energy[band as usize];
         if let Some(series) = cell.get() {
@@ -334,7 +336,9 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz, or naming `window`, `hop`
+    /// and the duration when the spectrogram would exceed 2^27 cells (frames times bins; 512 MB), as a long sound
+    /// with a short hop and a long window does.
     pub fn brightness(&self) -> Result<Series, Error> {
         if let Some(series) = self.memo.0.brightness.get() {
             return Ok(series.clone());
@@ -360,7 +364,9 @@ impl Sound {
     ///
     /// # Errors
     ///
-    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz.
+    /// [`Error::Invalid`] naming `rate` when the sound is too short to resample to 44.1 kHz, or naming `window`, `hop`
+    /// and the duration when the spectrogram would exceed 2^27 cells (frames times bins; 512 MB), as a long sound
+    /// with a short hop and a long window does.
     pub fn onsets(&self) -> Result<Vec<Event>, Error> {
         if let Some(events) = self.memo.0.onsets.get() {
             return Ok(events.clone());
