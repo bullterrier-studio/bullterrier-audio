@@ -4,7 +4,7 @@
 tested in `tests/test_sound.py` and `crates/core/tests/it/`), and so do `energy(band)`, `brightness()`, `loudness()`,
 `onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`), and `grid()`, `sections()`, `section(i)`,
 `key()`, `drops()`, `bundle()`, `summary()`, `with_structure(...)` and `bt-audio analyse` (A3, `tests/test_structure_measures.py`),
-`notes()`, `with_notes(...)`, `bt-audio install | models | doctor` (A4), and `stems()`, `Stems`, `with_separation(...)`, `bt-audio stems` (A5).
+`notes()`, `with_notes(...)`, `bt-audio install | models | doctor` (A4), `stems()`, `Stems`, `with_separation(...)`, `bt-audio stems` (A5), and `hits(Hit)`, `with_hits(...)` (A6).
 Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.

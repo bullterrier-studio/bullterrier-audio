@@ -17,7 +17,7 @@ into one of those seams.
 | A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | done |
 | A4 | Models, and notes | M | an ONNX model behind a method | done |
 | A5 | Stems | L | a stem is a `Sound` | done |
-| A6 | Drum hits | M | labelled events from a part | |
+| A6 | Drum hits | M | labelled events from a part | done |
 | A7 | Measures by name, API review, first release | M | the extension point | |
 
 ## A1 Rust core, `Sound`, edits, formats out (done)
@@ -117,7 +117,13 @@ needed: A3's beat-level drops cover bass steps. Measured on one Mac (10 cores): 
 - Oracles: mixes of synthesised parts (drums, bass, a lead) where each part is the truth; separation quality measured
   (SDR) and recorded, not asserted to a number tuned on one mix.
 
-## A6 Drum hits
+## A6 Drum hits (done)
+
+The spike chose ADTOF (an ONNX export with the log-spectrogram front-end inside) over a three-band DSP baseline by the rule
+fixed beforehand; numbers in design-decisions. Built: `Sound::hits(Hit)` / `hits_with(&Infer, Hit)`, `Hit`, `Hits` (ADTOF's
+published thresholds and picker windows), the pinned `adtof-frame-rnn` model (2 MB). A sound that is not a drums stem is
+separated first (A5, cached). A sound longer than 650 s is refused (about 5 MB of memory per second). Tom and cymbal columns are
+not exposed. The kick class also hears kick tails on synthetic kicks (precision 0.6).
 
 - **Spike first, then the plan:** an ONNX export of a drum transcriber (ADTOF has a PyTorch port; none is published as
   ONNX) against a DSP detector on the drum stem (band onsets for kick, snare, hat). The plan picks one by measured F-measure
