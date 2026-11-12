@@ -14,7 +14,7 @@ into one of those seams.
 | A0 | Scaffold: gate, hooks, CI, release tooling, CLAUDE.md | S | | done |
 | A1 | Rust core, `Sound`, edits, formats out | M | sound in → `Sound` → sound and Bundle out | done |
 | A2 | Spectrum: bands, loudness, brightness, onsets | M | one owner of the spectrum | done |
-| A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | |
+| A3 | Grid, sections, key, drops; `bundle()` and `bt-audio analyse` | L | measures that build on measures | done |
 | A4 | Models, and notes | M | an ONNX model behind a method | |
 | A5 | Stems | L | a stem is a `Sound` | |
 | A6 | Drum hits | M | labelled events from a part | |
@@ -59,7 +59,11 @@ into one of those seams.
 - Oracles: cutting then measuring equals measuring then taking the same span (within one hop); a tone in one band and silence in the others; clicks at known times give onsets at those times; EBU R128 test
   signals at their published loudness. librosa as a dev-only parity reference for the spectrum, never a runtime dependency.
 
-## A3 Grid, sections, key, drops
+## A3 Grid, sections, key, drops (done)
+
+Built on the onsets and band energies; `Structure` declares the parameters once, like `Analysis`. Grid `confidence` needed
+control's bundle format 2 (a new optional field is a new version in control); audio writes version 2 only when it has one.
+The milestone below happens in the demo repositories, not here.
 
 - `grid()`: tempo (tempogram peaks folded into a musical range by how well each grid explains the onsets, refined to 0.01 BPM
   by the median of the near-best plateau), beat phase, downbeats, meter, `confidence` (low on four-on-the-floor, where the
@@ -94,7 +98,7 @@ into one of those seams.
 - `stems()` returns `Stems`, one `Sound` per `Stem`; every measure and edit works on a stem; a stem knows it is one
   (`sound.stem`); `stems.without(...)` recombines the rest (an instrumental); `bt-audio stems FILE -o DIR` writes them.
 - Parts per section (which stem carries drums, bass, lead), since separators route a part to different stems across a song.
-- `drops()` from the bass and drum stems, if A3 deferred it.
+- `drops()` from the bass and drum stems, to add what the bass-level rule of A3 misses (a drop that is not a bass step).
 - Oracles: mixes of synthesised parts (drums, bass, a lead) where each part is the truth; separation quality measured
   (SDR) and recorded, not asserted to a number tuned on one mix.
 

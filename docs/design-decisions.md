@@ -80,6 +80,35 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 - **No librosa parity reference.** The oracles are independent by construction (a sine's band level, the R128 gain law, clicks
   at known times); a numpy stack for a Rust DSP would test the reference as much as the code.
 
+- **`Structure` declares the parameters of the A3 measures once** (2026-11-12), carried by the sound like `Analysis`
+  (`with_structure`). Nothing that shapes a result is a hidden constant: the margins that prefer a slower tempo or meter 4 on
+  a tie, the novelty share of a cut, the label spread, the chroma range and the drop rule are fields with unit, range, default
+  and evidence. *Reason:* the A2 review rule (a constant that shapes a result is a parameter), applied again.
+- **Grid by autocorrelation of the onsets, refined by regression** (2026-11-12). Tempo comes from the onset events (hop
+  independent), folded into the tempo range and chosen by how well each grid explains the onsets; the period and phase are
+  refined by least squares, so tempo is sub-hop precise. Meter 3 or 4 and the downbeat come from the accent of the low
+  bands; `confidence` is near 0 when nothing is accented. *Cost:* one steady tempo, one meter, straight time; synthetic
+  validation only.
+- **Sections tile the sound, labels by complete linkage** (2026-11-12). Bars come from the grid; a cut is a bar boundary whose
+  novelty (2 bars after against 2 before) reaches a share of the song's own largest; labels are shared by sections no band of
+  which differs by more than the spread, named A..Z, AA.. by first appearance. *Reason:* the prototype's names wrapped after
+  16 and audio before the first downbeat belonged to no section. The 4-bar phrase snap is off by default: it deleted real
+  6-bar sections and rested on three songs.
+- **Key by power-weighted chroma and Krumhansl–Schmuckler** (2026-11-12), with its own long window (a semitone at 100 Hz is
+  narrower than the shared window's bin). The prototype normalised chroma per frame and discarded the correlation; now the
+  correlation is the confidence and the margin over the runner-up shows the relative-key ambiguity.
+- **`drops()` ships because it passed its gate** (2026-11-12): all positives and every decoy (riser, fade-in, half-time kick,
+  silent gap, drop down, loud hats). The rule is the song's own bar levels (lowest and highest fifth of the 10th–90th span)
+  with one absolute figure, a minimum span of 10 dB below which a song has no drops, because hats leak 1.6 dB into the bass
+  bands. *Cost:* only bass steps; real music is unverified.
+- **Grid confidence travels in the bundle through control's format 2** (2026-11-12). Control's policy makes a new optional field a
+  new version, so control added `confidence` to `Grid` as version 2 and audio writes version 2 only when a confidence is set. The
+  key has no slot in the format and travels as one labelled event.
+- **Licences: permissive or file-level copyleft only** (2026-11-12). The libraries are to be open source and a paid product is to
+  be built on them, so dependencies must be MIT, Apache-2.0, BSD, Unicode or MPL-2.0 (`deny.toml`); no GPL, AGPL or LGPL, and a
+  model's weights must allow commercial use before they enter the catalogue. A3 added no dependency (tempo crates were GPL or
+  unmaintained; no maintained chroma crate; clustering crates cost about twelve dependencies for ten points).
+
 ## Project
 
 - **The tooling comes from the rust-project-template** (copier, Python-only: one gate, `uv run poe check`; the hooks, CI

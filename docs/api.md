@@ -2,7 +2,9 @@
 
 **Built in part.** Load, `from_samples`, `cut`, `fade`, `mono`, `resampled`, `write`, `origin` and `bt-audio info` exist (A1,
 tested in `tests/test_sound.py` and `crates/core/tests/it/`), and so do `energy(band)`, `brightness()`, `loudness()`,
-`onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`); stems and `bundle()` are design.
+`onsets()`, `normalised(lufs)` and `with_analysis(...)` (A2, `tests/test_measures.py`), and `grid()`, `sections()`, `section(i)`,
+`key()`, `drops()`, `bundle()`, `summary()`, `with_structure(...)` and `bt-audio analyse` (A3, `tests/test_structure_measures.py`);
+stems and notes are design.
 Each task below shows the intended call in Python and Rust; the batch that builds it is named
 in [roadmap.md](roadmap.md). When a batch lands, its blocks become tests (Python) and doctests (Rust), as in
 bullterrier-control's `docs/api.md`. Changing a call here is a design change: update this file first.
@@ -60,7 +62,16 @@ level in dBFS, `floor` (default -80 dB) mapping to 0 and 0 dB to 1, saturating. 
 short-term window) and reads -70 for anything quieter (the standard's gate). `onsets()` finds the same onsets, within one hop,
 at the hops tested (5 to 20 ms); the lag is rounded to whole frames, so a hop near the lag blurs it.
 
-`print(song.summary())` gives the same as text; `bt-audio info song.wav` prints it.
+`Structure` (tempo range, tolerance, the margins that choose between candidate tempos and meters, section length and novelty,
+label spread, chroma range, the drop rule: each with unit, range, default and evidence) is set the same way with
+`song.with_structure(tempo_max=200)`. `grid()` finds one steady tempo, one meter (3 or 4) and the downbeat from the low end; its
+`confidence` is near 0 when no beat is accented (four-on-the-floor). A sound with no beat, or shorter than 3 s, cannot be
+bundled (`InvalidError`). `drops()` was validated on synthesised arrangements and decoys (risers, fades, half-time kicks, silent
+gaps); it is conservative: a missing drop is preferred to a false one. The key travels in a bundle as one labelled event
+(`key`, e.g. "F minor"), because bundle format 2 has no key slot.
+
+`print(song.summary())` gives the same as text; `bt-audio info song.wav` prints the rate, channels and duration, and
+`bt-audio analyse song.wav -o song.bundle.json` writes the bundle.
 
 ## 3. Ask a stem
 
@@ -150,5 +161,5 @@ measures are registered too, so `bundle()` and the command list them all; the ty
 | Models | ONNX, run from the Rust core with image's pattern: pinned URL and sha256, the runtime loaded at run time, `bt-audio install`, `bt-audio models`, `bt-audio doctor`; no download at import, no prompt from the library | No torch or TensorFlow environments; the same in Python, Rust and an app |
 | A model missing | `ModelUnavailableError` naming the install command; never a silent other method | One backend per measure, chosen in design, as image's finders |
 | Errors | `BullterrierAudioError` > `DecodeError` and `WriteError` (also `OSError`), `InvalidError` (also `ValueError`), `ModelUnavailableError` (also `NotImplementedError`, with A4) | The house pattern |
-| Grid | `beats`, `meter`, `first_downbeat` only, as control's bundle v1; `tempo(i)` and `downbeats()` are methods. `confidence` has no slot in v1: a change for control before A3 | The format is control's; audio writes it, it does not extend it |
+| Grid | `beats`, `meter`, `first_downbeat` and `confidence` (control's bundle format 2); `tempo(i)` and `downbeats()` are methods. A bundle is version 1 without a confidence and version 2 with one (the lowest version that carries the data) | The format is control's; audio writes it, it does not extend it |
 | Limits of the first version | Steady tempo (no tempo map), one meter per song, straight time (no swing) | Stated in `summary()` and the docs, not hidden |
