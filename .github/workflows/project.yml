@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  # The Rust tests that need the ONNX Runtime library and the Basic Pitch model (`#[ignore]`d in `check`). The first run
-  # downloads both (BT_AUDIO_ALLOW_DOWNLOAD, verified against the pinned SHA-256); the cache keeps them under the
+  # The Rust tests that need the ONNX Runtime library and the Basic Pitch model (`#[ignore]`d in `check`). `bt-audio install`
+  # downloads both on the first run (verified against the pinned SHA-256); the cache keeps them under the
   # catalogue's and the runtime's source, which pin the files.
   models:
     name: Tests with the installed models
@@ -33,7 +33,9 @@ jobs:
           key: bt-audio-${{ hashFiles('crates/core/src/models/catalogue.rs', 'crates/core/src/models/runtime.rs') }}
       - name: Install the locked dependencies (builds the Rust extension)
         run: uv sync --locked
-      - name: Rust tests that need the models
-        env:
-          BT_AUDIO_ALLOW_DOWNLOAD: "1"
+      # Installed first, by the command a user runs: the tests run in parallel and several need the runtime and the model
+      # present before they start (a test that downloads would race the others).
+      - name: Install the ONNX Runtime and the models (bt-audio install)
+        run: uv run --locked bt-audio install --yes
+      - name: Rust and Python tests that need the models
         run: uv run --locked poe rust-test-models
