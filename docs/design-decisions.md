@@ -175,12 +175,12 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 - **Measures by name: a trait, a Registry value, one plugin boundary** (2026-11-12). `Measure` (name, description, unit, scaling, identity,
   `measure(&Sound)`) returns a `Measurement` (a `Series` or a list of `Event`s); `Registry` is a value (`builtin()`, `new()`, `register`,
   `get`, sorted `names`), as bullterrier-control's is. The twelve built-ins (`energy.sub` … `energy.air`, `brightness`, `loudness`,
-  `onsets`, `sections`, `drops`, `key`) are registered under the names `bundle()` always wrote (a test pinned the bundle byte for byte
-  before and after); `grid` stays the bundle's typed slot, and `notes`, `hits`, `stems` are typed methods, not registered, because a
+  `onsets`, `sections`, `drops`, `key`) are registered under the names `bundle()` always wrote (compared byte for byte before and after the
+  refactor, in the review, not kept as a golden file); `grid` stays the bundle's typed slot, and `notes`, `hits`, `stems` are typed methods, not registered, because a
   bundle must not depend on a download. Series and events share one namespace; a built-in name can never be replaced; the same
   identity registered again replaces itself (a reloaded module). Registration checks the name (the bundle's pattern), the description
-  and the unit/scaling pair once; `bundle()` checks the returned kind and unit against the declaration and the writer checks the
-  format. A plugin's own exception is re-raised unchanged. Plugin results are not memoised (a `shortcut:` comment): asking twice runs
+  and the unit/scaling pair once; `measure()` (and so `bundle()`) checks the returned kind, unit and scaling against the declaration and the bundle writer checks the
+  rest of the format; the bundle reports the error of the first failing measure in name order. A plugin's own exception is re-raised unchanged. Plugin results are not memoised (a `shortcut:` comment): asking twice runs
   it twice. Python holds one process-wide registry; entry points of `bullterrier_audio.measures` load lazily on the first query, never
   at import, one failing entry point is restored and named. *Rule 4 was amended*: a built-in is one file plus one line in the list.
 - **Parameter structs are built from a parts struct** (2026-11-12): `Structure::new(StructureParts { tempo_max: 170.0,

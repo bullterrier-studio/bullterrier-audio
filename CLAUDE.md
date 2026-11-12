@@ -103,7 +103,7 @@ where they are stricter. This file is the project's: an update never changes it.
    `grid`).
 3. **Parameters are declared once**, with unit, range and description.
 4. **Open/closed at the plugin boundary:** a plugin measure modifies nothing in the package (it registers by name, decorator or
-   entry point). A built-in measure is one file plus one line in the built-in list of `Registry::builtin()` (amended in A7: a
+   entry point). A built-in measure is a struct in `builtin.rs` plus one line in the built-in list of `Registry::builtin()` (amended in A7: a
    hand-kept list instead of discovery at build time; the cost is that one line).
 5. **Nothing tuned to one song.** Every threshold is relative to the input (its own levels, percentiles, tempo) or a named,
    documented parameter with its evidence. No song, artist or preset names in code, docstrings or comments.

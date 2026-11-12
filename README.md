@@ -10,12 +10,13 @@ information retrieval (MIR).
 
 ## Status
 
-Pre-alpha. A `Sound` can be loaded (wav, flac, mp3, ogg, m4a), cut, faded, mixed to mono, resampled and written (wav,
-flac), measured (energy per frequency band, brightness, EBU R128 loudness, onsets, the beat grid with downbeats, labelled sections,
-key, drops) and normalised to a loudness. `bt-audio info FILE` prints its rate, channels and duration and `bt-audio analyse FILE
--o BUNDLE` writes everything in bullterrier-control's bundle format. `notes()` finds polyphonic notes with Basic Pitch (after `bt-audio install`). `stems()` separates a song into drums, bass, vocals, other, guitar and piano (htdemucs, after `bt-audio install`), each a `Sound`
-you can measure, cut or write (`bt-audio stems`). `hits()` finds kicks, snares and hats (ADTOF). Measures by name and the API review come next, in
-batches ([docs/roadmap.md](docs/roadmap.md)).
+Pre-alpha. A `Sound` can be loaded (wav, flac, mp3, ogg, m4a), cut, faded, mixed to mono, resampled, normalised to a loudness
+and written (wav, flac). It is measured: energy per frequency band, brightness, EBU R128 loudness, onsets, the beat grid with
+downbeats, labelled sections, key and drops, and, after `bt-audio install`, notes (Basic Pitch), stems (htdemucs: drums, bass,
+vocals, other, guitar, piano, each a `Sound`) and drum hits (ADTOF). `bt-audio info FILE` prints its rate, channels and duration,
+`bt-audio analyse FILE -o BUNDLE` writes everything in bullterrier-control's bundle format, and `bt-audio stems FILE -o DIR` writes the
+stems. Your own measures plug in by name (`@bta.measure`, or an entry point in the `bullterrier_audio.measures` group) and join
+`bundle()` and `analyse`. What can be added next is in [docs/roadmap.md](docs/roadmap.md).
 
 ```bash
 uv sync
