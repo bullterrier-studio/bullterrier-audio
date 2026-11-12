@@ -6,3 +6,4 @@ mod common;
 
 mod architecture;
 mod scale;
+mod sound;

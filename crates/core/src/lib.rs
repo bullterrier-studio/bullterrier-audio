@@ -6,8 +6,11 @@
 
 #![forbid(unsafe_code)]
 
+mod decode;
 mod error;
 mod scaling;
+mod sound;
 
 pub use error::Error;
 pub use scaling::scale;
+pub use sound::{Origin, Sound};

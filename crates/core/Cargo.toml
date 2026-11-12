@@ -15,8 +15,14 @@ name = "bullterrier_audio"
 # Set it to true only for a public item whose docs need a runnable bullterrier-audio.
 doctest = false
 
+[dependencies]
+symphonia.workspace = true
+thiserror.workspace = true
+
 [dev-dependencies]
+hound.workspace = true
 proptest.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

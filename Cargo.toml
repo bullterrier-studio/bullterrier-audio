@@ -15,9 +15,14 @@ publish = false
 
 [workspace.dependencies]
 bullterrier-audio = { path = "crates/core" }
+hound = "3.5"
 proptest = "1.12"
 # abi3-py312: one wheel per platform serves every Python from 3.12 (the oldest the package supports)
 pyo3 = { version = "0.30", features = ["abi3-py312"] }
+# decoding: the containers and codecs a user's files come in; id3 tags are skipped, not read, so mp3 files with them open
+symphonia = { version = "0.6", default-features = false, features = ["wav", "flac", "mp3", "ogg", "vorbis", "isomp4", "aac", "pcm", "id3v1", "id3v2"] }
+tempfile = "3.27"
+thiserror = "2"
 
 # Warnings, not errors, so a newer compiler's new lint never breaks a user's install; the gate (`poe check`) runs clippy
 # and rustdoc with `-D warnings`, so every one fails it.
