@@ -140,12 +140,10 @@ rust-test-layout = { cmd = "python tools/check_rust_test_layout.py", help = "Che
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
 # The project's own gates and the steps only `full` runs: the template ships these two lines as no-ops and never changes
 # them again, so a project replaces each with a sequence of its tasks without a conflict at the next update
-# The `onnx` feature of the core (models/) is off in the workspace-wide Rust gates above (the core's default has no features):
-# these run clippy, rustdoc and the tests again with it on.
-rust-lint-onnx = { cmd = "cargo clippy --workspace --all-targets --features bullterrier-audio/onnx --locked --quiet -- -D warnings", help = "Lint the Rust code with the core's onnx feature on" }
-rust-doc-onnx = { cmd = "cargo doc --workspace --no-deps --features bullterrier-audio/onnx --locked --quiet", env = { RUSTDOCFLAGS = "-D warnings" }, help = "Build the Rust documentation with the core's onnx feature on" }
-rust-test-onnx = { cmd = "python tools/run_capped.py -- cargo test --workspace --features bullterrier-audio/onnx --locked --quiet --no-fail-fast", help = "Run the Rust tests under the memory cap with the core's onnx feature on" }
-project-gates = { sequence = [{ ref = "rust-lint-onnx" }, { ref = "rust-doc-onnx" }, { ref = "rust-test-onnx" }], help = "The project's own gates, run last by check and full: the Rust gates with the onnx feature on" }
+# The workspace-wide Rust gates above build the core with its default `onnx` feature (the bindings need it, so features unify).
+# This builds the opposite configuration, a Rust user's `default-features = false`: clippy and the tests without models.
+rust-no-default-features = { sequence = ["cargo clippy -p bullterrier-audio --no-default-features --all-targets --locked --quiet -- -D warnings", "python tools/run_capped.py -- cargo test -p bullterrier-audio --no-default-features --locked --quiet --no-fail-fast"], default_item_type = "cmd", help = "Lint and test the core without its default onnx feature" }
+project-gates = { sequence = [{ ref = "rust-no-default-features" }], help = "The project's own gates, run last by check and full: the core without its default features" }
 # The tests that need the installed model run only here, never in `check`: they are `#[ignore]`d, and this is the gate step that runs them
 rust-test-models = { sequence = ["python tools/run_capped.py -- cargo test --workspace --locked --features bullterrier-audio/onnx --quiet -- --ignored", "python tools/run_capped.py -- pytest -q -n 0 -m models"], default_item_type = "cmd", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the Rust and Python tests that need the installed ONNX Runtime and Basic Pitch model (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them)" }
 project-full = { sequence = [{ ref = "rust-test-models" }], help = "The project's own steps that only full runs: the Rust tests that need the installed model" }
