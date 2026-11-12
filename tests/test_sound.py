@@ -250,6 +250,13 @@ def test_stems_without_the_library_or_the_models_say_to_install_them(no_models):
     assert not no_models.exists()  # nothing was downloaded or created
 
 
+@pytest.mark.parametrize("level", [0.0, 0.5], ids=["silence", "a constant level"])
+def test_a_constant_sound_is_its_level_in_all_six_stems_with_nothing_installed(level):
+    stems = Sound.from_samples(np.full((2, 4410), level, dtype=np.float32), 44100).stems()
+    assert len(stems) == 6
+    assert all(np.all(part.samples == level) for part in map(stems.get, stems))
+
+
 @pytest.mark.models
 def test_a_missing_ensemble_model_is_reported_before_any_separation_starts(request):
     """The six-source model is there, the library and the ft models are not: asking for the ensemble names the ft

@@ -245,6 +245,9 @@ impl Mix<'_> {
 /// not hold the stems.
 #[cfg(feature = "onnx")]
 pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
+    use std::cell::OnceCell;
+    use std::path::PathBuf;
+
     use crate::models::{Model, Options, OrtInfer, ensemble_models, model_file, models, runtime_library};
 
     let options = Options::from_env();
@@ -255,41 +258,69 @@ pub(crate) fn installed(sound: &Sound) -> Result<Stems, Error> {
         .collect();
     let hashes: Vec<&str> = used.iter().map(|model| model.sha256).collect();
     let threads = sound.separation().threads() as usize;
+    let needs: OnceCell<Result<(Vec<PathBuf>, PathBuf), Error>> = OnceCell::new();
+    let found = || {
+        needs
+            .get_or_init(|| {
+                let files = used
+                    .iter()
+                    .map(|model| model_file(model, &options))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok((files, runtime_library(&options)?))
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    };
+    // a session holds gigabytes: separation never uses the sessions `OrtInfer::open` keeps for the life of the
+    // process, so that dropping one frees its memory. `used` is the six-source model, then drums, bass, other, vocals
+    let compute = || {
+        let open = |at: usize| {
+            let (files, library) = found()?;
+            OrtInfer::from_file(library, &files[at], threads)
+        };
+        if ensemble {
+            sound.stems_with_ensemble(|| open(0), |stem| open(1 + stem.index()))
+        } else {
+            separate(sound, || open(0))
+        }
+    };
+    // a constant sound opens no model, so it needs none installed, and it is cheaper to make than to read back: it
+    // skips the cache
+    if has_no_spread(sound) {
+        return compute();
+    }
+    // every file is found (and verified) before the cache folder is made and before the first session opens, so a
+    // missing model fails at once and not after the passes of the models before it
     crate::stem_cache::cached(
         sound,
         &options.cache()?,
         &hashes,
-        // every file is found (and verified) before the cache folder is made and before the first session opens, so a
-        // missing model fails at once and not after the passes of the models before it; `used` is the six-source
-        // model, then drums, bass, other, vocals
-        || {
-            let files = used
-                .iter()
-                .map(|model| model_file(model, &options))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok((files, runtime_library(&options)?))
-        },
-        |(files, library)| {
-            // a session holds gigabytes: separation never uses the sessions `OrtInfer::open` keeps for the life of
-            // the process, so that dropping one frees its memory
-            let open = |file: &std::path::Path| OrtInfer::from_file(&library, file, threads);
-            if ensemble {
-                sound.stems_with_ensemble(|| open(&files[0]), |stem| open(&files[1 + stem.index()]))
-            } else {
-                sound.stems_with(&open(&files[0])?)
-            }
-        },
+        || found().map(|_| ()),
+        |()| compute(),
     )
 }
 
-/// Separates `sound` with the single model.
-pub(crate) fn separate(sound: &Sound, model: &impl Infer) -> Result<Stems, Error> {
+/// Whether the mean of the channels of `sound` (as `separate_with` takes it) is one value throughout, so that
+/// separation runs no model. Tested on the sound as it is: one that is constant only after resampling is not found
+/// here, and `separate_with` then asks for the models.
+#[cfg(feature = "onnx")]
+#[allow(clippy::float_cmp)] // exact: a spread of exactly 0 is what `separate_with` tests
+fn has_no_spread(sound: &Sound) -> bool {
+    let samples = sound.samples();
+    let second = samples.get(1).unwrap_or(&samples[0]);
+    let mean = |t: usize| f64::midpoint(f64::from(samples[0][t]), f64::from(second[t]));
+    (1..samples[0].len()).all(|t| mean(t) == mean(0))
+}
+
+/// Separates `sound` with the single model, which `model` opens only if the sound is not constant.
+pub(crate) fn separate<M: Infer>(sound: &Sound, model: impl FnOnce() -> Result<M, Error>) -> Result<Stems, Error> {
     separate_with(sound, false, |mix| {
+        let model = model()?;
         run(
             mix,
             sound.separation(),
             &mut Generator(sound.separation().seed()),
-            model,
+            &model,
             STEMS,
             &(0..STEMS * CHANNELS).collect::<Vec<_>>(),
         )

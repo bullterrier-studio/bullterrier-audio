@@ -473,7 +473,7 @@ impl Sound {
     /// naming `rate` when the sound cannot be resampled to 44.1 kHz; when `model` does not answer as `HTDemucs` does (one
     /// output of shape 1 by 6 by 2 by 343 980) or fails.
     pub fn stems_with(&self, model: &impl Infer) -> Result<Stems, Error> {
-        stems::separate(self, model)
+        stems::separate(self, || Ok(model))
     }
 
     /// The stems of the sound by the ensemble recipe, whatever [`Separation::ensemble`] says (it is

@@ -49,6 +49,12 @@ pub trait Infer: Send + Sync {
     fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error>;
 }
 
+impl<T: Infer + ?Sized> Infer for &T {
+    fn infer(&self, input: &Tensor) -> Result<Vec<Tensor>, Error> {
+        (**self).infer(input)
+    }
+}
+
 /// A graph optimisation level of the runtime. The one the models run under is [`GRAPH_OPTIMISATION`]: one decision, read by
 /// `models::OrtInfer` (which opens its sessions with it) and by the key of the stems on disk (the optimised graph can
 /// change the numbers, so a change here must change the key).
