@@ -16,8 +16,11 @@ name = "bullterrier_audio"
 doctest = false
 
 [features]
-# Running models through ONNX Runtime (`models`): the library is loaded at run time, none is bundled. Off by default; the
-# project gates (`project-gates` in pyproject.toml) build and test it, and the bindings will enable it.
+# Running models through ONNX Runtime (`models`): the library is loaded at run time, none is bundled. On by default because
+# the bindings (and so the wheel) need it and name the core only as `bullterrier-audio.workspace` (tests/tools/test_project_wiring.py
+# pins that line, so the bindings cannot enable a feature of their own); a Rust user who wants no network stack sets
+# `default-features = false`.
+default = ["onnx"]
 onnx = ["dep:dirs", "dep:flate2", "dep:ort", "dep:sha2", "dep:tar", "dep:ureq", "dep:zip"]
 
 [dependencies]

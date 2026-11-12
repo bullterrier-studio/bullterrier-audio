@@ -8,7 +8,7 @@ message says what was wrong and what is valid. A subclass also inherits the buil
 Dependency direction: the bottom layer. It imports nothing from bullterrier_audio, so every layer may raise them.
 """
 
-__all__ = ["BullterrierAudioError", "DecodeError", "InvalidError", "WriteError"]
+__all__ = ["BullterrierAudioError", "DecodeError", "InvalidError", "ModelUnavailableError", "WriteError"]
 
 
 class BullterrierAudioError(Exception):
@@ -21,6 +21,11 @@ class InvalidError(BullterrierAudioError, ValueError):
 
 class DecodeError(BullterrierAudioError, OSError):
     """A file cannot be read as sound: missing, not audio, or corrupt. The message names the file."""
+
+
+class ModelUnavailableError(BullterrierAudioError, NotImplementedError):
+    """A model or the ONNX Runtime library is not installed or cannot be used. The message says how to get it: run
+    `bt-audio install`."""
 
 
 class WriteError(BullterrierAudioError, OSError):

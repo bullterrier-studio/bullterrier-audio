@@ -102,13 +102,13 @@ dev = [
 # Three tiers (docs/rules.md, "Three tiers"): `fast` while working, `check` before a push to main, `full` before a tag and in CI. The tests that
 # prove a gate fails on a known-bad input copy the workspace and build in it (marked `gate`), and the shared tools' own tests are the
 # same in every project (marked `tooling`): `test` is the project's own suite, and `gate-tests` runs both when the tooling changed.
-test = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'not gate and not tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the project's test suite on every CPU core (pytest-xdist; the order stays random), without the tests of the tooling" }
+test = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'not gate and not tooling and not models'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the project's test suite on every CPU core (pytest-xdist; the order stays random), without the tests of the tooling" }
 gate-tests = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'gate or tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the tests of the tooling: the proofs that each gate fails on a known-bad input, and the shared tools' own tests" }
 # Not part of `check`: the suite on the oldest Python and the lowest release each direct dependency's floor allows, in a
 # throwaway environment (uv.lock and the project environment stay as they are; the first run downloads the old
 # releases). It is for CI. Tests marked `typecheck` are left out because mypy's verdict on our source depends on the
 # dependencies' own type annotations, which are not what this checks; tests marked `gate` or `tooling` because they test our tooling (`poe gate-tests`).
-check-min-deps = { cmd = "python tools/run_capped.py -- uv run --isolated --python 3.12 --resolution lowest-direct pytest -q -n auto -m 'not typecheck and not gate and not tooling'", help = "Run the suite on Python 3.12 against the lowest allowed release of every dependency" }
+check-min-deps = { cmd = "python tools/run_capped.py -- uv run --isolated --python 3.12 --resolution lowest-direct pytest -q -n auto -m 'not typecheck and not gate and not tooling and not models'", help = "Run the suite on Python 3.12 against the lowest allowed release of every dependency" }
 # Not part of `check`: it asks the PyPI vulnerability database about every locked package (runtime, extras and dev
 # tools, pinned by hash), so it needs the network and its verdict changes as advisories are published. For CI and
 # before a release; an advisory with no fixed release is ignored with `--ignore-vuln ID` and listed in SECURITY.md.
@@ -147,7 +147,7 @@ rust-doc-onnx = { cmd = "cargo doc --workspace --no-deps --features bullterrier-
 rust-test-onnx = { cmd = "python tools/run_capped.py -- cargo test --workspace --features bullterrier-audio/onnx --locked --quiet --no-fail-fast", help = "Run the Rust tests under the memory cap with the core's onnx feature on" }
 project-gates = { sequence = [{ ref = "rust-lint-onnx" }, { ref = "rust-doc-onnx" }, { ref = "rust-test-onnx" }], help = "The project's own gates, run last by check and full: the Rust gates with the onnx feature on" }
 # The tests that need the installed model run only here, never in `check`: they are `#[ignore]`d, and this is the gate step that runs them
-rust-test-models = { cmd = "python tools/run_capped.py -- cargo test --workspace --locked --features bullterrier-audio/onnx --quiet -- --ignored", help = "Run the Rust tests that need the installed ONNX Runtime and Basic Pitch model (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them)" }
+rust-test-models = { sequence = ["python tools/run_capped.py -- cargo test --workspace --locked --features bullterrier-audio/onnx --quiet -- --ignored", "python tools/run_capped.py -- pytest -q -n 0 -m models"], default_item_type = "cmd", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the Rust and Python tests that need the installed ONNX Runtime and Basic Pitch model (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them)" }
 project-full = { sequence = [{ ref = "rust-test-models" }], help = "The project's own steps that only full runs: the Rust tests that need the installed model" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
 gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, docs, dependencies, types, tests, the project's own)" }
@@ -213,6 +213,7 @@ markers = [
     "gate: proves a gate fails on a known-bad input in a copy of the workspace; slow, so `poe test` and `poe check` leave it out unless the change touches [tool.gate-proofs]; `poe gate-tests` and `poe full` run it",
     "control: a gate proof's known-good side (the gate passes on the unchanged copy); `check` leaves it to `full`, which runs every proof",
     "tooling: tests a shared tool of the template (the same file in every project, tested in the template too); `poe test` leaves it out, `poe gate-tests` runs it with the proofs",
+    "models: needs the installed ONNX Runtime library and Basic Pitch model; `poe test` leaves it out, `poe rust-test-models` runs it",
     "typecheck: type-checks the package with mypy; `poe check-min-deps` leaves it out",
 ]
 # Every warning fails the test that raised it: a leaked file or process (ResourceWarning), a deprecated call, and, when

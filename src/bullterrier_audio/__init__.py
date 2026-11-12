@@ -14,6 +14,7 @@ from ._native._core import (
     Grid,
     Key,
     Mode,
+    Notes,
     Origin,
     Section,
     Series,
@@ -21,7 +22,7 @@ from ._native._core import (
     Structure,
     load,
 )
-from .errors import BullterrierAudioError, DecodeError, InvalidError, WriteError
+from .errors import BullterrierAudioError, DecodeError, InvalidError, ModelUnavailableError, WriteError
 
 __version__ = metadata.version("bullterrier-audio")
 
@@ -36,6 +37,8 @@ __all__ = [
     "InvalidError",
     "Key",
     "Mode",
+    "ModelUnavailableError",
+    "Notes",
     "Origin",
     "Section",
     "Series",

@@ -3,6 +3,7 @@
 //! the first one is raised: importing the extension imports nothing of the package.
 
 mod error;
+mod onnx;
 
 use std::path::PathBuf;
 
@@ -16,7 +17,11 @@ use bullterrier_audio::Error;
 #[pymodule]
 mod _core {
     #[pymodule_export]
-    use super::{Analysis, Band, Bundle, Event, Grid, Key, Mode, Origin, Section, Series, Sound, Structure, load};
+    use super::onnx::{ModelInfo, cache_dir, install, models, onnx_runtime_status};
+    #[pymodule_export]
+    use super::{
+        Analysis, Band, Bundle, Event, Grid, Key, Mode, Notes, Origin, Section, Series, Sound, Structure, load,
+    };
 }
 
 /// Where a sound came from: `source`, the file it was loaded from (`None` for a sound made from samples), and `offset`,
@@ -256,6 +261,21 @@ struct Structure {
     drop_bars: u32,
     drop_share: f64,
     drop_min_span: f64,
+}
+
+/// How the notes of a sound are found (units and ranges in the Rust core's `Notes`). Read it from `Sound.notes_params`;
+/// change it with `Sound.with_notes`.
+#[pyclass(frozen, get_all, module = "bullterrier_audio")]
+struct Notes {
+    onset_threshold: f64,
+    frame_threshold: f64,
+    min_note: f64,
+    energy_tolerance: f64,
+    merge_gap: f64,
+    reattack: f64,
+    ghost_share: f64,
+    partial_share: f64,
+    partial_overlap: f64,
 }
 
 /// A sound: one or more channels of float32 samples at one sample rate. It never changes; an edit returns a new one.
@@ -508,6 +528,66 @@ impl Sound {
                 confidence: key.confidence,
                 margin: key.margin,
             })
+            .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The note parameters `notes` reads.
+    #[getter]
+    fn notes_params(&self) -> Notes {
+        let n = self.0.notes_params();
+        Notes {
+            onset_threshold: n.onset_threshold(),
+            frame_threshold: n.frame_threshold(),
+            min_note: n.min_note(),
+            energy_tolerance: n.energy_tolerance(),
+            merge_gap: n.merge_gap(),
+            reattack: n.reattack(),
+            ghost_share: n.ghost_share(),
+            partial_share: n.partial_share(),
+            partial_overlap: n.partial_overlap(),
+        }
+    }
+
+    /// This sound with the note parameters with the given fields changed; a field left out (or `None`) keeps its value. A
+    /// value outside its range or NaN is an `InvalidError` naming the field.
+    #[pyo3(signature = (*, onset_threshold=None, frame_threshold=None, min_note=None, energy_tolerance=None,
+        merge_gap=None, reattack=None, ghost_share=None, partial_share=None, partial_overlap=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn with_notes(
+        &self,
+        py: Python<'_>,
+        onset_threshold: Option<f64>,
+        frame_threshold: Option<f64>,
+        min_note: Option<f64>,
+        energy_tolerance: Option<f64>,
+        merge_gap: Option<f64>,
+        reattack: Option<f64>,
+        ghost_share: Option<f64>,
+        partial_share: Option<f64>,
+        partial_overlap: Option<f64>,
+    ) -> PyResult<Self> {
+        let n = self.0.notes_params();
+        bullterrier_audio::Notes::new(
+            onset_threshold.unwrap_or(n.onset_threshold()),
+            frame_threshold.unwrap_or(n.frame_threshold()),
+            min_note.unwrap_or(n.min_note()),
+            energy_tolerance.unwrap_or(n.energy_tolerance()),
+            merge_gap.unwrap_or(n.merge_gap()),
+            reattack.unwrap_or(n.reattack()),
+            ghost_share.unwrap_or(n.ghost_share()),
+            partial_share.unwrap_or(n.partial_share()),
+            partial_overlap.unwrap_or(n.partial_overlap()),
+        )
+        .map(|notes| Self(self.0.with_notes(notes)))
+        .map_err(|error| error::raised(py, &error))
+    }
+
+    /// The notes, as events (`t` the start, `duration`, `pitch` the MIDI number), found by the Basic Pitch model. It needs
+    /// the ONNX Runtime library and the model: without them a `ModelUnavailableError` says to run `bt-audio install`. It
+    /// downloads them only if the environment variable `BT_AUDIO_ALLOW_DOWNLOAD` is set to `1`.
+    fn notes(&self, py: Python<'_>) -> PyResult<Vec<Event>> {
+        py.detach(|| self.0.notes())
+            .map(|events| events.into_iter().map(Event::from).collect())
             .map_err(|error| error::raised(py, &error))
     }
 

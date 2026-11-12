@@ -107,3 +107,14 @@ def arrangement():
             (0.7 + (0.3 if k % 4 == 0 else 0.0)) * ramp * np.sin(2 * np.pi * 60.0 * np.arange(n) / RATE)
         )
     return Sound.from_samples(out[None].astype(np.float32), RATE)
+
+
+@pytest.fixture
+def no_models(tmp_path, monkeypatch):
+    """The environment of a computer where nothing is installed and downloading is off: an empty cache folder (the
+    platform's cache folders all point into tmp_path), no library named, no download allowed. Returns the cache."""
+    for name in ("BT_AUDIO_ONNX_LIB", "BT_AUDIO_ALLOW_DOWNLOAD"):
+        monkeypatch.delenv(name, raising=False)
+    for name in ("HOME", "XDG_CACHE_HOME", "LOCALAPPDATA"):
+        monkeypatch.setenv(name, str(tmp_path / "home"))
+    return tmp_path / "home"
