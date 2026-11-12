@@ -7,6 +7,7 @@ use jsonschema::Validator;
 use serde_json::Value;
 
 pub(crate) mod arrangement;
+pub(crate) mod drums;
 
 /// Every `.rs` file under `dir`, sorted.
 pub(crate) fn rust_files(dir: &Path) -> Vec<PathBuf> {
