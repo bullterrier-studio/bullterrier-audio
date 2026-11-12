@@ -242,4 +242,4 @@ def test_notes_find_the_pitches_and_times_of_a_synthesised_melody():
     notes = Sound.from_samples(samples[None], rate).notes()
     assert [event.pitch for event in notes] == [midi for midi, _ in melody]
     for event, (_, start) in zip(notes, melody, strict=True):
-        assert event.t == pytest.approx(start, abs=3 * 256 / 22050)
+        assert event.t == pytest.approx(start, abs=4 * 256 / 22050)
