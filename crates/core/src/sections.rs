@@ -193,7 +193,8 @@ fn snap(candidates: &[(usize, f64)], novelty: &[f64], n: usize, bars: usize) -> 
             } else {
                 return None;
             };
-            (1..bars).contains(&snapped).then_some((snapped, novelty[snapped]))
+            // lazily: `snapped` can be `bars`, which `novelty` has no entry for
+            (1..bars).contains(&snapped).then(|| (snapped, novelty[snapped]))
         })
         .collect()
 }
