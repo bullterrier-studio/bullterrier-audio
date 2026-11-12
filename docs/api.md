@@ -70,7 +70,7 @@ bundled (`InvalidError`). `drops()` was validated on synthesised arrangements an
 gaps); it is conservative: a missing drop is preferred to a false one. The key travels in a bundle as one labelled event
 (`key`, e.g. "F minor"), because bundle format 2 has no key slot.
 
-`print(song.summary())` gives the same as text; `bt-audio info song.wav` prints the rate, channels and duration, and
+`print(song.summary())` gives the measures as text; `bt-audio info song.wav` prints the rate, channels and duration, and
 `bt-audio analyse song.wav -o song.bundle.json` writes the bundle.
 
 ## 3. Ask a stem

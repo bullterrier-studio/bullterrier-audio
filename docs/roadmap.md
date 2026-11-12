@@ -65,9 +65,9 @@ Built on the onsets and band energies; `Structure` declares the parameters once,
 control's bundle format 2 (a new optional field is a new version in control); audio writes version 2 only when it has one.
 The milestone below happens in the demo repositories, not here.
 
-- `grid()`: tempo (tempogram peaks folded into a musical range by how well each grid explains the onsets, refined to 0.01 BPM
-  by the median of the near-best plateau), beat phase, downbeats, meter, `confidence` (low on four-on-the-floor, where the
-  downbeat cannot be told).
+- `grid()`: tempo (autocorrelation peaks of the onsets folded into the tempo range by how well each grid explains the onsets,
+  refined by regression of the onset times on the beat index), beat phase, downbeats, meter, `confidence` (low on
+  four-on-the-floor, where the downbeat cannot be told).
 - `sections()`: novelty on per-bar band energies; labels shared by similar sections; no fixed list of label names.
 - `key()` with its `confidence` (the correlation the prototype computed and discarded); chroma power-weighted, not
   normalised per frame.
