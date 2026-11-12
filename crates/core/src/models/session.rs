@@ -1,21 +1,26 @@
 //! Running a model with ONNX Runtime, which is loaded at run time from a library file (none is bundled).
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use ort::session::Session as OrtSession;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::value::Tensor as OrtTensor;
 
-use super::{Model, Options, model_file, runtime_library};
+use super::{Model, Options, Status, model_file, runtime_library, runtime_status};
 use crate::{Error, Infer, Tensor};
 
-/// A model file loaded into ONNX Runtime on the CPU, kept for the next call (loading takes a moment).
+/// A model file loaded into ONNX Runtime on the CPU (loading takes a moment). A handle is cheap to clone; clones are
+/// the one session. [`open`](Self::open) keeps the session it loads, so the next call for the same model and library
+/// gets it back.
 ///
 /// Determinism: the session runs one thread inside operators and one across them, and applies only the basic graph
 /// rewrites (level 1: constant folding and removal of redundant nodes), which do not depend on the processor. The same
 /// input then gives the same output on the same machine and library.
-pub struct OrtInfer {
+#[derive(Clone)]
+pub struct OrtInfer(Arc<Loaded>);
+
+struct Loaded {
     /// `run` takes the session by mutable reference, so one call at a time asks it.
     session: Mutex<OrtSession>,
     input: String,
@@ -56,51 +61,109 @@ impl OrtInfer {
             .iter()
             .map(|output| output.name().to_owned())
             .collect();
-        Ok(Self {
+        Ok(Self(Arc::new(Loaded {
             session: Mutex::new(session),
             input,
             outputs,
-        })
+        })))
     }
 
     /// `model`, found as [`model_file`] and [`runtime_library`] find them (downloading only if `options` allow), loaded.
+    /// The session is kept for the life of the process: opening the same model file with the same library again returns
+    /// it instead of loading another. A failure is never kept.
     ///
     /// # Errors
     /// As [`model_file`], [`runtime_library`] and [`from_file`](Self::from_file).
     pub fn open(model: &Model, options: &Options) -> Result<Self, Error> {
-        Self::from_file(&runtime_library(options)?, &model_file(model, options)?)
+        static KEPT: Mutex<Vec<(PathBuf, PathBuf, OrtInfer)>> = Mutex::new(Vec::new());
+        let (library, file) = (runtime_library(options)?, model_file(model, options)?);
+        // a panic while the lock is held leaves the list valid, so a poisoned lock is still usable
+        let mut kept = KEPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, _, session)) = kept.iter().find(|(l, f, _)| *l == library && *f == file) {
+            return Ok(session.clone());
+        }
+        let session = Self::from_file(&library, &file)?;
+        kept.push((library, file, session.clone()));
+        Ok(session)
     }
 
     /// The name of the input the tensor is given as.
     #[must_use]
     pub fn input_name(&self) -> &str {
-        &self.input
+        &self.0.input
     }
 
     /// The names of the outputs, in the order [`infer`](Infer::infer) returns them.
     #[must_use]
     pub fn output_names(&self) -> &[String] {
-        &self.outputs
+        &self.0.outputs
     }
 }
 
-/// The one ONNX Runtime environment of this process, made on first use from `library`: ONNX Runtime allows no second, so
-/// every session shares it and a later call with another library is refused.
+/// Loads the ONNX Runtime library that [`runtime_status`] finds for `options` (without downloading) and returns what it
+/// reports about itself (its build information: source commit and build type; the library does not give its version). Loading is what makes a library usable: a
+/// file that is not one fails here. The library stays loaded for the process, as for [`OrtInfer`].
+///
+/// # Errors
+/// [`Error::ModelUnavailable`] naming the file when it is not installed, is damaged, cannot be loaded, or is not the
+/// library this process already loaded.
+pub fn load_runtime(options: &Options) -> Result<String, Error> {
+    let library = match runtime_status(options)? {
+        Status::Installed(path) => path,
+        Status::NotInstalled(path) => {
+            return Err(Error::ModelUnavailable(format!(
+                "the ONNX Runtime library is not installed (expected at {})",
+                path.display()
+            )));
+        }
+        Status::Damaged { path, reason } => {
+            return Err(Error::ModelUnavailable(format!(
+                "the ONNX Runtime library {} is damaged: {reason}",
+                path.display()
+            )));
+        }
+    };
+    environment(&library).map_err(|error| {
+        Error::ModelUnavailable(format!(
+            "the ONNX Runtime library {} cannot be loaded: {error}",
+            library.display()
+        ))
+    })?;
+    let info = ort::info();
+    Ok(info.strip_prefix("ORT Build Info: ").unwrap_or(info).to_owned())
+}
+
+/// Two handles are equal when they are the one loaded session.
+impl PartialEq for OrtInfer {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for OrtInfer {}
+
+/// The one ONNX Runtime environment of this process, made on first success from `library`: ONNX Runtime allows no
+/// second, so every session shares it and a later call with another library is refused. A failed attempt is not kept: a
+/// later call with a good library works.
 fn environment(library: &Path) -> Result<&'static ort::environment::Environment, String> {
-    static ENVIRONMENT: OnceLock<(PathBuf, Result<ort::environment::Environment, String>)> = OnceLock::new();
-    let (loaded, made) = ENVIRONMENT.get_or_init(|| {
+    static ENVIRONMENT: OnceLock<(PathBuf, ort::environment::Environment)> = OnceLock::new();
+    static MAKING: Mutex<()> = Mutex::new(());
+    let _one_at_a_time = MAKING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (loaded, environment) = if let Some(made) = ENVIRONMENT.get() {
+        made
+    } else {
         let made = ort::environment::init_from(library)
             .map_err(|error| error.to_string())
-            .and_then(|builder| builder.build().map_err(|error| error.to_string()));
-        (library.to_path_buf(), made)
-    });
-    match made {
-        Ok(_) if loaded != library => Err(format!(
+            .and_then(|builder| builder.build().map_err(|error| error.to_string()))?;
+        ENVIRONMENT.get_or_init(|| (library.to_path_buf(), made))
+    };
+    if loaded == library {
+        Ok(environment)
+    } else {
+        Err(format!(
             "ONNX Runtime is already loaded from {}, and a process loads one library only",
             loaded.display()
-        )),
-        Ok(environment) => Ok(environment),
-        Err(error) => Err(error.clone()),
+        ))
     }
 }
 
@@ -116,13 +179,15 @@ impl Infer for OrtInfer {
             .map_err(|error| invalid(&error))?;
         let tensor = OrtTensor::from_array((shape, input.values().to_vec())).map_err(|error| invalid(&error))?;
         let mut session = self
+            .0
             .session
             .lock()
             .map_err(|_| Error::Invalid("a model run panicked earlier".to_owned()))?;
         let outputs = session
-            .run(ort::inputs![self.input.as_str() => tensor])
+            .run(ort::inputs![self.0.input.as_str() => tensor])
             .map_err(|error| invalid(&error))?;
-        self.outputs
+        self.0
+            .outputs
             .iter()
             .map(|name| {
                 let (shape, values) = outputs[name.as_str()]

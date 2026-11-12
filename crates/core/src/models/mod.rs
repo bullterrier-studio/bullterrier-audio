@@ -21,5 +21,5 @@ pub use runtime::{
     Archive, RUNTIME_VERSION, Runtime, install_runtime, install_runtime_release, runtime_library, runtime_status,
     runtimes,
 };
-pub use session::OrtInfer;
+pub use session::{OrtInfer, load_runtime};
 pub use status::Status;

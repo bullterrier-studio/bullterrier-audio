@@ -9,7 +9,7 @@ use std::thread;
 
 use bullterrier_audio::models::{
     Archive, Model, ModelKind, Options, OrtInfer, Runtime, Status, fetch, install_model, install_runtime_release,
-    model_file, model_status, models, runtime_library, runtime_status, runtimes,
+    load_runtime, model_file, model_status, models, runtime_library, runtime_status, runtimes,
 };
 use bullterrier_audio::{Error, Infer, Tensor};
 use sha2::{Digest, Sha256};
@@ -482,6 +482,21 @@ mod where_things_are {
     }
 
     #[test]
+    fn a_file_that_is_not_a_library_is_installed_but_cannot_be_loaded() -> Outcome {
+        let dir = tempfile::tempdir()?;
+        let junk = dir.path().join("junk.dylib");
+        std::fs::write(&junk, b"not a library")?;
+        let options = Options::new().with_cache(dir.path()).with_library(&junk);
+        assert_eq!(runtime_status(&options)?, Status::Installed(junk));
+        assert!(matches!(load_runtime(&options), Err(Error::ModelUnavailable(m)) if m.contains("junk.dylib")));
+        let missing = Options::new()
+            .with_cache(dir.path())
+            .with_library(dir.path().join("gone.dylib"));
+        assert!(matches!(load_runtime(&missing), Err(Error::ModelUnavailable(m)) if m.contains("gone.dylib")));
+        Ok(())
+    }
+
+    #[test]
     fn a_library_that_is_not_there_cannot_be_loaded() -> Outcome {
         let dir = tempfile::tempdir()?;
         let loaded = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &dir.path().join("m.onnx"));
@@ -561,5 +576,40 @@ fn the_real_basic_pitch_has_the_verified_input_and_outputs() -> Outcome {
             .all(|o| o.values().iter().all(|v| (0.0..=1.0).contains(v))),
         "posteriors are in 0..1"
     );
+    Ok(())
+}
+
+/// ONNX Runtime allows one library per process, but a library that failed to load must not be remembered: the next call
+/// with a good one works.
+#[test]
+#[ignore = "needs the installed runtime and model: poe rust-test-models"]
+fn a_library_that_failed_to_load_does_not_stop_a_good_one_later() -> Outcome {
+    let dir = tempfile::tempdir()?;
+    let options = Options::from_env();
+    let model = model_file(&models()[0], &options)?;
+    let failed = OrtInfer::from_file(&dir.path().join("no-lib.dylib"), &model);
+    assert!(matches!(failed, Err(Error::ModelUnavailable(m)) if m.contains("no-lib.dylib")));
+    let opened = OrtInfer::open(&models()[0], &options)?;
+    assert_eq!(opened.output_names().len(), 3);
+    Ok(())
+}
+
+/// Loading takes a moment, so the session of a model is loaded once per process and every caller gets it.
+#[test]
+#[ignore = "needs the installed runtime and model: poe rust-test-models"]
+fn opening_a_model_again_gives_the_session_already_loaded() -> Outcome {
+    let options = Options::from_env();
+    let first = OrtInfer::open(&models()[0], &options)?;
+    assert!(first == OrtInfer::open(&models()[0], &options)?);
+    let own = OrtInfer::from_file(&runtime_library(&options)?, &model_file(&models()[0], &options)?)?;
+    assert!(first != own, "from_file always loads a session of its own");
+    Ok(())
+}
+
+#[test]
+#[ignore = "needs the installed runtime: poe rust-test-models"]
+fn the_installed_runtime_loads_and_reports_its_build() -> Outcome {
+    let info = load_runtime(&Options::from_env())?;
+    assert!(info.contains("git-commit-id="), "{info}");
     Ok(())
 }
