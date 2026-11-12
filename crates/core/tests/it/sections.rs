@@ -130,16 +130,35 @@ fn starts(sections: &[Section]) -> Vec<f64> {
 /// Whether every start in `found` lies within one bar of the matching `truth` (in bars of `bar` seconds) and the
 /// counts agree.
 fn near_bars(found: &[f64], truth: &[f64], bar: f64) -> bool {
-    found.len() == truth.len() && found.iter().zip(truth).all(|(f, t)| (f - t * bar).abs() <= bar)
+    near_within(found, truth, bar, bar)
+}
+
+/// As [`near_bars`], within `tolerance` seconds. Measured on the ABAB arrangement: the cuts lie 3 ms from the truth.
+fn near_within(found: &[f64], truth: &[f64], bar: f64, tolerance: f64) -> bool {
+    found.len() == truth.len() && found.iter().zip(truth).all(|(f, t)| (f - t * bar).abs() <= tolerance)
+}
+
+/// Whether every start of `sections` but the first lies on a bar start of the sound's grid: its downbeats and the
+/// bars of the same length before the first.
+fn on_bar_starts(sound: &Sound, sections: &[Section]) -> Result<bool, Error> {
+    let grid = sound.grid()?;
+    let downbeat = grid.beats[grid.first_downbeat];
+    let beat = (grid.beats[grid.beats.len() - 1] - grid.beats[0]) / (grid.beats.len() - 1) as f64;
+    let bar = beat * grid.meter.get() as f64;
+    Ok(sections[1..].iter().all(|s| {
+        let bars = (s.start - downbeat) / bar;
+        (bars - bars.round()).abs() * bar < 1e-4
+    }))
 }
 
 #[test]
 fn an_arrangement_is_cut_where_its_material_changes_and_repeats_share_a_label() -> Outcome {
     let sections = ABAB.sections()?;
     assert!(
-        near_bars(&starts(&sections), &[0.0, 8.0, 24.0, 32.0], ABAB_BAR),
+        near_within(&starts(&sections), &[0.0, 8.0, 24.0, 32.0], ABAB_BAR, 0.01),
         "{sections:?}"
     );
+    assert!(on_bar_starts(&ABAB, &sections)?, "{sections:?}");
     assert_eq!(labels(&sections), ["A", "B", "A", "B"]);
     assert!(
         (sections[0].confidence - 1.0).abs() < 1e-12,
@@ -500,6 +519,7 @@ proptest! {
             prop_assert_eq!(pair[0].end, pair[1].start);
         }
         prop_assert!(sections.iter().all(|s| s.end > s.start), "{sections:?}");
+        prop_assert!(on_bar_starts(&sound, &sections).map_err(|e| TestCaseError::fail(e.to_string()))?, "{sections:?}");
     }
 
     #[test]

@@ -411,7 +411,9 @@ impl Sound {
     }
 
     /// This sound measured under the structure with the given fields changed; a field left out (or `None`) keeps its
-    /// value. A value outside its range or NaN is an `InvalidError` naming the field.
+    /// value. `phrase_bars=0` switches the phrase grid off (`structure.phrase_bars` becomes `None`): no phrase has 0
+    /// bars, so 0 is free to mean "none", and a set `phrase_bars` can be reset. A value outside its range or NaN is
+    /// an `InvalidError` naming the field.
     #[pyo3(signature = (*, tempo_min=None, tempo_max=None, tolerance=None, slower_margin=None, meter_margin=None,
         min_section_bars=None, novelty_share=None, label_spread=None, phrase_bars=None, novelty_floor=None,
         chroma_low=None, chroma_high=None, drop_bars=None, drop_share=None, drop_min_span=None))]
@@ -445,7 +447,11 @@ impl Sound {
             min_section_bars.unwrap_or(s.min_section_bars()),
             novelty_share.unwrap_or(s.novelty_share()),
             label_spread.unwrap_or(s.label_spread()),
-            phrase_bars.or(s.phrase_bars()),
+            match phrase_bars {
+                None => s.phrase_bars(),
+                Some(0) => None,
+                Some(n) => Some(n),
+            },
             novelty_floor.unwrap_or(s.novelty_floor()),
             chroma_low.unwrap_or(s.chroma_low()),
             chroma_high.unwrap_or(s.chroma_high()),
@@ -483,8 +489,8 @@ impl Sound {
             .map_err(|error| error::raised(py, &error))
     }
 
-    /// The `index`th of `sections()` as a sound of its own, with its origin. An index out of range is an
-    /// `InvalidError`.
+    /// The `index`th of `sections()` as a sound of its own, with its origin. An index past the last section is an
+    /// `InvalidError`; a negative one is an `OverflowError` (the index is unsigned).
     fn section(&self, py: Python<'_>, index: usize) -> PyResult<Self> {
         wrap(py, py.detach(|| self.0.section(index)))
     }

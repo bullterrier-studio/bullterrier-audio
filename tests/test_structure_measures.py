@@ -66,9 +66,16 @@ def test_a_section_is_a_sound_cut_from_its_place(arrangement):
     assert piece.origin.offset == pytest.approx(sections[1].start, abs=1 / RATE)
 
 
-def test_a_section_index_out_of_range_is_refused(arrangement):
-    with pytest.raises(InvalidError, match="3"):
-        arrangement.section(3)
+@pytest.mark.parametrize(
+    ("index", "error", "match"),
+    [
+        pytest.param(3, InvalidError, "3", id="past the end"),
+        pytest.param(-1, OverflowError, "negative|can't convert", id="negative"),
+    ],
+)
+def test_a_section_index_outside_the_sections_is_refused(arrangement, index, error, match):
+    with pytest.raises(error, match=match):
+        arrangement.section(index)
 
 
 def test_the_drop_is_at_the_bar_where_bass_and_kick_enter(arrangement):
@@ -138,6 +145,13 @@ def test_with_structure_changes_every_field():
     structure = sound.with_structure(**changed).structure
     assert {name: getattr(structure, name) for name in changed} == changed
     assert isinstance(structure, Structure)
+
+
+def test_phrase_bars_can_be_set_kept_and_switched_off(arrangement):
+    snapped = arrangement.with_structure(phrase_bars=4)
+    assert snapped.structure.phrase_bars == 4
+    assert snapped.with_structure(tempo_max=170.0).structure.phrase_bars == 4  # left out keeps it
+    assert snapped.with_structure(phrase_bars=0).structure.phrase_bars is None  # 0 is no phrase grid
 
 
 @pytest.mark.parametrize(
