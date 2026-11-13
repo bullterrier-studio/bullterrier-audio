@@ -39,6 +39,82 @@ fn fraction(values: &[f64]) -> Series {
     }
 }
 
+#[test]
+fn percentile_scaling_puts_the_chosen_quantiles_at_zero_and_one() -> Result<(), Error> {
+    // 0, 1, .. 100: the q-th quantile is 100 q, so low 0.1 and high 0.9 are 10 and 90 (by hand)
+    let values: Vec<f64> = (0..=100).map(f64::from).collect();
+    let scaled = series(Unit::Decibels, &values).percentile_scaled(0.1, 0.9)?;
+    assert_eq!(scaled.unit, Unit::Fraction);
+    assert!(
+        scaled
+            .scaling
+            .as_deref()
+            .is_some_and(|text| text.contains("10th to 90th percentile"))
+    );
+    for (at, want) in [(0, 0.0), (10, 0.0), (50, 0.5), (90, 1.0), (100, 1.0), (30, 0.25)] {
+        assert!(
+            (scaled.values[at] - want).abs() < 1e-12,
+            "value {at}: {}",
+            scaled.values[at]
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_quantile_between_two_values_is_interpolated() -> Result<(), Error> {
+    // 0, 10, 20: the quarter and three-quarter quantiles sit halfway between neighbours, at 5 and 15 (by hand)
+    let scaled = series(Unit::Hertz, &[0.0, 10.0, 20.0]).percentile_scaled(0.25, 0.75)?;
+    assert_eq!(scaled.values, vec![0.0, 0.5, 1.0]);
+    Ok(())
+}
+
+#[test]
+fn a_constant_series_scales_to_zero() -> Result<(), Error> {
+    let scaled = series(Unit::Decibels, &[-3.0; 5]).percentile_scaled(0.05, 0.98)?;
+    assert_eq!(scaled.values, vec![0.0; 5]);
+    Ok(())
+}
+
+#[test]
+fn percentile_scaling_refuses_a_bad_range_naming_it() {
+    let one = series(Unit::Hertz, &[1.0, 2.0]);
+    for (low, high, named) in [
+        (-0.1, 0.9, "low"),
+        (1.0, 1.0, "low"),
+        (0.5, 0.5, "high"),
+        (0.1, 1.5, "high"),
+    ] {
+        let result = one.percentile_scaled(low, high);
+        assert!(
+            matches!(&result, Err(Error::Invalid(text)) if text.contains(named)),
+            "{low} {high}: {result:?}"
+        );
+    }
+}
+
+proptest! {
+    #[test]
+    fn percentile_scaling_ignores_the_unit_of_measure_and_keeps_the_order(
+        values in proptest::collection::vec(-1000.0f64..1000.0, 2..40),
+        gain in 0.01f64..100.0,
+        offset in -1000.0f64..1000.0,
+    ) {
+        let plain = series(Unit::Decibels, &values).percentile_scaled(0.05, 0.98)?;
+        let moved: Vec<f64> = values.iter().map(|value| value * gain + offset).collect();
+        let again = series(Unit::Decibels, &moved).percentile_scaled(0.05, 0.98)?;
+        for (a, b) in plain.values.iter().zip(&again.values) {
+            prop_assert!((a - b).abs() < 1e-6, "{a} vs {b}");
+            prop_assert!((0.0..=1.0).contains(a));
+        }
+        for (i, j) in (0..values.len()).flat_map(|i| (0..values.len()).map(move |j| (i, j))) {
+            if values[i] <= values[j] {
+                prop_assert!(plain.values[i] <= plain.values[j]);
+            }
+        }
+    }
+}
+
 fn grid(beats: &[f64], meter: usize, first_downbeat: usize) -> Grid {
     Grid {
         beats: beats.to_vec(),

@@ -227,6 +227,67 @@ impl Bundle {
 }
 
 impl Series {
+    /// The values rescaled to 0..1 by their own percentiles: the `low` quantile reads 0, the `high` quantile reads 1,
+    /// linear between, saturating outside (a quantile is interpolated linearly between the sorted values). The unit
+    /// becomes [`Unit::Fraction`] and `scaling` says which percentiles were used, so a loud, compressed song and a
+    /// quiet one both use the whole range. A series whose two quantiles are equal (a constant one) reads all 0.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Invalid`] naming `low` or `high` unless `0 <= low < high <= 1`, or naming `values` when one is not
+    /// finite.
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the position of a quantile: a non-negative float below the length of the values"
+    )]
+    pub fn percentile_scaled(&self, low: f64, high: f64) -> Result<Series, Error> {
+        if !(0.0..1.0).contains(&low) {
+            return Err(Error::Invalid(format!(
+                "Series low must be a quantile from 0 to 1 (below 1), got {low}"
+            )));
+        }
+        if !(low < high && high <= 1.0) {
+            return Err(Error::Invalid(format!(
+                "Series high must be a quantile above low {low}, up to 1, got {high}"
+            )));
+        }
+        if self.values.iter().any(|value| !value.is_finite()) {
+            return Err(Error::Invalid("Series values must all be finite".to_owned()));
+        }
+        let mut sorted = self.values.clone();
+        sorted.sort_by(f64::total_cmp);
+        let quantile = |q: f64| {
+            let at = q * (sorted.len() - 1) as f64;
+            let below = at.floor() as usize;
+            let above = at.ceil() as usize;
+            sorted[below] + (sorted[above] - sorted[below]) * (at - below as f64)
+        };
+        let (bottom, top) = (quantile(low), quantile(high));
+        let values = self
+            .values
+            .iter()
+            .map(|value| {
+                if top > bottom {
+                    ((value - bottom) / (top - bottom)).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                }
+            })
+            .collect();
+        Ok(Series {
+            values,
+            unit: Unit::Fraction,
+            scaling: Some(format!(
+                "{}th to {}th percentile of the series' own values, saturating",
+                low * 100.0,
+                high * 100.0
+            )),
+            ..self.clone()
+        })
+    }
+
     fn validate(&self, path: &str, duration: Option<f64>, problems: &mut Problems) {
         let late = |value: f64| duration.is_some_and(|duration| value > duration);
         problems.number(

@@ -113,6 +113,20 @@ impl Series {
         })
     }
 
+    /// The values rescaled to 0..1 by their own percentiles: the `low` quantile reads 0 and the `high` quantile 1,
+    /// saturating outside; a constant series reads all 0. The unit becomes `fraction` and `scaling` says how.
+    #[pyo3(signature = (low=0.05, high=0.98))]
+    fn percentile_scaled(&self, py: Python<'_>, low: f64, high: f64) -> PyResult<Series> {
+        let core = bullterrier_audio::formats::Series {
+            start: self.start,
+            rate: self.rate,
+            values: self.values.clone(),
+            unit: registry::parse_unit(&self.unit).map_err(|e| error::raised(py, &e))?,
+            scaling: self.scaling.clone(),
+        };
+        series(py, core.percentile_scaled(low, high))
+    }
+
     /// The values as a new float64 array.
     #[getter]
     fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {

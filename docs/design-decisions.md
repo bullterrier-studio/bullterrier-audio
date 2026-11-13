@@ -75,7 +75,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   the peaks relative to the sound's own strongest, so the same file gives the same onsets within one hop at any hop (the
   prototypes counted frames and used an absolute threshold on a per-file maximum).
 - **`energy` scale:** band level in dBFS (a full-scale sine is 0 dB), `floor` (-80 dB) to 0 and 0 dB to 1, saturating: a fixed
-  rule, stated in the series' `scaling`, not a per-song percentile. **`loudness`** starts at 3 s, the first full short-term
+  rule, stated in the series' `scaling`. A loud, compressed song then sits high on it (bass mean 0.54, range 0.02 to 0.93 in a mastered track), so any series can be rescaled by its own percentiles with `Series.percentile_scaled(low, high)` (default 5th to 98th, flat reads 0): one method on the data, not a second scaling mode of `energy`. **`loudness`** starts at 3 s, the first full short-term
   window, and reads -70 LUFS (the standard's absolute gate) for anything quieter, so a series never holds -inf.
 - **No librosa parity reference.** The oracles are independent by construction (a sine's band level, the R128 gain law, clicks
   at known times); a numpy stack for a Rust DSP would test the reference as much as the code.

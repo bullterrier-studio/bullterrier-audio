@@ -34,6 +34,7 @@ import bullterrier_audio as bta
 song = bta.load("song.wav")
 kicks = song.hits(bta.Hit.KICK)  # list[Event]: t (s), strength 0..1
 bass = song.energy(bta.Band.BASS)  # Series: rate, values 0..1, scaling stated
+bass.percentile_scaled()  # the same series on the song's own 5th to 98th percentile: a loud song uses the whole 0..1
 ```
 
 ```rust

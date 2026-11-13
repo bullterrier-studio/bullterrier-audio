@@ -150,3 +150,16 @@ def test_each_band_states_its_edges_in_hertz(band, edges):
 def test_a_wrong_band_type_is_a_type_error():
     with pytest.raises(TypeError):
         sine(440.0, 1.0, 0.5).energy("bass")  # type: ignore[arg-type]  # the wrong type is the point
+
+
+def test_a_loud_band_uses_the_whole_range_after_percentile_scaling():
+    squeezed = Series(0.0, 10.0, [0.5 + 0.004 * i for i in range(100)], "fraction", "fixed scale")
+    scaled = squeezed.percentile_scaled()
+    assert scaled.unit == "fraction"
+    assert scaled.scaling is not None
+    assert "percentile" in scaled.scaling
+    assert scaled.values.min() == 0.0
+    assert scaled.values.max() == 1.0
+    assert scaled.rate == squeezed.rate
+    with pytest.raises(InvalidError, match="high"):
+        squeezed.percentile_scaled(0.5, 0.2)
