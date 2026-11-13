@@ -26,9 +26,9 @@ Video also reads control's signals and audio's data directly; the diagram shows 
 
 ## Rules
 
-1. Image, vector, audio and control never depend on each other. Scene is the one package that knows image and vector (and
-   control, for parameters); video knows scene, control and audio. Dependencies run downward only. An app or a script
-   may combine packages the same way.
+1. Image, vector, audio and control never depend on each other. Scene is the one package that knows image and vector;
+   video knows scene, control and audio. Dependencies run downward only. An app or a script may combine packages the
+   same way.
 2. Packages connect through plain data formats, each owned by one package, not through shared code.
 3. A capability goes where its concept belongs, not where it was first needed.
 4. Time is in seconds everywhere. Frames exist only in video.
@@ -49,7 +49,7 @@ small memory and a service that handles many requests at once. A model is used f
 | `bullterrier-image` | Rust | Measured on a five-effect prototype at 1080p: about 5x the throughput of Python for batch video, a fifth of the memory, a cold start under 10 ms. |
 | `bullterrier-vector` | Rust | Redrawn every frame; pure-Rust 2D libraries cover paths, rasterising and text outlines; builds for WebAssembly. |
 | `bullterrier-control` | Rust | Read every frame by video's core, which runs without Python; the stateful shapers are Python loops that hold the GIL; builds for WebAssembly, for editing curves in a browser. |
-| `bullterrier-scene` | Rust | Layers are rendered by the image, vector and control crates; a Rust core calls them directly, renders in bands to keep memory flat, and caches per layer. |
+| `bullterrier-scene` | Rust | Layers are rendered by the image and vector crates; a Rust core calls them directly, renders in bands to keep memory flat, and caches per layer. |
 | `bullterrier-video` | Rust | Decoding, multi-frame effects and encoding in one process, on top of scene; frame history in memory; live preview; uses the scene and control crates directly. |
 | `bullterrier-audio` | Rust | Apps and video, both Rust, call it in-process; its models (separation, notes, beats) have ONNX exports that run from Rust; a live analyser and a WebAssembly build need the DSP in Rust. |
 
