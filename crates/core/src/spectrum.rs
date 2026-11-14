@@ -45,6 +45,19 @@ impl Band {
     /// Every band, lowest first. A band's position here is its index in the memo.
     pub const ALL: [Band; 6] = [Band::Sub, Band::Bass, Band::LowMid, Band::Mid, Band::High, Band::Air];
 
+    /// The band's label: `"sub"`, `"bass"`, `"low_mid"`, `"mid"`, `"high"` or `"air"`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Band::Sub => "sub",
+            Band::Bass => "bass",
+            Band::LowMid => "low_mid",
+            Band::Mid => "mid",
+            Band::High => "high",
+            Band::Air => "air",
+        }
+    }
+
     /// The band's edges in hertz, `(lo, hi)`.
     #[must_use]
     pub fn edges(self) -> (f64, f64) {

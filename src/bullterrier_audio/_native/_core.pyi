@@ -53,6 +53,10 @@ class Band:
     AIR: ClassVar[Band]
     @property
     def edges(self) -> tuple[float, float]: ...
+    @property
+    def name(self) -> str: ...
+    @staticmethod
+    def all() -> list[Band]: ...
 
 @final
 class Series:
@@ -138,6 +142,8 @@ class Section:
 class Mode:
     MAJOR: ClassVar[Mode]
     MINOR: ClassVar[Mode]
+    @property
+    def name(self) -> str: ...
 
 @final
 class Key:

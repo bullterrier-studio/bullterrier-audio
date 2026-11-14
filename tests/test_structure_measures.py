@@ -185,3 +185,7 @@ def test_silence_is_refused_by_every_structure_measure(call, reason):
     silence = Sound.from_samples(np.zeros((1, 4 * RATE), dtype=np.float32), RATE)
     with pytest.raises(InvalidError, match=reason):
         getattr(silence, call)()
+
+
+def test_the_modes_are_named_as_their_labels():
+    assert [mode.name for mode in (Mode.MAJOR, Mode.MINOR)] == ["major", "minor"]

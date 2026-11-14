@@ -68,6 +68,17 @@ pub enum Mode {
     Minor,
 }
 
+impl Mode {
+    /// The mode's label: `"major"` or `"minor"`.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Major => "major",
+            Mode::Minor => "minor",
+        }
+    }
+}
+
 /// The key of a sound, see [`Sound::key`](crate::Sound::key).
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Key {

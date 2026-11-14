@@ -163,3 +163,9 @@ def test_a_loud_band_uses_the_whole_range_after_percentile_scaling():
     assert scaled.rate == squeezed.rate
     with pytest.raises(InvalidError, match="high"):
         squeezed.percentile_scaled(0.5, 0.2)
+
+
+def test_the_bands_are_listed_lowest_first_each_named_as_its_label():
+    assert [band.name for band in Band.all()] == ["sub", "bass", "low_mid", "mid", "high", "air"]
+    edges = [band.edges for band in Band.all()]
+    assert edges == sorted(edges)

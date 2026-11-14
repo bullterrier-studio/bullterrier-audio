@@ -37,7 +37,8 @@ struct Origin {
     offset: f64,
 }
 
-/// A frequency band of the spectrum; `edges` are its lower and upper edge in hertz.
+/// A frequency band of the spectrum; `edges` are its lower and upper edge in hertz, `name` its label, `Band.all()`
+/// lists the bands lowest first.
 #[pyclass(
     eq,
     eq_int,
@@ -64,6 +65,32 @@ impl Band {
     #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
     fn edges(&self) -> (f64, f64) {
         bullterrier_audio::Band::from(*self).edges()
+    }
+
+    /// The label of the band: `sub`, `bass`, `low_mid`, `mid`, `high`, `air`.
+    #[getter]
+    #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
+    fn name(&self) -> &'static str {
+        bullterrier_audio::Band::from(*self).name()
+    }
+
+    /// Every band, lowest first.
+    #[staticmethod]
+    fn all() -> Vec<Band> {
+        bullterrier_audio::Band::ALL.map(Band::from).to_vec()
+    }
+}
+
+impl From<bullterrier_audio::Band> for Band {
+    fn from(band: bullterrier_audio::Band) -> Self {
+        match band {
+            bullterrier_audio::Band::Sub => Self::Sub,
+            bullterrier_audio::Band::Bass => Self::Bass,
+            bullterrier_audio::Band::LowMid => Self::LowMid,
+            bullterrier_audio::Band::Mid => Self::Mid,
+            bullterrier_audio::Band::High => Self::High,
+            bullterrier_audio::Band::Air => Self::Air,
+        }
     }
 }
 
@@ -264,6 +291,20 @@ struct Section {
 enum Mode {
     Major,
     Minor,
+}
+
+#[pymethods]
+impl Mode {
+    /// The label of the mode: `major` or `minor`.
+    #[getter]
+    #[allow(clippy::trivially_copy_pass_by_ref)] // pyo3 passes a pyclass `self` by reference only
+    fn name(&self) -> &'static str {
+        match self {
+            Mode::Major => bullterrier_audio::Mode::Major,
+            Mode::Minor => bullterrier_audio::Mode::Minor,
+        }
+        .name()
+    }
 }
 
 /// A key: `tonic` ("C", "C#", ... "B"), `mode`, `confidence` (the best correlation) and `margin` over the runner-up.
