@@ -165,6 +165,7 @@ Each plugs into a seam the core proved; none is planned until a consumer asks.
 | Stems for songs over 7 minutes (finished stems written to disk as they are made) | stems | memory grows 2.8 MB per second of audio; see design-decisions |
 | Live analysis (microphone in, onsets and band energies within milliseconds) | spectrum | the reason a Rust core was first considered |
 | WebAssembly build of the DSP measures | core | models stay native |
+| Drum hits in `bundle()` | measures by name | a piece found no kicks in the bundle and called `hits` apart; check whether model measures are left out on purpose, then offer them opt-in or say so in `api.md` |
 
 ## Not here
 
