@@ -124,6 +124,10 @@ song.bundle()?.write("song.bundle.json")?;
 `bt-audio analyse song.wav -o song.bundle.json` does the same. A `Bundle` read by bullterrier-control's `Bundle.load`
 needs no conversion.
 
+The bundle holds only the measures that need no download: it has no drum hits, notes or stems, on purpose, so that
+`bundle()` never needs `bt-audio install` or a model run. Ask for them apart: `song.hits(bta.Hit.KICK)` (kicks, snares, hats as
+`Event`s). There is no switch that adds them to `bundle()`; a `Bundle` cannot be extended after it is made.
+
 ## 6. Cut, isolate and write sound
 
 ```python
