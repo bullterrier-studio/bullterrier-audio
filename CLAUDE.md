@@ -16,8 +16,8 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: A7 done (the first release is the owner's).** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
-before it starts: `docs/roadmap.md` (the core roadmap is complete; what is on demand is in the roadmap). Much of the analysis exists in earlier
+**State: A7 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+before it starts: `docs/roadmap.md` (a record of what shipped). Much of the analysis exists in earlier
 experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
 and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
 never commit or cite them.
@@ -40,7 +40,7 @@ video knows the others.
 | Pitch, notes and key | Combining several sounds over time: joining, layering, crossfading, soundtrack mixing → video or a later mixing package |
 | Measured modulation (sidechain dip, wobble rate), in audio's own terms | Turning a measurement into a control source → app or video |
 | Editing one sound: cut, trim, fade, loudness normalisation, mixdown, resampling, conversion, writing files | Deciding what a cut or a stem is for → video or the app |
-| Creative effects (filters, reverb): allowed by the boundary, not planned yet | |
+| Creative effects (filters, reverb): allowed by the boundary, not built | |
 
 **One sound in, one sound out (or measurements).** A cut, a stem, a faded clip and a whole song are each a `Sound`, and
 everything asked of one can be asked of the others. Separation is one in, several out; recombining stems ("all but the
@@ -85,9 +85,6 @@ value and the twelve built-ins that `bundle()` collects), `error`. Parameter str
 `Sound` memoises its measures (an edit starts empty).
 `crates/python` maps calls and errors only. Errors: `Decode` and `Write` are also `OSError`,
 `Invalid` is also `ValueError`.
-
-Planned (`docs/api.md`, `docs/roadmap.md`): more measures as methods on `Sound`; an on-disk cache by input fingerprint and
-producer identity with the first slow producer; results are immutable artifacts; models run as ONNX from the core; measures registered by name.
 
 ## Rules
 

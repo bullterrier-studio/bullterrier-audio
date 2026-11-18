@@ -19,8 +19,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   - Separation (one in, several out) and recombining stems ("all but the vocals") are isolation: audio's.
   - Combining several sounds over time (joining, layering, crossfading between tracks, soundtrack mixing) is arrangement:
     video's, or a later mixing package's, as scene composes pictures for image.
-  - Creative effects (filters, reverb, distortion) fit the rule, as image's effects do; not planned until the owner
-    decides. A driven effect would take a control signal's values as its parameter over time.
+  - Creative effects (filters, reverb, distortion) fit the rule, as image's effects do; not built. A driven effect would take a control signal's values as its parameter over time.
   - Synthesis, composing and generating music are out of scope: a separate project, which may use this package.
   - What a cut or a stem is for is decided by video or the app.
 - **Measured modulation is reported in audio's own terms.** A measured sidechain dip or wobble rate is a
@@ -143,8 +142,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   keeps Demucs' meaning: 1 is one shifted pass). ONNX graph optimisation is off: the default rewrites needed 3.7–5.2 GB for one
   segment, the unoptimised graph 1.9 GB at the same speed. Segments run one at a time. Peak memory was measured at about 2250 MB + 2.8 MB per second of audio for one model (2900 MB + 3.1 MB
   per second for the ensemble), so a sound longer than 440 s (250 s with the ensemble) is refused: the limits keep the projected peak
-  under 3.5 GB. Songs beyond 7 minutes are cut first; writing finished stems to disk instead of holding them lifts the limit and is
-  on the on-demand list. Stems are 44.1 kHz stereo; as Demucs does, the mix's mean is added to each stem.
+  under 3.5 GB. Songs beyond 7 minutes are cut first; writing finished stems to disk instead of holding them lifts the limit. Stems are 44.1 kHz stereo; as Demucs does, the mix's mean is added to each stem.
   *Cost:* the weights are science-only per their author (recorded in the catalogue, not gating until a commercial release).
 - **The ensemble is the prototype's recipe, off by default** (2026-11-12): htdemucs-6s plus the four fine-tuned models, combined in
   the normalised domain (drums, bass, vocals averaged; `other` is the mean of the 6s `other` and the ft `other` minus 6s guitar and

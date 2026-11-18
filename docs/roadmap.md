@@ -1,13 +1,14 @@
 # Roadmap
 
-Batches in order. Each gets its own plan before work starts. Sizes: **S** about one working session, **M** two or three,
+This file records what shipped. Planned work is tracked outside this repository.
+
+Batches in the order they were built. Each got its own plan before work started. Sizes: **S** about one working session, **M** two or three,
 **L** four or more. The calls each batch builds are in [api.md](api.md); the decisions behind them in
 [design-decisions.md](design-decisions.md). Much of the analysis exists in earlier experiments: batches port and re-test it
 against oracles, they do not invent it, and they port none of the experiments' song-tuned thresholds unchecked.
 
 **The core** (A1-A7) proves every seam once: sound in and out (decode, edit, write), measurements out in control's
-formats, a DSP measure family, a model-backed measure, stems, labelled and pitched events, and the extension point. After A7, every further measure is a feature on demand that plugs
-into one of those seams.
+formats, a DSP measure family, a model-backed measure, stems, labelled and pitched events, and the extension point. Every further measure plugs into one of those seams.
 
 | # | Batch | Size | Seam it proves | State |
 |---|---|---|---|---|
@@ -18,15 +19,13 @@ into one of those seams.
 | A4 | Models, and notes | M | an ONNX model behind a method | done |
 | A5 | Stems | L | a stem is a `Sound` | done |
 | A6 | Drum hits | M | labelled events from a part | done |
-| A7 | Measures by name, API review, first release | M | the extension point | done (release: owner) |
+| A7 | Measures by name, API review | M | the extension point | done |
 
 ## A1 Rust core, `Sound`, edits, formats out (done)
 
 - Switch to the template's Rust layout (`copier update` with `rust: true`; not hand-made crates): `crates/core`
   (`bullterrier-audio`), `crates/python` (`_core`), the Python package as a thin facade with a typed stub.
 - Record the language decision (design-decisions) and update `CLAUDE.md` (state, architecture, parameters as Rust structs).
-  Ask the owner to update the ecosystem text in the design notes and in control's and image's `docs/ecosystem.md`, which
-  still say models are Python adapters (image already runs ONNX in Rust).
 - `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), `duration`,
   `channels`. `DecodeError` names the file and the reason.
 - Edits that return a `Sound`: `cut(start, end)` (with `origin`), `fade`, `mono`, `resampled(rate)`, `normalised(lufs=)`
@@ -83,7 +82,7 @@ The milestone below happens in the demo repositories, not here.
 
 Built: the runtime and catalogue (`models/`), `Sound::notes()` / `notes_with(&Infer)`, the `Notes` parameters,
 `bt-audio install | models | doctor`, `ModelUnavailableError`. Octave-alias correction was not done: it needs per-pitch band
-analysis of the audio, which the posteriorgram does not give (the on-demand "Contours" item). `notes()` takes 5.9 s for five
+analysis of the audio, which the posteriorgram does not give. `notes()` takes 5.9 s for five
 minutes of stereo (183 windows of 26 ms), so the **disk cache lands in A5**, where separation takes minutes. The real-model tests
 are `#[ignore]`d and run by `poe rust-test-models` (in `poe full` and in the CI job `project.yml`), never skipped silently.
 
@@ -131,41 +130,17 @@ not exposed. The kick class also hears kick tails on synthetic kicks (precision 
 - `hits(kind=None)`: `Event`s labelled `kick`, `snare`, `hat`; on the mix it separates the drums itself.
 - Oracles: drum parts sequenced from synthesised one-shots, with the truth by construction.
 
-## A7 Measures by name, API review, first release (done, except the release)
+## A7 Measures by name, API review (done)
 
 Built: `Measure`, `Measurement`, `Registry` (Rust); `@bta.measure`, `bta.measures()`, `bta.plugin.isolated()`, the
 `bullterrier_audio.measures` entry-point group (Python); the contract over every registered measure (Python and Rust); parameter
 structs built from parts structs; catalogue entries as constants. `bundle()` and `bt-audio analyse` collect the registry.
-The first release (`poe release`, tags, PyPI trusted publishing) is the owner's. Left for the owner or a template change: the core
-crate's `default = ["onnx"]` (the template's wiring test forbids enabling the feature from the Python crate).
 
 - `Measure` trait and `Registry` value in Rust; `@bta.measure` and the `bullterrier_audio.measures` entry-point group in
   Python; built-ins registered; `song.measure(name)`; `bundle()` and the command include registered measures.
 - The contract runs over every registered measure: seconds only, events inside the file, units from the list, a stated scaling
   for every 0..1 series, determinism.
 - API review against api.md (deep modules, one way per measure, no leaked internals); fix before release.
-- First release: GitHub CI green, trusted publishing, `uv run poe release 0.1.0rc1`, then `0.1.0` (the owner runs it).
-
-## On demand, after the core
-
-Each plugs into a seam the core proved; none is planned until a consumer asks.
-
-| Feature | Seam | Prior work |
-|---|---|---|
-| Voices: distinct sounds in one stem | stems, notes | GMM with BIC on per-note descriptors, score-informed masks |
-| Contours: pitch and level of non-note parts (growls, noise) | spectrum, stems | pyin step states, glides, wobbles |
-| Measured modulation: sidechain dip, wobble rate | measures by name | estimators with confidence, tested on synthesised signals only |
-| Creative effects: filters, reverb, distortion, driven by control signals' values over time | edits | owner to decide first; image's effects are the model |
-| Cut points from content (cut on the nearest downbeat, a section's bars) | edits, grid | `cut` takes seconds; a grid-snapped cut is a helper, if asked |
-| Builds and risers | stems, grid | a riser detector was removed after false positives: needs validation first |
-| Instrument labels | models | CLAP or an AudioSet tagger as ONNX; licence first |
-| Distance between two sounds (QA of a render) | spectrum | beat-folded spectral, groove and balance terms |
-| Tempo map, meter changes, swing | grid | not in any prior work |
-| Beats from a model (Beat This!, ONNX, beats and downbeats) | models, grid | replaces the DSP grid only if measured better; licence first |
-| Stems for songs over 7 minutes (finished stems written to disk as they are made) | stems | memory grows 2.8 MB per second of audio; see design-decisions |
-| Live analysis (microphone in, onsets and band energies within milliseconds) | spectrum | the reason a Rust core was first considered |
-| WebAssembly build of the DSP measures | core | models stay native |
-| Drum hits in `bundle()` | measures by name | a piece found no kicks in the bundle and called `hits` apart; answered: left out on purpose (a bundle must not depend on a download, design-decisions A7); said in `api.md` section 5, no opt-in built |
 
 ## Not here
 

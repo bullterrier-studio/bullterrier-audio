@@ -16,7 +16,7 @@ downbeats, labelled sections, key and drops, and, after `bt-audio install`, note
 vocals, other, guitar, piano, each a `Sound`) and drum hits (ADTOF). `bt-audio info FILE` prints its rate, channels and duration,
 `bt-audio analyse FILE -o BUNDLE` writes everything in bullterrier-control's bundle format, and `bt-audio stems FILE -o DIR` writes the
 stems. Your own measures plug in by name (`@bta.measure`, or an entry point in the `bullterrier_audio.measures` group) and join
-`bundle()` and `analyse`. What can be added next is in [docs/roadmap.md](docs/roadmap.md).
+`bundle()` and `analyse`. What has shipped is recorded in [docs/roadmap.md](docs/roadmap.md).
 
 ```bash
 uv sync
