@@ -1,12 +1,24 @@
 # The Rust tests and the test suite (it runs the import contracts too) on every supported operating system and Python.
-# A pull request runs the corners of that grid: the oldest and newest Python on Linux, and one newer Python on macOS and
-# on Windows; every other event (main, tags, releases, by hand) runs all nine. Called by ci.yml; can also be started by
-# hand.
+# Two grids, chosen by the `grid` input. `reference` is the two systems the project is developed on (Linux x86-64 and
+# macOS arm64) on the oldest Python, and is what ci.yml (the required gate) runs. `rest` is every other cell of
+# Linux, macOS and Windows x Python 3.12 to 3.14, and is what platforms.yml runs: a failure there is noted, not blocking.
+# Called by ci.yml and platforms.yml; can also be started by hand.
 name: Test
 
 on:
   workflow_call:
+    inputs:
+      grid:
+        description: "reference (the gate's two systems) or rest (every other system and Python)"
+        type: string
+        default: reference
   workflow_dispatch:
+    inputs:
+      grid:
+        description: "reference (the gate's two systems) or rest (every other system and Python)"
+        type: choice
+        options: [reference, rest]
+        default: reference
 
 permissions:
   contents: read
@@ -18,8 +30,7 @@ jobs:
     timeout-minutes: 40
     strategy:
       fail-fast: false # one red platform must not hide the state of the others
-      # `github.event_name` is the caller's event (ci.yml's) when this file is called
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"os":"ubuntu-latest","python":"3.12"},{"os":"ubuntu-latest","python":"3.14"},{"os":"macos-latest","python":"3.13"},{"os":"windows-latest","python":"3.13"}]}' || '{"os":["ubuntu-latest","macos-latest","windows-latest"],"python":["3.12","3.13","3.14"]}') }}
+      matrix: ${{ fromJSON(inputs.grid == 'rest' && '{"include":[{"os":"ubuntu-latest","python":"3.13"},{"os":"ubuntu-latest","python":"3.14"},{"os":"macos-latest","python":"3.13"},{"os":"macos-latest","python":"3.14"},{"os":"windows-latest","python":"3.12"},{"os":"windows-latest","python":"3.13"},{"os":"windows-latest","python":"3.14"}]}' || '{"include":[{"os":"ubuntu-latest","python":"3.12"},{"os":"macos-latest","python":"3.12"}]}') }}
     steps:
       # Windows runners check text files out with CRLF line endings; the suite expects the files as committed
       - name: Keep line endings as committed
@@ -57,7 +68,7 @@ jobs:
       - name: Tests (pytest; skips and the 10 slowest tests are listed)
         run: uv run --locked poe test -ra --durations=10
       # the gate proofs (`poe full` runs them too): each copies the workspace, writes a known-bad input and expects the gate to fail.
-      # The gates run on Linux in lint.yml, so the proofs run once, on the Linux cell both matrices have.
+      # The gates run on Linux in lint.yml, so the proofs run once, on the reference grid's Linux cell.
       - name: Gate proofs (pytest -m gate; the 10 slowest are listed)
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
         run: uv run --locked poe gate-tests -ra --durations=10

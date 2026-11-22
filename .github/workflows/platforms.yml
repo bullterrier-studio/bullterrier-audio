@@ -1,0 +1,49 @@
+# Everything that depends on the system and is not the gate: the test grid's other systems and Pythons (test.yml's `rest`
+# grid), and the distributions with their smoke installs on every platform (build.yml). It runs on every push to main,
+# weekly, by hand (Actions tab, "Run workflow"), and for every release (release.yml calls it). `ci-ok` does not wait for it
+# and no branch rule requires it, so a failure on one system never turns the gate red and never blocks a merge: it is
+# written down and fixed later. `platforms-ok` is this workflow's one result, for a person or a badge to read.
+# A release needs it green (release.yml publishes only what this run built), so a wheel is never shipped for a platform
+# it fails on.
+name: Platforms
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 1" # Mondays: a new runner image or a new dependency release shows up within a week
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Runs on main and on tags all finish; the group starts with a fixed name, not the workflow's, because when release.yml
+# calls this file `github.workflow` is the caller's name.
+concurrency:
+  group: platforms-${{ github.ref }}
+  cancel-in-progress: false
+
+# `./` and not `$/`: see ci.yml.
+jobs:
+  test:
+    with:
+      grid: rest
+    uses: ./.github/workflows/test.yml # zizmor: ignore[self-repository] (see ci.yml)
+  build:
+    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository] (see ci.yml)
+
+  platforms-ok:
+    name: platforms-ok
+    if: always() # report a result even when a job it needs failed
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: No needed job failed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "- \(.key): \(.value.result)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null \
+            || { echo "::error::a needed job did not succeed (see the list above)"; exit 1; }

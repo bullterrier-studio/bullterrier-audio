@@ -1,8 +1,9 @@
 # Publish a release when its tag is pushed (`uv run poe release` creates the tag; see CONTRIBUTING.md, "Releasing").
-# The tag is checked first (tools/check_release.py), then the whole CI runs on it (every check, then the build), then
-# the distributions CI built and checked go to PyPI (stable tags, environment `pypi`) or TestPyPI (pre-release tags
-# such as v0.2.0rc1, environment `testpypi`) through Trusted Publishing: no token is stored anywhere. Both publish jobs
-# need `ci`, so a failed or skipped check publishes nothing. Last, a GitHub Release with the changelog section as its
+# The tag is checked first (tools/check_release.py), then both workflows run on it: `ci` (every check, on the reference
+# systems) and `platforms` (every other system, and the build). Then the distributions `platforms` built and checked go
+# to PyPI (stable tags, environment `pypi`) or TestPyPI (pre-release tags such as v0.2.0rc1, environment `testpypi`)
+# through Trusted Publishing: no token is stored anywhere. Both publish jobs need `ci` and `platforms`, so a failed or
+# skipped check on any system publishes nothing. Last, a GitHub Release with the changelog section as its
 # notes and the same files attached. Each job holds only the permissions it uses. No manual trigger: only a tag
 # publishes.
 name: Release
@@ -48,11 +49,16 @@ jobs:
     permissions:
       contents: read
       security-events: write # CI's CodeQL job uploads its findings to code scanning
-    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] (see ci.yml); its build job uploads the `dist` artifact
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] (see ci.yml)
+
+  platforms:
+    name: Platforms
+    needs: verify
+    uses: ./.github/workflows/platforms.yml # zizmor: ignore[self-repository] (see ci.yml); its build job uploads the `dist` artifact
 
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: [verify, ci]
+    needs: [verify, ci, platforms]
     if: needs.verify.outputs.prerelease == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -73,7 +79,7 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: [verify, ci]
+    needs: [verify, ci, platforms]
     if: needs.verify.outputs.prerelease == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 10

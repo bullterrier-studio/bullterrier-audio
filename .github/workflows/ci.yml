@@ -1,8 +1,8 @@
 # Every gate, on every push to main, pull request and merge-queue entry, by hand (Actions tab, "Run workflow"), and for
-# every release (release.yml calls it). Stage 1 runs every check in parallel; stage 2 builds the distributions only once
-# all of them passed, so nothing that fails a check is ever built, let alone published. Branch protection requires one
-# check only, `ci-ok`, so adding or renaming a job never touches the repository settings. No workflow-level path filters:
-# a required check that does not run blocks the merge. A pull request that changes only documentation instead skips the
+# every release (release.yml calls it). Every check runs in parallel, on the two reference systems only (Linux x86-64 and
+# macOS arm64, test.yml's `reference` grid). Every other system, and every wheel build, is platforms.yml: it reports on
+# its own and does not gate. Branch protection requires one check only, `ci-ok`, so adding or renaming a job never touches
+# the repository settings. No workflow-level path filters: a required check that does not run blocks the merge. A pull request that changes only documentation instead skips the
 # code jobs one by one (the `changes` job below); a skipped job counts as passed in `ci-ok`, so the merge is not blocked.
 name: CI
 
@@ -67,12 +67,12 @@ jobs:
           elif [ "$CODE" = true ]; then
             msg="Pull request that changes code: every check runs."
           else
-            msg="Pull request that changes only documentation: lint, test, min-deps, security, project and build are skipped; pre-commit runs."
+            msg="Pull request that changes only documentation: lint, test, min-deps, security and project are skipped; pre-commit runs."
           fi
           echo "$msg"
           echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
-  # stage 1: the checks; pre-commit also runs for documentation, since it checks the YAML, TOML and the commit-stage hooks
+  # the checks; pre-commit also runs for documentation, since it checks the YAML, TOML and the commit-stage hooks
   lint:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -80,6 +80,8 @@ jobs:
   test:
     needs: changes
     if: needs.changes.outputs.code == 'true'
+    with:
+      grid: reference
     uses: ./.github/workflows/test.yml # zizmor: ignore[self-repository] (see the note above)
   min-deps:
     needs: changes
@@ -100,17 +102,10 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     uses: ./.github/workflows/project.yml # zizmor: ignore[self-repository] (see the note above)
 
-  # stage 2: the distributions, from a commit that passed every check (release.yml publishes these files)
-  build:
-    needs: [changes, lint, test, min-deps, security, pre-commit, project]
-    # `!failure()`: a job that was skipped (documentation only) does not stop the build, one that failed does
-    if: ${{ !cancelled() && !failure() && needs.changes.outputs.code == 'true' }}
-    uses: ./.github/workflows/build.yml # zizmor: ignore[self-repository] (see the note above)
-
   ci-ok:
     name: ci-ok
     if: always() # report a result even when a job it needs failed or was skipped
-    needs: [changes, lint, test, min-deps, security, pre-commit, project, build]
+    needs: [changes, lint, test, min-deps, security, pre-commit, project]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

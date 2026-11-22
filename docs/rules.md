@@ -41,8 +41,10 @@ for a false positive use `#[expect(lint, reason = "..")]`. Tools the gate runs t
 - Versions are SemVer (a 0.x minor may break the API), changed only by `uv run poe release VERSION` (the owner picks it: checks,
   shows the plan, asks, bumps, writes CHANGELOG.md with git-cliff, commits, tags, pushes main and the tag; `docs/releasing.md`).
   Tests read the version from `pyproject.toml`, never write it.
-- CI: one workflow per concern in `.github/workflows/`, joined by `ci.yml`; checks run in parallel, then `build`, then `release.yml`
-  publishes only what that build made. `ci-ok` is the only required check: a new job goes into its `needs`. Actions are pinned by
+- CI: one workflow per concern in `.github/workflows/`, joined by `ci.yml` (the gate: every check in parallel, on Linux x86-64
+  and macOS arm64 only) and `platforms.yml` (every other system, and the build; reports, never gates). `release.yml` needs both
+  green and publishes only what `platforms` built. `ci-ok` is the only required check: a new job goes into its `needs`. A failure
+  on one system is noted and fixed later, not chased while it blocks nothing. Actions are pinned by
   commit SHA, jobs hold minimal permissions; `uv run poe lint-workflows` (in `poe check`) enforces it.
 - The gates are the review: reviewers check behaviour and these rules only. A defect a review finds twice becomes a gate.
 
@@ -75,13 +77,22 @@ A fix removes the cause, not the symptom.
 `uv run poe check` runs every gate, cheapest first, stopping at the first failure: `ruff format --check` and `rust-fmt`;
 `ruff check` (plus `PLW1514` explicit encodings, `BLE` no blind `except`, `PTH` pathlib, `PYI` stubs) and `rust-lint` (clippy
 pedantic, over the whole workspace; `unwrap`/`expect`/`panic`/print banned; dead code, missing docs, unreachable `pub`);
-`poe lint-workflows` (actionlint, zizmor); `poe dead-code` (vulture on `src`); `rust-doc`; `deptry`; `rust-tools` (cargo-shear and
+`poe lint-workflows` (actionlint, zizmor); `poe dead-code` (vulture on `src`); `poe api-doc` (the API reference, if the project opted in); `rust-doc`; `deptry`; `rust-tools` (cargo-shear and
 cargo-deny at the versions `Cargo.toml` pins; `poe setup` installs them), `rust-test-layout` (the Rust test layout, "Rust tests"),
 `rust-shear` (unused crates), `rust-deny` (bans, licences, sources; `deny.toml`); `mypy` and `stubtest`
 (`_native/_core.pyi` against the extension); `rust-test` (under the memory cap); the tests, in random order. `poe full` adds
 `poe build-check` (maturin sdist and wheel, twine, check-wheel-contents; CI also builds every platform's wheel). Each of the
 template's gates has a test proving it fails on a known-bad input (`tests/tools/`; `test_rust_gates.py` `OFFENCES`). A gate a
 project adds is recommended to have one too, not required.
+
+**The API reference.** A project with a hand-written `docs/api.md` opts in to `poe api-doc` (part of `check`) by `[tool.api-doc]`
+`file = "docs/api.md"` in `pyproject.toml`. It fails when a name in the package's `__all__` or a public member of an exported
+class (a method, property, getter or annotated attribute, such as a dataclass field; not the standard library's own) has no mention in a
+backticked span of the file, when a `Class.name` first-column cell names a member that is gone (annotate an attribute set in `__init__`
+in the class body, or it is unknown), or when a table row has more cells than its header (`tools/check_api_doc.py`). It matches names,
+not rows, and does not look inside a submodule listed in `__all__`. A name left out on purpose gets a backticked line saying so in the
+file. Without the table the task says it is not configured; a wrong `file`, a package that does not import or an `__all__` naming a
+missing attribute is one problem line.
 
 **Three tiers.** `poe fast` is the inner loop (format, lint, types, the project's own tests; no build, no Rust tests, no proofs). `poe
 check` is every gate except the *tests of the tooling*: the gate proofs (marked `gate`: each copies the workspace, writes one known-bad

@@ -25,6 +25,7 @@ The template ships each as a no-op or an empty list and never changes that line 
 |---|---|
 | `pyproject.toml` task `project-gates` | the project's own gates: `check` and `full` run it after the template's |
 | `pyproject.toml` task `project-full` | the project's own steps that only `full` runs (an audit, a scaffold test) |
+| `pyproject.toml` `[tool.api-doc] file` | the project's hand-written API reference, which `poe api-doc` checks against the package's exports (none: not checked) |
 | `pyproject.toml` `[tool.gate-proofs] project-triggers` | the files the project's own proofs copy or match |
 | `pyproject.toml` `[tool.project-wiring] system-commands` | the system tools the project's gates run that are not dev dependencies (`node`) |
 | `pyproject.toml` `[tool.rust-tests.own-binaries]` | Rust test files that need a process of their own, each with its reason |
@@ -40,7 +41,7 @@ Changed in the template, never here.
 | File | What it is |
 |---|---|
 | `docs/rules.md`, `docs/template-decisions.md`, `docs/shared-files.md`, `CONTRIBUTING.md`, `docs/releasing.md` | the shared rules and their reasons |
-| `tools/run_capped.py`, `tools/check_commit_message.py`, `tools/check_one_config_home.py`, `tools/pre_push.py`, `tools/rust_tools.py`, `tools/check_rust_test_layout.py`, `tools/check_dists.py`, `tools/release.py`, `tools/check_release.py` and their tests (marked `tooling`) | the shared tools |
+| `tools/run_capped.py`, `tools/check_commit_message.py`, `tools/check_one_config_home.py`, `tools/check_api_doc.py`, `tools/pre_push.py`, `tools/rust_tools.py`, `tools/check_rust_test_layout.py`, `tools/check_dists.py`, `tools/release.py`, `tools/check_release.py` and their tests (marked `tooling`) | the shared tools |
 | `tests/tools/` gate proofs (marked `gate`), `tests/conftest.py`, `tests/tools/conftest.py` | every shared gate has a known-bad input; the isolation of the tests |
 | `pyproject.toml` tasks other than the extension points; tables `[tool.ruff]`, `[tool.mypy]`, `[tool.pytest.ini_options]`, `[tool.run-capped]`, `[tool.commit-message]`, `[tool.gate-proofs] triggers` | the gate |
 | `Cargo.toml` `[workspace.lints]`, `[workspace.metadata.tools]`, `[workspace.package]`; `rustfmt.toml`, `rust-toolchain.toml` | the Rust lint set, the tool pins, the toolchain |

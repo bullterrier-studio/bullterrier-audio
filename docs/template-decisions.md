@@ -5,6 +5,13 @@ rules themselves are in `rules.md`; this project's own decisions are in `design-
 
 ## Platforms
 
+- **The gate runs two systems; everything else only reports.** `ci.yml` (`ci-ok`) tests on Linux x86-64 and macOS arm64, Python 3.12
+  (the floor, which `min-deps` and the gate proofs use too). `platforms.yml` (push to main, weekly, by hand, every release) runs the other
+  systems and Pythons and every build with its smoke installs, and its result, `platforms-ok`, is required by nothing but `release.yml`.
+  *Reason:* image's `main` was red for eleven days with nine failures hidden in layers, half of them specific to one system (Windows
+  paths, an x86-64 Vulkan crash, a memory number off by 5 KB on one runner); a failure on one system should be written down, not
+  block every merge. The two systems are the ones the owner develops on. The cost: the gate no longer builds the wheels, so a
+  packaging break shows on `main` after the merge, within the hour, and never reaches a release.
 - **One abi3 wheel per platform** (`abi3-py312`): Linux x86_64 and aarch64 (in the manylinux 2_28 container of the runner's own
   architecture, so nothing is cross-compiled), macOS arm64 and x86_64 (the latter cross-compiled on the arm64 runner), Windows
   x86_64, plus the sdist. *Reason:* one wheel serves every supported Python, and the pure-Rust core has no platform code.
@@ -51,6 +58,20 @@ working tree was clean at both ends and `HEAD` was unchanged; the pre-push hook 
 the tier the push needs or a higher one (`full` covers `check`, never the reverse). *Reason:* the hook
 repeated a minutes-long gate on contents just checked, and a slow loop gets worked around. *Not seen by the record:* state outside
 the tree (installed cargo tools, the advisory database, the built extension); CI checks everything again.
+
+## The API reference is checked, not generated
+
+`poe api-doc` compares a hand-written `docs/api.md` with the package's exports (`tools/check_api_doc.py`); opt-in by
+`[tool.api-doc]`. *Reason:* in five projects the reference went stale unseen (a function without a row, a row for a removed method,
+a row with an extra cell) while the promises and errors in it are prose a generator cannot write. *Cost:* the match is by name, not by
+row, so a name documented anywhere passes: in a real reference (221 checked names) six `Gradient` getters existed and only `kind`
+was reported, because `center`, `end`, `radius`, `start` and `stops` appear in backticks as parameters elsewhere. The gate catches a name
+nobody mentions, not a missing row; a match by row (one per member) is not built. Also not
+checked: a submodule in `__all__` (one name; its contents are not looked at), rows written for an instance (`drawing.gone`) or under a
+heading of their own class (`| `length` |`), tables in a block quote or without a leading `|`; an attribute set only in `__init__`
+must be annotated in the class body to be known.
+There is no list of names to ignore: a name left out on purpose gets one backticked line in the file saying so, so the omission is
+visible to the reader too. Rust's own documentation is rustdoc's `missing_docs`, not this tool's.
 
 ## No runtime dependency (a default)
 

@@ -138,6 +138,9 @@ rust-test = { cmd = "python tools/run_capped.py -- cargo test --workspace --lock
 # A crate's Rust integration tests are one binary (tests/it/main.rs); tools/check_rust_test_layout.py, the table [tool.rust-tests.own-binaries]
 rust-test-layout = { cmd = "python tools/check_rust_test_layout.py", help = "Check that the Rust integration tests are one binary per crate (tests/it/)" }
 dead-code = { cmd = "vulture src", help = "Find dead code in src (vulture)" }
+# Opt-in: a project with a hand-written API reference adds `[tool.api-doc] file = "docs/api.md"` (tools/check_api_doc.py says what it
+# checks); without the table the task says it is not configured and passes
+api-doc = { cmd = "python tools/check_api_doc.py", help = "Check the API reference ([tool.api-doc] file) against the package's exports" }
 # The project's own gates and the steps only `full` runs: the template ships these two lines as no-ops and never changes
 # them again, so a project replaces each with a sequence of its tasks without a conflict at the next update
 # The workspace-wide Rust gates above build the core with its default `onnx` feature (the bindings need it, so features unify).
@@ -148,7 +151,7 @@ project-gates = { sequence = [{ ref = "rust-no-default-features" }], help = "The
 rust-test-models = { sequence = ["python tools/run_capped.py -- cargo test --workspace --locked --features bullterrier-audio/onnx --quiet -- --ignored", "python tools/run_capped.py -- pytest -q -n 0 -m models"], default_item_type = "cmd", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the Rust and Python tests that need the installed ONNX Runtime and Basic Pitch model (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them)" }
 project-full = { sequence = [{ ref = "rust-test-models" }], help = "The project's own steps that only full runs: the Rust tests that need the installed model" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
-gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, docs, dependencies, types, tests, the project's own)" }
+gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "api-doc" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, the API reference, docs, dependencies, types, tests, the project's own)" }
 fast = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
 # A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
 # change since they last passed touches what they test ([tool.gate-proofs] below), `full` always

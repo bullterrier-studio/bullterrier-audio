@@ -5,19 +5,23 @@ How a change is checked on GitHub and how a version reaches PyPI. The short rule
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push to main, pull request and merge-queue entry, and by hand (Actions tab,
-*CI*, *Run workflow*). Stage 1 runs every check in parallel: `lint.yml` (the Python and Rust gates: format, lint, dead code, dependencies, types,
-workflows), `test.yml` (the suite on Linux, macOS and Windows, Python 3.12 to 3.14, and `cargo test`), `min-deps.yml` (the lowest allowed
-dependencies), `security.yml` (pip-audit, CodeQL, and dependency review on pull requests) and `pre-commit.yml` (the
-commit hooks over every file). Stage 2, `build.yml`, only once every check passed: the sdist and one abi3 wheel per
-platform ([which](template-decisions.md#platforms); built with maturin-action, no build cache), checked by
-`tools/check_dists.py` and kept as one `dist` artifact; then each wheel is installed from that artifact alone on its
-own platform and the sdist is built on Linux, `tools/check_installed.py` names the file each came from, and each runs
-the project's smoke command, so the Rust extension runs. `ci-ok` waits for all of them and is
-the one required check. Each of these workflows can also be started by hand, and `security.yml` runs weekly on its
-own. A release runs the whole CI again and publishes only the files its build made, so nothing that fails a check can
-be built or published.
+`.github/workflows/ci.yml` is the gate. It runs on every push to main, pull request and merge-queue entry, and by hand (Actions
+tab, *CI*, *Run workflow*), and runs every check in parallel, on the two reference systems only (Linux x86-64 and macOS arm64,
+Python 3.12): `lint.yml` (the Python and Rust gates: format, lint, dead code, dependencies, types,
+workflows), `test.yml` (the suite and `cargo test`), `min-deps.yml` (the lowest allowed dependencies), `security.yml` (pip-audit, CodeQL, and dependency review on pull requests),
+`pre-commit.yml` (the commit hooks over every file) and `project.yml` (the project's own jobs). `ci-ok` waits for all of
+them and is the one required check. Nothing that depends on the system is in it, so a failure on one system never blocks a merge.
 
+`.github/workflows/platforms.yml` is everything else, and does not gate: on every push to main, weekly (Mondays), by hand and for every
+release, it runs `test.yml` on the remaining systems and Pythons (Linux, macOS and Windows, Python 3.12 to 3.14, less the
+reference cells) and `build.yml`: the sdist and one abi3 wheel per platform ([which](template-decisions.md#platforms);
+built with maturin-action, no build cache), checked by `tools/check_dists.py` and kept as one `dist` artifact; then each wheel is
+installed from that artifact alone on its own platform and the sdist is built on Linux, `tools/check_installed.py` names the
+file each came from, and each runs the project's smoke command (the template's: `bt-audio scale 3 2`), so the Rust
+extension runs.`platforms-ok` is its one result. A red run there is noted (a ticket, a line in the project's notes) and fixed later; it is not
+chased on the spot. `security.yml` also runs weekly on its own. Each of these workflows can be started by hand. A release
+runs both workflows on the tagged commit and publishes only the files `platforms` built, and only when both are green, so
+nothing that fails on any system is published.
 ## Releasing
 
 Versions follow [Semantic Versioning](https://semver.org/). Before 1.0 a minor release may change the public API (0.2.0
@@ -34,8 +38,8 @@ uv run poe release 0.1.0        # the release: PyPI
 behind or diverged from origin/main (commits ahead of it are fine: they are pushed with the release); the version is a
 release version (MAJOR.MINOR.PATCH, optionally aN, bN or rcN) greater than the one in `pyproject.toml` and than every
 `v*` tag, and no test writes it; `ci-ok` has not failed on GitHub for the commit (asked through `gh`; if gh is missing
-or offline, or CI has not run on the commit yet, it only warns, as the tag runs the whole CI again); `poe check`
-passes. Then it prints the plan (old and new version, the changelog section, the commit, the tag, the remote and what
+or offline, or CI has not run on the commit yet, it only warns, as the tag runs both workflows again); `poe full`
+(`check` and the gate proofs) passes. Then it prints the plan (old and new version, the changelog section, the commit, the tag, the remote and what
 the push carries) and asks `[y/N]`; `--dry-run` stops there, `--yes` does not ask. On yes: `uv version` writes
 `pyproject.toml` and `uv.lock`, the section goes into CHANGELOG.md, `chore(release): v0.1.0` is committed, the
 annotated tag `v0.1.0` is created and `git push --atomic origin main v0.1.0` pushes both, or neither.
@@ -47,7 +51,7 @@ Changed, marked **Breaking**; `docs`, `test`, `style`, `ci`, `build`, `chore` an
 write the notes yourself, add a `## [0.2.0] - Unreleased` section before releasing: the release keeps it and dates it,
 and its release candidates take its text.
 
-**Approving.** The command prints the link to the release workflow's runs. The run checks the tag, runs the whole CI,
+**Approving.** The command prints the link to the release workflow's runs. The run checks the tag, runs `ci` and `platforms`,
 then waits at the `testpypi` job (a pre-release) or the `pypi` job (a release): open the run, choose *Review
 deployments*, tick the environment and *Approve and deploy*. Try a release candidate with
 `pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bullterrier-audio==0.1.0rc1`.
