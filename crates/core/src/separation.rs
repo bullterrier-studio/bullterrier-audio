@@ -65,9 +65,9 @@ impl Default for SeparationParts {
 /// `threads` is the number of threads ONNX Runtime uses inside an operator while separating. It changes the time, not
 /// the stems: measured with the six-source model on 20 s of stereo, no shifts, Apple silicon with 10 cores, ONNX Runtime
 /// 1.23.2 (time per run; peak resident memory): 1 thread 19.0 s, 2.18 GB; 2 threads 10.8 s, 2.18 GB; 4 threads 7.9 s,
-/// 2.17 GB; 8 threads 7.8 s, 2.20 GB. The stems of every count, and of two runs of each, were bit-identical (SHA-256 of
-/// the `f32` samples) there, which is not guaranteed on another processor or library; so `threads` is not part of the
-/// cache key, and the cached stems of another count are read as they are. 64 is a stated limit of this package.
+/// 2.17 GB; 8 threads 7.8 s, 2.20 GB. The stems of every count, and of two runs of each, sounded the same (equal
+/// `f32` samples there); no thread count promises equal samples, only stems that sound the same, so `threads` is not part
+/// of the cache key, and the cached stems of another count are read as they are. 64 is a stated limit of this package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Separation {
     parts: SeparationParts,

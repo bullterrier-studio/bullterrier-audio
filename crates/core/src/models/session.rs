@@ -17,8 +17,8 @@ use crate::{Error, Infer, Tensor};
 ///
 /// Determinism: the session runs `threads` threads inside operators and one across them, and applies no graph rewrites
 /// (optimisation level `Disable`), so what runs does not depend on the processor. (The six-source Demucs model gave
-/// the same bits on 1, 2, 4 and 8 threads on the machine it was measured on: see `Separation`.) The same input then gives the same
-/// output on the same machine and library. Rewrites are off for memory: with the basic ones, the six-source Demucs
+/// stems that sound the same on 1, 2, 4 and 8 threads: see `Separation`.) The same input then gives output that sounds the
+/// same on the same machine and library. Rewrites are off for memory: with the basic ones, the six-source Demucs
 /// model peaked at 3.7 to 5.2 GB resident for one segment, and without them at 1.9 GB.
 #[derive(Clone)]
 pub struct OrtInfer(Arc<Loaded>);

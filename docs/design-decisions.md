@@ -149,10 +149,10 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   piano), the ft sessions run one after another so peak memory stays near 2.7 GB. It is about 5x slower; on a synthetic
   mix the bass SDR rose from 27.5 to 32.6 dB and the drums SDR fell from 18.2 to 6.5 dB (the fine-tuned drums model barely answers
   synthetic clicks); the prototype measured +5 dB on bass and lead and +1 dB on drums on real music. Hence the default stays single.
-- **Separation threads: default 4** (2026-11-12). Two runs and 1, 2, 4 and 8 ONNX threads gave bit-identical stems on one Mac
+- **Separation threads: default 4** (2026-11-12). Two runs and 1, 2, 4 and 8 ONNX threads gave stems that sound the same (equal samples there) on one Mac
   (20 s in 19.0, 10.8, 7.9 and 7.8 s), so the thread count is not part of the cache key and the default is 4. One machine, one
-  input and one ONNX Runtime build: an ignored real-model test pins 1 against 4; the constant is one line if another CPU
-  disagrees.
+  input and one ONNX Runtime build: an ignored real-model test holds 1 against 4 within -120 dB of full scale; no thread count promises equal
+  samples.
 - **Stems are cached on disk, keyed by the sound and the producer** (2026-11-12). The key is the sha256 of the crate version, the
   sound's rate, channels and samples, the options that change the result (shifts, ensemble, seed, the optimisation level) and the
   model hashes; one float WAV per stem under `<cache>/stems/<key>/`, written to a temporary name and renamed; an incomplete or damaged
