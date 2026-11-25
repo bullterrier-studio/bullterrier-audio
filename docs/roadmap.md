@@ -29,10 +29,10 @@ formats, a DSP measure family, a model-backed measure, stems, labelled and pitch
 - `Sound::load(path)`, `Sound::from_samples`: decoding (wav, flac, mp3, ogg, m4a), `duration`,
   `channels`. `DecodeError` names the file and the reason.
 - Edits that return a `Sound`: `cut(start, end)` (with `origin`), `fade`, `mono`, `resampled(rate)`, `normalised(lufs=)`
-  (needs A2's loudness: lands there); `write(path)` as wav and flac. Parameter structs wait for the first measure that needs them (A2).
+  (needed A2's loudness: landed there); `write(path)` as wav and flac. Parameter structs came with the first measure that needed them (A2).
 - Oracles for edits: a cut's length is `round(end*rate) - round(start*rate)`; a write then load gives the samples back
   (lossless); a fade's gain curve matches its formula at known samples. "Cutting then measuring equals measuring then taking
-  the same span (within one hop)" moves to A2, which has the first measure.
+  the same span (within one hop)" moved to A2, which has the first measure.
 - Formats: own `Series`, `Event`, `Grid`, `Bundle` types that write control's bundle format, with a copy of its schema. The
   writer enforces the rules the schema cannot express (events sorted by time, durations inside the file, beats strictly
   increasing, fractions in 0..1, finite numbers); the conformance test runs every output through the schema and those rules.
@@ -43,14 +43,14 @@ formats, a DSP measure family, a model-backed measure, stems, labelled and pitch
 ## A2 Spectrum: bands, loudness, brightness, onsets (done)
 
 - Cache: results are memoised in memory per `Sound` (an edit starts empty). The on-disk store (whole-file fingerprint plus
-  producer identity, `bt-audio` cache folder) moves to the first slow producer (A3 grid or A4 models): these measures take
-  well under a second for a song (`loudness()` about 4 s for five minutes of stereo), so a disk store here would have no honest test.
+  producer identity, `bt-audio` cache folder) came with A5 stems, the first producer that takes minutes: these measures take
+  well under a second for a song (`loudness()` about 4 s for five minutes of stereo), so a disk store here would have had no honest test.
 - Parameters: `Analysis` declares window, hop, lag, min_gap, relative_height, min_rise and floor once, with unit, range and
   default; `with_analysis` sets them for a sound. Librosa as a parity reference was not added: the oracles are independent
   by construction (a sine's band level, the R128 gain law, clicks at known times).
 - One `spectrum` module owns the STFT, the bands (`Band`, edges in api.md) and onset strength; every later measure uses it.
 - `energy(band)`, `loudness()` (EBU R128 short-term, decibels), `brightness()` (centroid, hertz), `onsets()`;
-  `normalised(lufs=)` from A1 lands here, on the same loudness.
+  `normalised(lufs=)` from A1 landed here, on the same loudness.
 - 0..1 scaling for `energy` stated and fixed (a dB range or the song's percentiles; decided in the plan, written in the
   docstring).
 - Acceptance: detection does not depend on the analysis hop. The same file analysed at two hops gives the same onsets within one
@@ -71,7 +71,7 @@ The milestone below happens in the demo repositories, not here.
 - `key()` with its `confidence` (the correlation the prototype computed and discarded); chroma power-weighted, not
   normalised per frame.
 - `drops()`: only with a detector validated on synthesised arrangements (bass and kick enter after a stretch without them).
-  A false drop does more harm than a missing one; if it cannot be validated, it waits.
+  A false drop does more harm than a missing one, so it shipped only after validation.
 - `section(i)` returns the section as a `Sound` (a cut with its origin).
 - `summary()`, `bundle()`, `bt-audio analyse FILE -o BUNDLE`.
 - Oracles: click tracks at known tempo, phase and meter (including tempos that fold, 85 and 170 BPM); arrangements of
@@ -83,7 +83,7 @@ The milestone below happens in the demo repositories, not here.
 Built: the runtime and catalogue (`models/`), `Sound::notes()` / `notes_with(&Infer)`, the `Notes` parameters,
 `bt-audio install | models | doctor`, `ModelUnavailableError`. Octave-alias correction was not done: it needs per-pitch band
 analysis of the audio, which the posteriorgram does not give. `notes()` takes 5.9 s for five
-minutes of stereo (183 windows of 26 ms), so the **disk cache lands in A5**, where separation takes minutes. The real-model tests
+minutes of stereo (183 windows of 26 ms), so the **disk cache came in A5**, where separation takes minutes. The real-model tests
 are `#[ignore]`d and run by `poe rust-test-models` (in `poe full` and in the CI job `project.yml`), never skipped silently.
 
 - The model runtime, ported from image's pattern: ONNX Runtime loaded at run time, models as pinned URL and sha256,
@@ -145,6 +145,6 @@ structs built from parts structs; catalogue entries as constants. `bundle()` and
 ## Not here
 
 Synthesis, composing and generating music: a separate project, which may use this package. Combining several sounds over
-time (joining, layering, crossfades between tracks, soundtrack mixing): bullterrier-video or a later mixing package.
+time (joining, layering, crossfades between tracks, soundtrack mixing): bullterrier-video or another package.
 Smoothing, envelopes and mapping: bullterrier-control and bullterrier-video. What a cut or a stem is for: video or the
 app.

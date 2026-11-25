@@ -18,8 +18,8 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   cache serve both; bullterrier-image does the same for one picture (it changes and understands it).
   - Separation (one in, several out) and recombining stems ("all but the vocals") are isolation: audio's.
   - Combining several sounds over time (joining, layering, crossfading between tracks, soundtrack mixing) is arrangement:
-    video's, or a later mixing package's, as scene composes pictures for image.
-  - Creative effects (filters, reverb, distortion) fit the rule, as image's effects do; not built. A driven effect would take a control signal's values as its parameter over time.
+    video's, or another package's, as scene composes pictures for image.
+  - Creative effects (filters, reverb, distortion) fit the rule, as image's effects do. A driven effect would take a control signal's values as its parameter over time.
   - Synthesis, composing and generating music are out of scope: a separate project, which may use this package.
   - What a cut or a stem is for is decided by video or the app.
 - **Measured modulation is reported in audio's own terms.** A measured sidechain dip or wobble rate is a
@@ -65,9 +65,9 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
 - **Edits are defined once.** `cut` rounds both ends with `round(t * rate)`, so adjacent cuts tile exactly. `fade` is linear in
   amplitude: sample `i` of the fade-in gets `i / n`, the sample `k` places before the end of the fade-out gets `k / n`.
   *Reason:* a fade shape and a rounding rule shape the result, so they are fixed and documented, not parameters.
-- **The cache is in memory in A2; the disk store waits for a slow producer** (2026-11-12). A `Sound` memoises its measures and an
+- **The cache is in memory in A2; the disk store came with stems (A5)** (2026-11-12). A `Sound` memoises its measures and an
   edit starts empty. *Reason:* the DSP measures take well under a second for a song (`loudness()` about 4 s for five minutes of stereo, measured), so a disk store (fingerprint plus producer identity) would
-  have nothing to save and no honest test; the first producer worth minutes (grid, models) brings it.
+  have nothing to save and no honest test; the first producer worth minutes (stems, A5) brought it.
 - **One `Analysis` per sound, every measure reads it** (2026-11-12). Window, hop, lag, min_gap, relative_height, min_rise and
   floor are declared once with unit, range and default; a measure takes no parameters. *Reason:* one way to ask, and a
   parameter that shapes a result is never hidden. Onsets measure the dB rise of the spectrum over a lag in seconds and keep
@@ -115,7 +115,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   optimisation. *Reason:* one runtime for Python, Rust and apps; no torch environments; no `tract` (unverified operator coverage,
   and two backends would break one-backend-per-measure). *Cost:* a first-run download; the `ort` release candidate is pinned
   exactly. The core crate enables its `onnx` feature by default (the template's wiring test forbids enabling it from the
-  Python crate); an A7 API-review item.
+  Python crate).
 - **Model tests: an ignored test whose gate runs it** (2026-11-12). `notes_with(&impl Infer)` is the public seam: windowing, the
   frame-to-sample mapping, post-processing and cleanup are tested with hand-built posteriorgrams and always run. The real-model
   oracles are `#[ignore]` and run by `poe rust-test-models` (part of `poe full` and a CI job); this is an explicit exception to
@@ -125,8 +125,8 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   thresholds (onset 0.5, frame 0.3, 11-frame minimum and tolerance) are cited constants of the `Notes` parameters. The prototype's
   16th-note, song-tuned rules became: merge same-pitch notes within `merge_gap` unless the onset posterior says re-attack, drop
   ghosts below a share of the song's 90th-percentile strength, drop overtones (+12, +19, +24 semitones) weaker than a share of an
-  overlapping note. Defaults were measured on synthesised tones (ghost 0.65, partial 0.8). Octave-alias correction needs the
-  audio's band levels and waits for the contour work.
+  overlapping note. Defaults were measured on synthesised tones (ghost 0.65, partial 0.8). Octave-alias correction is not done: it needs the
+  audio's band levels.
 - **Models are chosen for quality; their licences are recorded, not gating, for now** (2026-11-12). The catalogue's `licence` field
   states each model's terms honestly. Surveyed: Basic Pitch Apache-2.0 (code and weights); Demucs MIT code, weights science-only
   per its author; Open-Unmix umxl, ADTOF and madmom's models CC BY-NC-SA; Spleeter, UVR and RoFormer weights unclear; Beat This!

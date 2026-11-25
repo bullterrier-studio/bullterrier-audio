@@ -16,11 +16,9 @@ uv sync && uv run poe setup     # once per clone: environment, git hooks, commit
 uv run poe check                # the whole gate, before you report or merge (then `uv run lint-imports`)
 ```
 
-**State: A7 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The planned calls are in `docs/api.md`. Work goes in batches, each planned
+**State: A7 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The calls are in `docs/api.md`. Work goes in batches, each planned
 before it starts: `docs/roadmap.md` (a record of what shipped). Much of the analysis exists in earlier
-experiments: maintainers may keep machine-specific notes in a git-ignored `.local/` folder (for example `.local/prior-work.md`)
-and batch plans in the git-ignored `.superpowers/plans/`; read them when present, port and re-test rather than invent, and
-never commit or cite them.
+experiments: port and re-test rather than invent. Plans and tickets are kept outside this repository.
 
 ## Responsibility
 
@@ -37,10 +35,10 @@ video knows the others.
 | Spectral character: brightness, noisiness | Trimming or fading the soundtrack → video |
 | Structure: sections, builds, drops | Frame rates, pictures, video → video |
 | Separating instruments into stems, as signals and as sound | Synthesis, composing, generating music → out of scope (a separate project) |
-| Pitch, notes and key | Combining several sounds over time: joining, layering, crossfading, soundtrack mixing → video or a later mixing package |
+| Pitch, notes and key | Combining several sounds over time: joining, layering, crossfading, soundtrack mixing → video or another package |
 | Measured modulation (sidechain dip, wobble rate), in audio's own terms | Turning a measurement into a control source → app or video |
 | Editing one sound: cut, trim, fade, loudness normalisation, mixdown, resampling, conversion, writing files | Deciding what a cut or a stem is for → video or the app |
-| Creative effects (filters, reverb): allowed by the boundary, not built | |
+| Creative effects (filters, reverb): allowed by the boundary | |
 
 **One sound in, one sound out (or measurements).** A cut, a stem, a faded clip and a whole song are each a `Sound`, and
 everything asked of one can be asked of the others. Separation is one in, several out; recombining stems ("all but the
