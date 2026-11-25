@@ -227,6 +227,84 @@ def test_a_push_of_only_documentation_skips_the_gate(git_repo, monkeypatch, caps
     assert ("uv is not on the PATH" in capsys.readouterr().out) is gate_runs
 
 
+def test_the_hook_runs_the_whole_check_never_the_docs_only_shortcut(git_repo, monkeypatch, tmp_path):
+    """The hook has already decided the push needs the gate (code on main, say, with a page edited beside it), so it
+    runs `check-all`: `poe check` could see only the page and skip. `uv` is this interpreter and `run` a script that
+    records the rest of the command line."""
+    before = git_repo.commit("chore: start", {"start.txt": "start"})
+    after = git_repo.commit("feat: code", {"src/code.py": "x = 1"})
+    git_repo.write("run", "import sys, pathlib; pathlib.Path('ran.txt').write_text(' '.join(sys.argv[1:]))")
+    monkeypatch.chdir(git_repo.path)
+    monkeypatch.setenv("PRE_COMMIT_REMOTE_BRANCH", "refs/heads/main")
+    monkeypatch.setenv("PRE_COMMIT_FROM_REF", before)
+    monkeypatch.setenv("PRE_COMMIT_TO_REF", after)
+    monkeypatch.setattr(shutil, "which", lambda _name: sys.executable)
+    assert pre_push.main() == 0
+    assert git_repo.read("ran.txt") == "poe check-all"
+
+
+# `poe check` skips itself when the change from main is only documentation -------------------------------------------
+
+
+def project_whose_check_records(repo) -> None:
+    """A pyproject.toml whose `check-all` and `api-doc` tasks each leave a file named after themselves, on main."""
+    tasks = {name: f"python -c \\\"open('{name}.ran', 'w')\\\"" for name in ("check-all", "api-doc")}
+    rows = "".join(f'{name} = "{task}"\n' for name, task in tasks.items())
+    repo.commit("chore: start", {"pyproject.toml": f"[tool.poe.tasks]\n{rows}"})
+
+
+@pytest.mark.parametrize(
+    ("committed", "uncommitted", "skips"),
+    [
+        pytest.param({"README.md": "x", "docs/images/logo.svg": "<svg/>"}, {}, True, id="a page and a picture skip"),
+        pytest.param({}, {"docs/guide.md": "x"}, True, id="an uncommitted page skips"),
+        pytest.param({"README.md": "x", "src/code.py": "x = 1"}, {}, False, id="one code file runs the gate"),
+        pytest.param({"docs/images/make.py": "x = 1"}, {}, False, id="a script in docs/images runs the gate"),
+        pytest.param({"README.md": "x"}, {"src/new.py": "x = 1"}, False, id="an untracked code file runs the gate"),
+    ],
+)
+def test_check_on_a_branch_skips_the_gate_when_only_documentation_differs_from_main(
+    git_repo, monkeypatch, capsys, committed, uncommitted, skips
+):
+    project_whose_check_records(git_repo)
+    git_repo.git("switch", "-q", "-c", "feat/x")
+    if committed:
+        git_repo.commit("docs: change", committed)
+    for name, text in uncommitted.items():
+        git_repo.write(name, text)
+    monkeypatch.chdir(git_repo.path)
+    assert pre_push.run_check() == 0
+    assert (git_repo.path / "check-all.ran").exists() is not skips
+    assert (git_repo.path / "api-doc.ran").exists() is skips, "the API reference is a page: its check still runs"
+    assert ("docs only: gate skipped" in capsys.readouterr().out) is skips
+
+
+def test_check_on_main_with_nothing_to_compare_runs_the_gate(git_repo, monkeypatch):
+    project_whose_check_records(git_repo)
+    monkeypatch.chdir(git_repo.path)
+    assert pre_push.run_check() == 0
+    assert (git_repo.path / "check-all.ran").exists()
+
+
+def test_check_without_a_main_branch_runs_the_gate(git_repo, monkeypatch):
+    project_whose_check_records(git_repo)
+    git_repo.git("switch", "-q", "-c", "feat/x")
+    git_repo.git("branch", "-q", "-D", "main")
+    git_repo.commit("docs: page", {"README.md": "x"})
+    monkeypatch.chdir(git_repo.path)
+    assert pre_push.run_check() == 0
+    assert (git_repo.path / "check-all.ran").exists()
+
+
+def test_a_docs_only_skip_is_not_remembered_as_a_pass(git_repo, monkeypatch):
+    project_whose_check_records(git_repo)
+    git_repo.git("switch", "-q", "-c", "feat/x")
+    page = git_repo.commit("docs: page", {"README.md": "x"})
+    monkeypatch.chdir(git_repo.path)
+    assert pre_push.run_check() == 0
+    assert not pre_push.gate_passed_on(page)
+
+
 def test_a_rename_of_code_into_docs_runs_the_gate(git_repo, monkeypatch, capsys):
     """With rename detection `git diff --name-only` lists only the new name, `docs/lib.md`: that would skip the gate."""
     before = git_repo.commit("chore: start", {"src/lib.rs": "pub fn one() -> u32 {\n    1\n}\n" * 20})

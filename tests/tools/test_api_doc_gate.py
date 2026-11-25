@@ -41,7 +41,7 @@ def api_doc(checkout: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
 
 def test_the_check_tier_runs_the_check():
     """`full` runs everything `check` runs (`test_project_wiring.py`), so one tier is enough."""
-    dry_run = [sys.executable, "-m", "poethepoet", "--dry-run", "check"]
+    dry_run = [sys.executable, "-m", "poethepoet", "--dry-run", "check-all"]
     result = subprocess.run(dry_run, cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
     assert "tools/check_api_doc.py" in result.stdout + result.stderr
 

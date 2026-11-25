@@ -98,7 +98,9 @@ missing attribute is one problem line.
 check` is every gate except the *tests of the tooling*: the gate proofs (marked `gate`: each copies the workspace, writes one known-bad
 input and expects the gate to fail, a cold build each) and the shared tools' own tests (marked `tooling`: the same files in every
 project, tested in the template). `check` runs them (`poe gate-tests`) only when a change since they last passed touches what they test
-(`[tool.gate-proofs] triggers` in `pyproject.toml`; `poe proofs`), or when they never passed in this clone. `poe full` is `check` with the proofs always (`poe gate-tests`);
+(`[tool.gate-proofs] triggers` in `pyproject.toml`; `poe proofs`), or when they never passed in this clone. When everything that differs from `main` (commits, uncommitted and untracked files) is
+documentation (top-level and `docs/*.md` pages, `docs/images` pictures), `check` runs only `api-doc` and records no pass; `poe
+check-all` is the gate without that skip, and what the push hook runs. `poe full` is `check` with the proofs always (`poe gate-tests`);
 CI runs it on `main` and `poe release` before a tag. A new proof copies a file or matches its text: add that file to the triggers (not one it only appends to). Because a push to
 `main` runs `check`, a proof can fail on `main` for a change outside the triggers; fix forward, as the trunk has no merge queue.
 

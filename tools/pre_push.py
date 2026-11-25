@@ -17,7 +17,9 @@ if git cannot say. The cost, accepted: while local `main` has unpushed code, eve
 the first ref and `main`, no ref is looked at; a later tag or branch with code `main` lacks goes unseen.
 
 A push that changes only documentation (the top-level and `docs/*.md` pages, the pictures in `docs/images/`) skips the
-gate too: no code is in it, and CI still runs everything on the pushed `main`. The pushed range comes from
+gate too: no code is in it, and CI still runs everything on the pushed `main`. A push that does need `check` runs
+`poe check-all`, never `poe check`, whose own docs-only shortcut (`pre_push.py check`, below) could see a page edited
+beside the code and skip. The pushed range comes from
 PRE_COMMIT_FROM_REF and PRE_COMMIT_TO_REF; when it cannot be read the gate runs. A rename counts as a deletion and an
 addition (`--no-renames`), so moving code into `docs/` still changes code.
 
@@ -34,6 +36,11 @@ project's own `project-triggers`) in pyproject.toml, and when there is no such c
 that clearly leaves the proofs' inputs alone. That commit is recorded in the git folder when the proofs pass on a clean
 working tree, in this step or in `full`. Not the merge base with `origin/main`: the project pushes rarely, so that base
 would hold weeks of work and the proofs would run on every `check`.
+
+`uv run poe check` is `pre_push.py check`: when everything that differs from `main` (the commits since the merge base,
+staged, unstaged and untracked files) is documentation by the rule above, it runs only the checks a page can break
+(`poe api-doc`) and records no pass; otherwise, or when there is no `main` or nothing differs, it runs `poe check-all`,
+the whole gate. `full` never skips.
 
 One gate runs per checkout: `start` also records the PID of the `poe` process running the gate, and refuses to begin
 while a live `poe` process holds that record (two gates in one checkout share its build folder and double the memory
@@ -76,6 +83,11 @@ def tier_for(remote_ref: str) -> str:
     return "check" if remote_ref.startswith("refs/heads/") else "full"
 
 
+def only_documentation(changed: list[str] | None) -> bool:
+    """Whether `changed` is known, not empty, and holds nothing but documentation."""
+    return bool(changed) and all(is_documentation(path) for path in changed or [])
+
+
 def unpushed_main_needs_the_gate(remote: str) -> bool:
     """Whether local `main` has commits `<remote>/main` lacks that change more than documentation, or git cannot say
     (no `<remote>/main`, no local `main`, or commits that change no path: no proof they hold only documentation)."""
@@ -85,7 +97,7 @@ def unpushed_main_needs_the_gate(remote: str) -> bool:
     if int(ahead) == 0:
         return False
     changed = _git("diff", "--name-only", "--no-renames", f"refs/remotes/{remote}/main...refs/heads/main")
-    return not changed or not all(is_documentation(path) for path in changed.splitlines())
+    return not only_documentation(changed.splitlines() if changed else None)
 
 
 def is_documentation(path: str) -> bool:
@@ -213,7 +225,13 @@ def changed_since_proofs() -> list[str] | None:
     record = _record_path(PROOFS_PASSED)
     if record is None or not record.exists():
         return None
-    tracked = _git("diff", "--name-only", "--no-renames", record.read_text(encoding="utf-8").strip())
+    return changed_since(record.read_text(encoding="utf-8").strip())
+
+
+def changed_since(rev: str) -> list[str] | None:
+    """The paths the working tree differs in from `rev` (committed, staged, unstaged and untracked), None when git
+    cannot say."""
+    tracked = _git("diff", "--name-only", "--no-renames", rev)
     untracked = _git("ls-files", "--others", "--exclude-standard")
     if tracked is None or untracked is None:
         return None
@@ -236,11 +254,27 @@ def run_proofs() -> int:
     print("proofs: something they test changed since they last passed (or they never passed here): running", flush=True)
     # the known-good controls re-run a gate on the unchanged copy, which `check` has just run on the real tree: they are
     # left to `full` (pytest takes the last `-m`, so this one replaces the task's own)
-    command = [sys.executable, "-m", "poethepoet", "gate-tests", "-m", "(gate or tooling) and not control"]
-    status = subprocess.run(command, check=False).returncode  # noqa: S603  fixed argv, no input
+    status = _poe("gate-tests", "-m", "(gate or tooling) and not control")
     if status == 0:
         record_proofs_pass()
     return status
+
+
+def run_check() -> int:
+    """`poe check`: skip the gate when only documentation differs from `main`, else run it all (`poe check-all`)."""
+    # shortcut: on main itself, committed code not yet pushed is not seen (the merge base is HEAD); the push hook still
+    # gates it, as it runs `check-all`
+    base = _git("merge-base", "HEAD", "refs/heads/main")
+    changed = changed_since(base.strip()) if base else None
+    if only_documentation(changed):
+        print(f"docs only: gate skipped ({len(changed or [])} files); `poe check-all` runs it anyway", flush=True)
+        return _poe("api-doc")  # the one check a page can fail (docs/api.md), and it builds nothing
+    return _poe("check-all")
+
+
+def _poe(task: str, *args: str) -> int:
+    """Run the poe task `task` in this environment; its exit status."""
+    return subprocess.run([sys.executable, "-m", "poethepoet", task, *args], check=False).returncode  # noqa: S603  fixed argv
 
 
 def pushed_files(from_ref: str, to_ref: str) -> list[str] | None:
@@ -267,7 +301,7 @@ def main() -> int:
     changed = pushed_files(os.environ.get("PRE_COMMIT_FROM_REF", ""), os.environ.get("PRE_COMMIT_TO_REF", ""))
     # the reported range is the first ref's own; when that is not main, main's unpushed commits are pushed as well
     main_needs_it = remote_ref != "refs/heads/main" and unpushed_main_needs_the_gate(remote)
-    if changed and all(is_documentation(path) for path in changed) and not main_needs_it:
+    if only_documentation(changed) and not main_needs_it:
         print("pre-push: only documentation changed, so the gate is left to CI (`uv run poe check` runs it now)")
         return 0
     tier = tier_for(remote_ref)
@@ -278,7 +312,8 @@ def main() -> int:
     if uv is None:
         print("pre-push: uv is not on the PATH, so the gate cannot run; install uv (https://docs.astral.sh/uv/)")
         return 1
-    return subprocess.run([uv, "run", "poe", tier], check=False).returncode  # noqa: S603  fixed argv, no input
+    task = "check-all" if tier == "check" else tier  # never `check`'s docs-only shortcut: this push needs the gate
+    return subprocess.run([uv, "run", "poe", task], check=False).returncode  # noqa: S603  fixed argv, no input
 
 
 if __name__ == "__main__":
@@ -289,7 +324,9 @@ if __name__ == "__main__":
             record_gate_pass(tier)
         case ["proofs"]:
             sys.exit(run_proofs())
+        case ["check"]:
+            sys.exit(run_check())
         case []:
             sys.exit(main())
         case other:
-            sys.exit(f"usage: pre_push.py [start | pass TIER | proofs] (the hook gives no argument), got {other}")
+            sys.exit(f"usage: pre_push.py [start | pass TIER | proofs | check] (the hook: no argument), got {other}")

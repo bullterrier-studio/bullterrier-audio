@@ -39,10 +39,10 @@ repos:
         language: system
         stages: [commit-msg]
       # The whole local gate runs on a push to main, of a tag, or of a branch while main has unpushed code; not on every
-      # commit. tools/pre_push.py decides, and runs `uv run poe check` (`full` for a tag). CI checks a feature branch's
+      # commit. tools/pre_push.py decides, and runs `uv run poe check-all` (`full` for a tag). CI checks a feature branch's
       # pull request. `verbose` shows its output even when it passes or skips, so a skipped gate says why.
       - id: gate
-        name: the whole gate (reproduce with `uv run poe check`; `full` for a tag)
+        name: the whole gate (reproduce with `uv run poe check-all`; `full` for a tag)
         verbose: true
         entry: uv run python tools/pre_push.py
         language: system

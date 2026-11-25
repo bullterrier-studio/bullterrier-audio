@@ -73,28 +73,34 @@ def test_poe_accepts_every_task_and_each_runs_a_command(poe_runs):
         assert commands, f"poe task {task!r} runs nothing"
 
 
+def test_check_is_the_docs_only_decision_and_full_never_takes_it(poe_runs):
+    """`check` skips the gate when only documentation differs from main, else runs `check-all`; `full` always runs."""
+    assert poe_runs["check"] == ["python tools/pre_push.py check"]
+    assert not [command for command in poe_runs["full"] if command.endswith("pre_push.py check")]
+
+
 def test_the_gate_only_checks_and_never_rewrites_files(poe_runs):
-    for task in ("check", "full"):
+    for task in ("check-all", "full"):
         commands = poe_runs[task]
         assert [command for command in commands if fixing_words(shlex.split(command))] == [], commands
 
 
 def test_fast_runs_only_what_check_runs(poe_runs):
     """`fast` is the inner loop: a step that is not part of the whole gate would pass here and mean nothing there."""
-    assert [command for command in poe_runs["fast"] if command not in poe_runs["check"]] == []
+    assert [command for command in poe_runs["fast"] if command not in poe_runs["check-all"]] == []
 
 
-@pytest.mark.parametrize("tier", ["check", "full"])
-def test_a_tier_remembers_a_pass_for_the_push_by_starting_and_ending_with_the_hook_tool(poe_runs, tier):
-    commands = poe_runs[tier]
+@pytest.mark.parametrize(("task", "tier"), [("check-all", "check"), ("full", "full")])
+def test_a_tier_remembers_a_pass_for_the_push_by_starting_and_ending_with_the_hook_tool(poe_runs, task, tier):
+    commands = poe_runs[task]
     assert commands[0].endswith("tools/pre_push.py start")
     assert commands[-1].endswith(f"tools/pre_push.py pass {tier}")
 
 
 def test_full_runs_everything_check_runs_but_the_conditional_proofs_and_the_record(poe_runs):
     """`check` runs the proofs only when the change touches what they test (`pre_push.py proofs`); `full` always."""
-    conditional = next(command for command in poe_runs["check"] if command.endswith("pre_push.py proofs"))
-    missing = [command for command in poe_runs["check"][:-1] if command not in poe_runs["full"]]
+    conditional = next(command for command in poe_runs["check-all"] if command.endswith("pre_push.py proofs"))
+    missing = [command for command in poe_runs["check-all"][:-1] if command not in poe_runs["full"]]
     assert missing == [conditional]
 
 

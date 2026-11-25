@@ -23,7 +23,7 @@ The template ships each as a no-op or an empty list and never changes that line 
 
 | Where | For |
 |---|---|
-| `pyproject.toml` task `project-gates` | the project's own gates: `check` and `full` run it after the template's |
+| `pyproject.toml` task `project-gates` | the project's own gates: `check-all` (what `check` runs unless only docs differ from main) and `full` run it after the template's |
 | `pyproject.toml` task `project-full` | the project's own steps that only `full` runs (an audit, a scaffold test) |
 | `pyproject.toml` `[tool.api-doc] file` | the project's hand-written API reference, which `poe api-doc` checks against the package's exports (none: not checked) |
 | `pyproject.toml` `[tool.gate-proofs] project-triggers` | the files the project's own proofs copy or match |
