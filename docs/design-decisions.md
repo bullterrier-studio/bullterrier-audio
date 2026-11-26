@@ -49,7 +49,7 @@ contributors are in [CLAUDE.md](../CLAUDE.md). The ecosystem-wide decisions (the
   around its models; no Rust core"). *Reason:* apps and bullterrier-video, both Rust, call audio in-process; the models it
   needs (separation, notes, beats) now have ONNX exports that run from Rust; a live analyser and a WebAssembly build need
   the DSP in Rust anyway. *Cost:* librosa is no longer the implementation, so each DSP measure is ported and checked
-  against oracles (librosa stays a dev-only parity reference).
+  against oracles.
 - **One object, asked questions:** `Sound` with a method per measure, lazy and cached; the export collects the same
   methods. *Reason:* one way to get each measure; a caller pays only for what it asks. The calls: [api.md](api.md).
 - **Analysis rate 44.1 kHz mono for DSP; models resample inside.** *Reason:* the prototypes' 22.05 kHz could not measure

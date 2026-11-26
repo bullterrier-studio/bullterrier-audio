@@ -46,7 +46,7 @@ formats, a DSP measure family, a model-backed measure, stems, labelled and pitch
   producer identity, `bt-audio` cache folder) came with A5 stems, the first producer that takes minutes: these measures take
   well under a second for a song (`loudness()` about 4 s for five minutes of stereo), so a disk store here would have had no honest test.
 - Parameters: `Analysis` declares window, hop, lag, min_gap, relative_height, min_rise and floor once, with unit, range and
-  default; `with_analysis` sets them for a sound. Librosa as a parity reference was not added: the oracles are independent
+  default; `with_analysis` sets them for a sound. No librosa parity reference: the oracles are independent
   by construction (a sine's band level, the R128 gain law, clicks at known times).
 - One `spectrum` module owns the STFT, the bands (`Band`, edges in api.md) and onset strength; every later measure uses it.
 - `energy(band)`, `loudness()` (EBU R128 short-term, decibels), `brightness()` (centroid, hertz), `onsets()`;
@@ -56,13 +56,12 @@ formats, a DSP measure family, a model-backed measure, stems, labelled and pitch
 - Acceptance: detection does not depend on the analysis hop. The same file analysed at two hops gives the same onsets within one
   hop, and a strength keeps its 0..1 meaning. Why: a prototype had to rescale its kick threshold when its frame rate changed.
 - Oracles: cutting then measuring equals measuring then taking the same span (within one hop); a tone in one band and silence in the others; clicks at known times give onsets at those times; EBU R128 test
-  signals at their published loudness. librosa as a dev-only parity reference for the spectrum, never a runtime dependency.
+  signals at their published loudness.
 
 ## A3 Grid, sections, key, drops (done)
 
 Built on the onsets and band energies; `Structure` declares the parameters once, like `Analysis`. Grid `confidence` needed
 control's bundle format 2 (a new optional field is a new version in control); audio writes version 2 only when it has one.
-The milestone below happens in the demo repositories, not here.
 
 - `grid()`: tempo (autocorrelation peaks of the onsets folded into the tempo range by how well each grid explains the onsets,
   refined by regression of the onset times on the beat index), beat phase, downbeats, meter, `confidence` (low on
@@ -76,7 +75,6 @@ The milestone below happens in the demo repositories, not here.
 - `summary()`, `bundle()`, `bt-audio analyse FILE -o BUNDLE`.
 - Oracles: click tracks at known tempo, phase and meter (including tempos that fold, 85 and 170 BPM); arrangements of
   synthesised parts with known section boundaries; chord progressions in a known key.
-- **Milestone:** the demos run on bullterrier-audio and their hacked analysis is deleted.
 
 ## A4 Models, and notes (done)
 
@@ -112,7 +110,6 @@ needed: A3's beat-level drops cover bass steps. Measured on one Mac (10 cores): 
 - `stems()` returns `Stems`, one `Sound` per `Stem`; every measure and edit works on a stem; a stem knows it is one
   (`sound.stem`); `stems.without(...)` recombines the rest (an instrumental); `bt-audio stems FILE -o DIR` writes them.
 - Parts per section (which stem carries drums, bass, lead), since separators route a part to different stems across a song.
-- `drops()` from the bass and drum stems, to add what the bass-level rule of A3 misses (a drop that is not a bass step).
 - Oracles: mixes of synthesised parts (drums, bass, a lead) where each part is the truth; separation quality measured
   (SDR) and recorded, not asserted to a number tuned on one mix.
 
@@ -140,7 +137,7 @@ structs built from parts structs; catalogue entries as constants. `bundle()` and
   Python; built-ins registered; `song.measure(name)`; `bundle()` and the command include registered measures.
 - The contract runs over every registered measure: seconds only, events inside the file, units from the list, a stated scaling
   for every 0..1 series, determinism.
-- API review against api.md (deep modules, one way per measure, no leaked internals); fix before release.
+- API review against api.md (deep modules, one way per measure, no leaked internals), done.
 
 ## Not here
 
