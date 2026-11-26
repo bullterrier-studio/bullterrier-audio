@@ -97,12 +97,14 @@ missing attribute is one problem line.
 **Three tiers.** `poe fast` is the inner loop (format, lint, types, the project's own tests; no build, no Rust tests, no proofs). `poe
 check` is every gate except the *tests of the tooling*: the gate proofs (marked `gate`: each copies the workspace, writes one known-bad
 input and expects the gate to fail, a cold build each) and the shared tools' own tests (marked `tooling`: the same files in every
-project, tested in the template). `check` runs them (`poe gate-tests`) only when a change since they last passed touches what they test
-(`[tool.gate-proofs] triggers` in `pyproject.toml`; `poe proofs`), or when they never passed in this clone. When everything that differs from `main` (commits, uncommitted and untracked files) is
+project, tested in the template). Those test the gates, not the change, rarely fail for a real regression, and were most of a warm
+`check`, so the local gate leaves them out: `poe gate-tests` runs them, and so do `poe full` and CI (`test.yml`, under `ci-ok`, on every
+pull request and push to `main`). When everything that differs from `main` (commits, uncommitted and untracked files) is
 documentation (top-level and `docs/*.md` pages, `docs/images` pictures), `check` runs only `api-doc` and records no pass; `poe
-check-all` is the gate without that skip, and what the push hook runs. `poe full` is `check` with the proofs always (`poe gate-tests`);
-CI runs it on `main` and `poe release` before a tag. A new proof copies a file or matches its text: add that file to the triggers (not one it only appends to). Because a push to
-`main` runs `check`, a proof can fail on `main` for a change outside the triggers; fix forward, as the trunk has no merge queue.
+check-all` is the gate without that skip, and what the push hook runs. `poe full` is `check` with the build and `poe gate-tests`;
+CI runs it on `main` and `poe release` before a tag. A change to a gate, a tool or what a proof copies: run `poe gate-tests` before the
+push. Otherwise a proof that fails shows up in CI on `main`; fix forward, as the trunk has no merge queue. A slow gate of the
+project's own belongs in `project-full` and `project.yml`, not `project-gates`: the push hook should stay a few minutes at most.
 
 `ruff` wants type hints and a docstring on every public function, class, method and module, and no `print` outside the CLI.
 `mypy` checks `src` and `tests`. Fix findings properly; for a false positive use a targeted `# noqa: CODE  (reason)` or

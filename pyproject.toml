@@ -101,7 +101,7 @@ dev = [
 # encoding (EncodingWarning), which `filterwarnings` below turns into a failure; an -X flag would not reach the workers
 # Three tiers (docs/rules.md, "Three tiers"): `fast` while working, `check` before a push to main, `full` before a tag and in CI. The tests that
 # prove a gate fails on a known-bad input copy the workspace and build in it (marked `gate`), and the shared tools' own tests are the
-# same in every project (marked `tooling`): `test` is the project's own suite, and `gate-tests` runs both when the tooling changed.
+# same in every project (marked `tooling`): `test` is the project's own suite, and `gate-tests` runs both (in `full` and CI, not `check`).
 test = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'not gate and not tooling and not models'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the project's test suite on every CPU core (pytest-xdist; the order stays random), without the tests of the tooling" }
 gate-tests = { cmd = "python tools/run_capped.py -- pytest -q -n auto -m 'gate or tooling'", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the tests of the tooling: the proofs that each gate fails on a known-bad input, and the shared tools' own tests" }
 # Not part of `check`: the suite on the oldest Python and the lowest release each direct dependency's floor allows, in a
@@ -146,20 +146,19 @@ api-doc = { cmd = "python tools/check_api_doc.py", help = "Check the API referen
 # The workspace-wide Rust gates above build the core with its default `onnx` feature (the bindings need it, so features unify).
 # This builds the opposite configuration, a Rust user's `default-features = false`: clippy and the tests without models.
 rust-no-default-features = { sequence = ["cargo clippy -p bullterrier-audio --no-default-features --all-targets --locked --quiet -- -D warnings", "python tools/run_capped.py -- cargo test -p bullterrier-audio --no-default-features --locked --quiet --no-fail-fast"], default_item_type = "cmd", help = "Lint and test the core without its default onnx feature" }
-project-gates = { sequence = [{ ref = "rust-no-default-features" }], help = "The project's own gates, run last by check and full: the core without its default features" }
+project-gates = { cmd = "python -c pass", help = "The project's own gates, run last by check and full (none yet)" }
 # The tests that need the installed model run only here, never in `check`: they are `#[ignore]`d, and this is the gate step that runs them
 rust-test-models = { sequence = ["python tools/run_capped.py -- cargo test --workspace --locked --features bullterrier-audio/onnx --quiet -- --ignored", "python tools/run_capped.py -- pytest -q -n 0 -m models"], default_item_type = "cmd", env = { PYTHONWARNDEFAULTENCODING = "1" }, help = "Run the Rust and Python tests that need the installed ONNX Runtime and Basic Pitch model (BT_AUDIO_ALLOW_DOWNLOAD=1 downloads them)" }
-project-full = { sequence = [{ ref = "rust-test-models" }], help = "The project's own steps that only full runs: the Rust tests that need the installed model" }
+project-full = { sequence = [{ ref = "rust-no-default-features" }, { ref = "rust-test-models" }], help = "The project's own steps that only full runs (CI: project.yml): the core without its default features (15 s warm, a second Rust profile), the tests that need the installed model" }
 # The steps `check` and `full` share, cheapest first, stopping at the first failure
 gates = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, { ref = "lint-workflows" }, { ref = "dead-code" }, { ref = "api-doc" }, { ref = "rust-doc" }, "deptry .", { ref = "rust-tools" }, { ref = "rust-test-layout" }, { ref = "rust-shear" }, { ref = "rust-deny" }, "mypy", { ref = "stubtest" }, { ref = "rust-test" }, { ref = "test" }, { ref = "project-gates" }], default_item_type = "cmd", help = "Every gate except the proofs that each gate can fail (format, lint, workflows, dead code, the API reference, docs, dependencies, types, tests, the project's own)" }
 fast = { sequence = ["ruff format --check .", { ref = "rust-fmt" }, "ruff check .", { ref = "rust-lint" }, "mypy", { ref = "test" }], default_item_type = "cmd", help = "The inner loop: format, lint, types and the quick tests; no build, no Rust tests, no proofs" }
-# A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it; `check` runs the proofs only when the
-# change since they last passed touches what they test ([tool.gate-proofs] below), `full` always
-proofs = { cmd = "python tools/pre_push.py proofs", help = "Run the gate proofs if the change touches what they test (or they never passed here)" }
+# A pass on a clean tree is remembered with its tier, so pushing exactly that tree does not repeat it. The tests of the tooling
+# (`gate-tests`) are not in `check`: they test the gates, not the change, and were most of its time; `full` and CI run them
 # `check` skips the gate when only documentation (top-level and docs/*.md pages, docs/images pictures) differs from main, running only
 # `api-doc`; else it runs `check-all`. The push hook runs `check-all` itself
 check = { cmd = "python tools/pre_push.py check", help = "The gate before you report or push: `check-all`, or only `api-doc` when nothing but documentation differs from main" }
-check-all = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, { ref = "proofs" }, "python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, and the proofs when the change touches what they test; a pass is remembered for that tree" }
+check-all = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, "python tools/pre_push.py pass check"], default_item_type = "cmd", help = "The gate before a push to main: every gate, without the tests of the tooling (`full` and CI run those); a pass is remembered for that tree" }
 full = { sequence = ["python tools/pre_push.py start", { ref = "gates" }, { ref = "build-check" }, { ref = "gate-tests" }, { ref = "project-full" }, "python tools/pre_push.py pass full"], default_item_type = "cmd", help = "The gate before a tag and in CI: `check`, the build of the sdist and the wheel, the proofs always, and the project's own full-only steps; a pass is remembered for that tree" }
 # Release from main in one command: checks, plan, [y/N], version bump, changelog section, commit, annotated tag and an
 # atomic push of main and the tag (CONTRIBUTING.md, "Releasing")
@@ -183,27 +182,6 @@ cap-mb = 4000
 # process to themselves). Empty: every integration test is a module of tests/it/.
 [tool.rust-tests.own-binaries]
 
-# Read by tools/pre_push.py (`poe proofs`, the last step of `poe check`): the gate proofs (tests marked `gate`) run in `check` only when the
-# change since they last passed touches one of these globs, relative to the repository root, or when they never passed here. List every file a proof
-# copies or matches the text of; not one it only appends to (that cannot break it, and the project's own source changes often, which
-# would run the slow proofs every time). `poe full` runs them always.
-[tool.gate-proofs]
-triggers = [
-    "pyproject.toml",
-    ".pre-commit-config.yaml",
-    "rustfmt.toml",
-    "deny.toml",
-    "rust-toolchain.toml",
-    "Cargo.toml",
-    "Cargo.lock",
-    "crates/*/Cargo.toml",
-    "tools/*",
-    "tests/tools/*",
-    ".github/*",
-]
-# The project's own: files its own proofs copy or match (the template never changes this line)
-project-triggers = []
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # test files are named after the module they test, so equal names in different folders must never collide
@@ -214,8 +192,8 @@ addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config", "--
 # an xfail that starts passing fails the run, so the marker cannot outlive the bug it names
 xfail_strict = true
 markers = [
-    "gate: proves a gate fails on a known-bad input in a copy of the workspace; slow, so `poe test` and `poe check` leave it out unless the change touches [tool.gate-proofs]; `poe gate-tests` and `poe full` run it",
-    "control: a gate proof's known-good side (the gate passes on the unchanged copy); `check` leaves it to `full`, which runs every proof",
+    "gate: proves a gate fails on a known-bad input in a copy of the workspace; slow, so `poe test` and `poe check` leave it out; `poe gate-tests`, `poe full` and CI run it",
+    "control: a gate proof's known-good side (the gate passes on the unchanged copy); it runs with the proofs (`poe gate-tests`)",
     "tooling: tests a shared tool of the template (the same file in every project, tested in the template too); `poe test` leaves it out, `poe gate-tests` runs it with the proofs",
     "models: needs the installed ONNX Runtime library and Basic Pitch model; `poe test` leaves it out, `poe rust-test-models` runs it",
     "typecheck: type-checks the package with mypy; `poe check-min-deps` leaves it out",

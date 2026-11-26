@@ -67,7 +67,8 @@ jobs:
       # -ra lists every skipped or expected-failing test with its reason; --durations shows what makes the run slow
       - name: Tests (pytest; skips and the 10 slowest tests are listed)
         run: uv run --locked poe test -ra --durations=10
-      # the gate proofs (`poe full` runs them too): each copies the workspace, writes a known-bad input and expects the gate to fail.
+      # the gate proofs and the tools' own tests, which the local `poe check` leaves to CI (`poe full` runs them too): each proof
+      # copies the workspace, writes a known-bad input and expects the gate to fail.
       # The gates run on Linux in lint.yml, so the proofs run once, on the reference grid's Linux cell.
       - name: Gate proofs (pytest -m gate; the 10 slowest are listed)
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.12'

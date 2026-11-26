@@ -15,6 +15,7 @@ public: no absolute paths, no references to folders outside the repository.
 uv sync && uv run poe setup     # once per clone: environment, git hooks, commit template
 uv run poe check                # the gate, before you report or merge (then `uv run lint-imports`); skipped in seconds when only docs differ from main
 uv run poe check-all            # the gate with no docs-only skip (the push hook runs this)
+uv run poe gate-tests           # the gate proofs and the tools' own tests: after changing a gate or a tool (CI runs them)
 ```
 
 **State: A7 done.** The Rust core loads, edits and writes a `Sound`, measures band energy, brightness, loudness, onsets, the beat grid, sections, key, drops and (with installed models) notes, stems and drum hits, and writes control's bundle format. The calls are in `docs/api.md`. Work goes in batches, each planned

@@ -97,16 +97,21 @@ def test_a_tier_remembers_a_pass_for_the_push_by_starting_and_ending_with_the_ho
     assert commands[-1].endswith(f"tools/pre_push.py pass {tier}")
 
 
-def test_full_runs_everything_check_runs_but_the_conditional_proofs_and_the_record(poe_runs):
-    """`check` runs the proofs only when the change touches what they test (`pre_push.py proofs`); `full` always."""
-    conditional = next(command for command in poe_runs["check-all"] if command.endswith("pre_push.py proofs"))
+def test_full_runs_everything_check_runs_but_the_record(poe_runs):
     missing = [command for command in poe_runs["check-all"][:-1] if command not in poe_runs["full"]]
-    assert missing == [conditional]
+    assert missing == []
+
+
+def test_the_local_gate_leaves_the_tests_of_the_tooling_to_full_and_ci(poe_runs):
+    """The gate proofs and the tools' own tests are most of a warm `check`, and they test the tooling, not the change:
+    `full` and CI (test.yml, under ci-ok) run them, the push hook does not."""
+    assert [command for command in poe_runs["check-all"] if "gate or tooling" in command or "proofs" in command] == []
+    assert [command for command in poe_runs["full"] if "-m 'gate or tooling'" in command]
 
 
 def test_the_python_suite_leaves_the_slow_tests_of_the_tooling_to_their_own_task(poe_runs):
     """The gate proofs and the shared tools' own tests (the same in every project, tested in the template) run in
-    `gate-tests`: in `check` only when the tooling changed, in `full` always. The suite is the project's own."""
+    `gate-tests`, which `full` and CI run. The suite is the project's own."""
     for task in ["test", "check-min-deps"]:
         assert "not gate and not tooling" in poe_runs[task][0], poe_runs[task]
     assert "-m 'gate or tooling'" in poe_runs["gate-tests"][0]

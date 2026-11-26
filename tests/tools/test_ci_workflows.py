@@ -52,6 +52,16 @@ def test_the_gate_waits_for_the_reference_grid_and_no_build():
     assert set(ci["jobs"]["ci-ok"]["needs"]) >= {test_job}
 
 
+def test_the_required_gate_runs_the_tests_of_the_tooling_the_local_gate_leaves_out():
+    """`poe check` leaves the gate proofs and the tools' own tests to CI, so ci-ok must run them: test.yml (which ci.yml
+    calls on the reference grid) runs `poe gate-tests` on a cell of that grid."""
+    reference, _ = grids(load("test.yml"))
+    [step] = [step for step in load("test.yml")["jobs"]["test"]["steps"] if "poe gate-tests" in step.get("run", "")]
+    cell = re.findall(r"matrix\.os == '([^']+)' && matrix\.python == '([^']+)'", step.get("if", ""))
+    assert cell, step.get("if")
+    assert set(cell) <= reference, step.get("if")
+
+
 def test_platforms_runs_the_rest_grid_and_the_build_and_reports_one_result():
     platforms = load("platforms.yml")
     [test_job] = calls(platforms, "test.yml")
